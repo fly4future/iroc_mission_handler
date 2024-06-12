@@ -1,0 +1,5 @@
+<library path="lib/libMRSMissionManager">
+  <class name="mrs_mission_manager/MissionManager" type="mrs_mission_manager::MissionManager" base_class_type="nodelet::Nodelet">
+    <description>Mission manager nodelet</description>
+  </class>
+</library>
