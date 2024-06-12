@@ -4,7 +4,7 @@
   <name>mrs_mission_manager</name>
   <version>1.0.0</version>
   <description>
-    description
+    mrs_mission_manager
   </description>
 
   <maintainer email="spurny@fly4future.com">Vojtech Spurny</maintainer>
@@ -19,6 +19,8 @@
   <depend>nodelet</depend>
   <depend>mrs_msgs</depend>
   <depend>mrs_lib</depend>
+  <depend>genmsg</depend>
+  <depend>actionlib_msgs</depend>
 
   <export>
     <nodelet plugin="${prefix}/nodelets.xml" />

@@ -1,0 +1,19 @@
+uint8 TERMINAL_ACTION_NONE=0
+uint8 TERMINAL_ACTION_LAND=1
+uint8 TERMINAL_ACTION_RTL=2
+
+uint8 FRAME_ID_LOCAL=0
+uint8 FRAME_ID_LATLON=1
+
+# Define the goal
+uint8 frame_id
+mrs_msgs/Reference[] points
+uint8 terminal_action
+---
+# Define the result
+bool success
+string message
+---
+# Define a feedback message
+string message
+float64 euclidean_distance_to_reference

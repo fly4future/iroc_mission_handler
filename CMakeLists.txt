@@ -10,6 +10,8 @@ set(CATKIN_DEPENDENCIES
   nodelet
   mrs_msgs
   mrs_lib
+  actionlib_msgs
+  genmsg
   )
 
 set(LIBRARIES
@@ -18,6 +20,15 @@ set(LIBRARIES
 
 find_package(catkin REQUIRED COMPONENTS
   ${CATKIN_DEPENDENCIES}
+  )
+
+add_action_files(
+  DIRECTORY action 
+  FILES waypointMission.action
+  )
+
+generate_messages(
+  DEPENDENCIES actionlib_msgs mrs_msgs
   )
 
 catkin_package(
@@ -38,6 +49,7 @@ add_library(MRSMissionManager
 
 add_dependencies(MRSMissionManager
   ${catkin_EXPORTED_TARGETS}
+  ${${PROJECT_NAME}_EXPORTED_TARGETS}
   )
 
 ## Specify libraries to link a library or executable target against
