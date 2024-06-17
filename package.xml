@@ -21,6 +21,7 @@
   <depend>mrs_lib</depend>
   <depend>genmsg</depend>
   <depend>actionlib_msgs</depend>
+  <depend>mrs_robot_diagnostics</depend>
 
   <export>
     <nodelet plugin="${prefix}/nodelets.xml" />

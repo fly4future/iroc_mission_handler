@@ -12,6 +12,7 @@ set(CATKIN_DEPENDENCIES
   mrs_lib
   actionlib_msgs
   genmsg
+  mrs_robot_diagnostics
   )
 
 set(LIBRARIES
@@ -37,6 +38,7 @@ catkin_package(
   )
 
 include_directories(
+  include
   ${catkin_INCLUDE_DIRS}
   )
 

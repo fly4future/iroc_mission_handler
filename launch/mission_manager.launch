@@ -3,6 +3,8 @@
   <!-- defines name of the namespace -->
   <arg name="UAV_NAME" default="$(optenv UAV_NAME uav1)" />
 
+  <arg name="custom_config" default="" />
+
   <!-- will it run using GNU debugger? -->
   <arg name="debug" default="false" />
   <arg unless="$(arg debug)" name="launch_prefix_debug" value=""/>
@@ -19,6 +21,17 @@
   <group ns="$(arg UAV_NAME)">
 
     <node pkg="nodelet" type="nodelet" name="mission_manager" args="$(arg nodelet) mrs_mission_manager/MissionManager $(arg nodelet_manager)" launch-prefix="$(arg launch_prefix_debug)" output="screen">
+
+      <param name="config" value="$(find mrs_mission_manager)/config/config.yaml" />
+
+      <param if="$(eval arg('custom_config') == '')" name="custom_config" value="" />
+      <param if="$(eval not arg('custom_config') == '' and arg('custom_config')[0] == '/')" name="custom_config" value="$(arg custom_config)" />
+      <param if="$(eval not arg('custom_config') == '' and not arg('custom_config')[0] == '/')" name="custom_config" value="$(env PWD)/$(arg custom_config)" />
+
+      <!-- Subscribers -->
+      <remap from="~in/hw_api_status" to="hw_api/status" />
+      <remap from="~in/control_manager_diagnostics" to="control_manager/diagnostics" />
+
     </node>
 
   </group>
