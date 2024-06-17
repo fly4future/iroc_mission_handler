@@ -171,7 +171,7 @@ namespace mrs_mission_manager
     }
 
     if (mission_manager_server_ptr_->isActive()) {
-      switch (mission_state_) 
+      switch (mission_state_.value()) 
       {
         case mission_state_t::IDLE: {
             break;
