@@ -29,8 +29,7 @@
       <param if="$(eval not arg('custom_config') == '' and not arg('custom_config')[0] == '/')" name="custom_config" value="$(env PWD)/$(arg custom_config)" />
 
       <!-- Subscribers -->
-      <remap from="~in/hw_api_status" to="hw_api/status" />
-      <remap from="~in/control_manager_diagnostics" to="control_manager/diagnostics" />
+      <remap from="~in/uav_state" to="state_monitor/uav_state" />
 
     </node>
 

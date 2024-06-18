@@ -15,6 +15,7 @@
 #include <mutex>
 
 #include <mrs_robot_diagnostics/parsing_functions.h>
+#include <mrs_robot_diagnostics/UavState.h>
 
 #include "mrs_mission_manager/enums/mission_state.h"
 
@@ -51,8 +52,7 @@ namespace mrs_mission_manager
       // | ---------------------- ROS subscribers --------------------- |
       std::shared_ptr<mrs_lib::TimeoutManager> tim_mgr_;
 
-      mrs_lib::SubscribeHandler<mrs_msgs::HwApiStatus> sh_hw_api_status_;
-      mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics> sh_control_manager_diagnostics_;
+      mrs_lib::SubscribeHandler<mrs_robot_diagnostics::UavState> sh_uav_state_;
 
       // | ----------------------- main timer ----------------------- |
 
@@ -123,8 +123,7 @@ namespace mrs_mission_manager
     shopts.queue_size = 10;
     shopts.transport_hints = ros::TransportHints().tcpNoDelay();
 
-    sh_control_manager_diagnostics_ = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "in/control_manager_diagnostics");
-    sh_hw_api_status_ = mrs_lib::SubscribeHandler<mrs_msgs::HwApiStatus>(shopts, "in/hw_api_status");
+    sh_uav_state_ = mrs_lib::SubscribeHandler<mrs_robot_diagnostics::UavState>(shopts, "in/uav_state");
 
     // | ------------------------- timers ------------------------- |
 
@@ -161,13 +160,9 @@ namespace mrs_mission_manager
     }
 
     // | -------------------- UAV state parsing ------------------- |
-    const bool got_all_messages = sh_hw_api_status_.hasMsg() && sh_control_manager_diagnostics_.hasMsg();
-    if (got_all_messages) {
-      const auto hw_api_status = sh_hw_api_status_.getMsg();
-      const auto control_manager_diagnostics = sh_control_manager_diagnostics_.getMsg();
-      
-      const auto new_state = mrs_robot_diagnostics::parse_uav_state(hw_api_status, control_manager_diagnostics);
-      uav_state_.set(new_state);
+    if (sh_uav_state_.hasMsg())
+    {
+      uav_state_.set(mrs_robot_diagnostics::from_ros<uav_state_t>(sh_uav_state_.getMsg()->state));
     }
 
     if (mission_manager_server_ptr_->isActive()) {

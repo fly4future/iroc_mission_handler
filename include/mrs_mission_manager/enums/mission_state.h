@@ -1,6 +1,5 @@
 #pragma once
 #include <cstdint>
-#include <mrs_robot_diagnostics/enums/enum_helpers.h>
 
 #undef X_ENUM_NAME
 #undef X_ENUM_BASE_TYPE
@@ -19,6 +18,8 @@
 
 namespace mrs_mission_manager
 {
+
+#include <mrs_robot_diagnostics/enums/enum_macros.h>
 
 DEFINE_ENUM_WITH_CONVERSIONS(X_ENUM_NAME, X_ENUM_BASE_TYPE, X_ENUM_SEQ)
 
