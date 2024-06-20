@@ -9,6 +9,7 @@ set(CATKIN_DEPENDENCIES
   roscpp
   nodelet
   mrs_msgs
+  std_srvs
   mrs_lib
   actionlib_msgs
   genmsg

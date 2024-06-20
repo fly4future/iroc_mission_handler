@@ -9,12 +9,13 @@
 #define X_ENUM_BASE_TYPE  uint8_t
 #define X_ENUM_SEQ                            \
                           (IDLE)              \
+                          (MISSION_LOADED)    \
                           (TAKEOFF)           \
                           (FLYING_TO_START)   \
                           (EXECUTING)         \
                           (PAUSED)            \
                           (RTL)               \
-                          (LAND)           
+                          (LAND)              \
 
 namespace mrs_mission_manager
 {

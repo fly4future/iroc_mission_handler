@@ -11,6 +11,10 @@
 #include <mrs_lib/mutex.h>
 #include <mrs_lib/subscribe_handler.h>
 
+#include <std_srvs/SetBool.h>
+#include <std_srvs/Trigger.h>
+#include <mrs_msgs/PathSrv.h>
+
 #include <atomic>
 #include <mutex>
 
@@ -18,6 +22,7 @@
 #include <mrs_robot_diagnostics/UavState.h>
 
 #include "mrs_mission_manager/enums/mission_state.h"
+
 
 //}
 
@@ -44,7 +49,6 @@ namespace mrs_mission_manager
       typedef mrs_robot_diagnostics::uav_state_t uav_state_t;
 
       enum_helpers::enum_updater<uav_state_t> uav_state_ = {"UAV STATE", uav_state_t::UNKNOWN};
-      enum_helpers::enum_updater<tracker_state_t> tracker_state_ = {"TRACKER STATE", tracker_state_t::NULL_TRACKER};
       enum_helpers::enum_updater<mission_state_t> mission_state_ = {"MISSION STATE", mission_state_t::IDLE};
 
       std::atomic_bool is_initialized_ = false;
@@ -54,10 +58,18 @@ namespace mrs_mission_manager
 
       mrs_lib::SubscribeHandler<mrs_robot_diagnostics::UavState> sh_uav_state_;
 
+      // | ----------------------- ROS clients ---------------------- |
+      ros::ServiceClient sc_arm_;
+      ros::ServiceClient sc_offboard_;
+      ros::ServiceClient sc_land_;
+      ros::ServiceClient sc_path_;
+
       // | ----------------------- main timer ----------------------- |
 
       ros::Timer timer_main_;
+      ros::Timer timer_feedback_;
       void timerMain(const ros::TimerEvent& event);
+      void timerFeedback(const ros::TimerEvent& event);
 
       // | --------------------- actionlib stuff -------------------- |
       //
@@ -69,11 +81,21 @@ namespace mrs_mission_manager
 
       typedef mrs_mission_manager::waypointMissionGoal  ActionServerGoal;
       ActionServerGoal                                  action_server_goal_;
-      std::mutex                                        action_server_mutex_;
+      std::recursive_mutex                              action_server_mutex_;
 
       // | ------------------ Additional functions ------------------ |
 
       result_t actionGoalValidation(const ActionServerGoal &goal);
+
+      // some helper method overloads
+      template <typename Svc_T>
+      result_t callService(ros::ServiceClient& sc, typename Svc_T::Request req);
+
+      template <typename Svc_T>
+      result_t callService(ros::ServiceClient& sc);
+
+      result_t callService(ros::ServiceClient& sc, const bool val);
+
   };
   //}
 
@@ -89,7 +111,7 @@ namespace mrs_mission_manager
     ros::Time::waitForValid();
 
     /* load parameters */
-    mrs_lib::ParamLoader param_loader(nh_, "StateMonitor");
+    mrs_lib::ParamLoader param_loader(nh_, "MissionManager");
 
     std::string custom_config_path;
 
@@ -103,6 +125,7 @@ namespace mrs_mission_manager
     param_loader.addYamlFileFromParam("config");
 
     const auto main_timer_rate = param_loader.loadParam2<double>("main_timer_rate");
+    const auto feedback_timer_rate = param_loader.loadParam2<double>("feedback_timer_rate");
 
     if (!param_loader.loadedSuccessfully())
     {
@@ -125,9 +148,24 @@ namespace mrs_mission_manager
 
     sh_uav_state_ = mrs_lib::SubscribeHandler<mrs_robot_diagnostics::UavState>(shopts, "in/uav_state");
 
+    // | --------------------- service clients -------------------- |
+
+    sc_arm_ = nh_.serviceClient<std_srvs::SetBool>("svc/arm");
+    ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/arm\' -> \'%s\'", sc_arm_.getService().c_str());
+
+    sc_offboard_ = nh_.serviceClient<std_srvs::Trigger>("svc/offboard");
+    ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/offboard\' -> \'%s\'", sc_offboard_.getService().c_str());
+
+    sc_land_ = nh_.serviceClient<std_srvs::Trigger>("svc/land");
+    ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/land\' -> \'%s\'", sc_land_.getService().c_str());
+
+    sc_path_ = nh_.serviceClient<mrs_msgs::PathSrv>("svc/path");
+    ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/path\' -> \'%s\'", sc_path_.getService().c_str());
+
     // | ------------------------- timers ------------------------- |
 
     timer_main_ = nh_.createTimer(ros::Rate(main_timer_rate), &MissionManager::timerMain, this);
+    timer_feedback_ = nh_.createTimer(ros::Rate(feedback_timer_rate), &MissionManager::timerFeedback, this);
 
     // | ------------------ action server methods ----------------- |
     //
@@ -150,7 +188,6 @@ namespace mrs_mission_manager
   // --------------------------------------------------------------
 
   /* timerMain() //{ */
-
   void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event)
   {
     std::scoped_lock lock(action_server_mutex_);
@@ -158,14 +195,17 @@ namespace mrs_mission_manager
       ROS_WARN_THROTTLE(1, "[MissionManager]: Waiting for nodelet initialization");
       return;
     }
+    const uav_state_t previous_uav_state = uav_state_.value();
 
     // | -------------------- UAV state parsing ------------------- |
     if (sh_uav_state_.hasMsg())
     {
+      previous_uav_state = uav_state_.value();
       uav_state_.set(mrs_robot_diagnostics::from_ros<uav_state_t>(sh_uav_state_.getMsg()->state));
     }
 
     if (mission_manager_server_ptr_->isActive()) {
+
       switch (mission_state_.value()) 
       {
         case mission_state_t::IDLE: {
@@ -177,7 +217,18 @@ namespace mrs_mission_manager
     }
 
   }
+  //}
 
+  /* timerFeedback() //{ */
+  void MissionManager::timerFeedback([[maybe_unused]] const ros::TimerEvent& event)
+  {
+    if (!is_initialized_) {
+      ROS_WARN_THROTTLE(1, "[MissionManager]: Waiting for nodelet initialization");
+      return;
+    }
+    actionPublishFeedback();
+
+  }
   //}
 
   // | ---------------------- action server callbacks --------------------- |
@@ -186,8 +237,8 @@ namespace mrs_mission_manager
 
   void MissionManager::actionCallbackGoal() {
     std::scoped_lock lock(action_server_mutex_);
-    boost::shared_ptr<const mrs_mission_manager::waypointMissionGoal> action_server_goal = mission_manager_server_ptr_->acceptNewGoal();
-    ROS_INFO_STREAM("[MissionManager]: Action server received a new goal: \n" << *action_server_goal);
+    boost::shared_ptr<const mrs_mission_manager::waypointMissionGoal> new_action_server_goal = mission_manager_server_ptr_->acceptNewGoal();
+    ROS_INFO_STREAM("[MissionManager]: Action server received a new goal: \n" << *new_action_server_goal);
 
     if (!is_initialized_) {
       mrs_mission_manager::waypointMissionResult action_server_result;
@@ -198,7 +249,17 @@ namespace mrs_mission_manager
       return;
     }
 
-    const auto result = actionGoalValidation(*action_server_goal);
+    if (!(uav_state_.state() == uav_state_t::DISARMED || 
+        uav_state_.state() == uav_state_t::ARMED)) {
+      mrs_mission_manager::waypointMissionResult action_server_result;
+      action_server_result.success = false;
+      action_server_result.message = "Mission can be loaded only when the drone is not flying.";
+      ROS_ERROR("[MrsActionlibInterface]: %s", result.message.c_str());
+      mission_manager_server_ptr_->setAborted(action_server_result);
+      return;
+    }
+
+    const auto result = actionGoalValidation(*new_action_server_goal);
 
     if (!result.success) {
       mrs_mission_manager::waypointMissionResult action_server_result;
@@ -208,8 +269,8 @@ namespace mrs_mission_manager
       mission_manager_server_ptr_->setAborted(action_server_result);
       return;
     }
-
-    action_server_goal_ = *action_server_goal;
+    mission_state_.set(mission_state_t::MISSION_LOADED);
+    action_server_goal_ = *new_action_server_goal;
   }
 
   //}
@@ -232,15 +293,14 @@ namespace mrs_mission_manager
   //}
   
   /* actionPublishFeedback()//{ */
-  /* void MissionManager::actionPublishFeedback(int state, const std::vector<mrs_msgs::Reference>& trajectory) { */
-  /*   if (action_server_->isActive()) { */
-  /*     mrs_ewok::ewokFeedback action_server_feedback; */
-  /*     action_server_feedback.state_id               = state; */
-  /*     action_server_feedback.state                  = state_names[state]; */
-  /*     action_server_feedback.trajectory_point_count = (int)trajectory.size(); */
-  /*     action_server_->publishFeedback(action_server_feedback); */
-  /*   } */
-  /* } */
+  void MissionManager::actionPublishFeedback() {
+    std::scoped_lock lock(action_server_mutex_);
+    if (mission_manager_server_ptr_->isActive()) {
+      mrs_mission_manager::waypointMissionFeedback action_server_feedback;
+      action_server_feedback.message             = to_string(mission_state_);
+      mission_manager_server_ptr_->publishFeedback(action_server_feedback);
+    }
+  }
   //}
 
   // | -------------------- support functions ------------------- |
@@ -266,10 +326,56 @@ namespace mrs_mission_manager
       ss << "Not implemented terminal action.";
       return {false, ss.str()};
     }
-    return {true, "Goal is OK."};
+
+    mrs_msgs::Path msg_path;
+    msg_path.points = goal.points;
+    msg_path.header.stamp = ros::Time::now();
+    msg_path.header.frame_id = goal.frame_id;
+    msg_path.fly_now = false;
+    msg_path.use_heading = true;
+
+    mrs_msgs::PathSrv::Request srv_path_request;
+    srv_path_request.path = msg_path;
+
+    return callService<mrs_msgs::PathSrv>(sc_path_, srv_path_request);
   }
   
   //}
+
+/* callService() //{ */
+
+template <typename Svc_T>
+MissionManager::result_t MissionManager::callService(ros::ServiceClient& sc, typename Svc_T::Request req)
+{
+  typename Svc_T::Response res;
+  if (sc.call(req, res))
+  {
+    ROS_INFO_STREAM("Called service \"" << sc.getService() << "\" with response \"" << res.message << "\".");
+    return {true, res.message};
+  }
+  else
+  {
+    const std::string msg = "Failed to call service \"" + sc.getService() + "\".";
+    ROS_WARN_STREAM(msg);
+    return {false, msg};
+  }
+}
+
+template <typename Svc_T>
+MissionManager::result_t MissionManager::callService(ros::ServiceClient& sc)
+{
+  return callService<Svc_T>(sc, {});
+}
+
+MissionManager::result_t MissionManager::callService(ros::ServiceClient& sc, const bool val)
+{
+  using svc_t = std_srvs::SetBool;
+  svc_t::Request req;
+  req.data = val;
+  return callService<svc_t>(sc, req);
+}
+
+//}
 
 }  // namespace mrs_mission_manager
 
