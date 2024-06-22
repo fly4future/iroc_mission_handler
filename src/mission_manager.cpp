@@ -86,6 +86,7 @@ namespace mrs_mission_manager
       // | ------------------ Additional functions ------------------ |
 
       result_t actionGoalValidation(const ActionServerGoal &goal);
+      void actionPublishFeedback(void);
 
       // some helper method overloads
       template <typename Svc_T>
@@ -200,7 +201,6 @@ namespace mrs_mission_manager
     // | -------------------- UAV state parsing ------------------- |
     if (sh_uav_state_.hasMsg())
     {
-      previous_uav_state = uav_state_.value();
       uav_state_.set(mrs_robot_diagnostics::from_ros<uav_state_t>(sh_uav_state_.getMsg()->state));
     }
 
@@ -208,7 +208,24 @@ namespace mrs_mission_manager
 
       switch (mission_state_.value()) 
       {
-        case mission_state_t::IDLE: {
+        case mission_state_t::EXECUTING: {
+            //mission finished if were tracking the trajectory and we are now hovering
+            if (previous_uav_state == uav_state_t::TRAJECTORY && 
+                uav_state_.value() == uav_state_t::HOVER) {
+              mrs_mission_manager::waypointMissionResult action_server_result;
+              action_server_result.success = true;
+              action_server_result.message = "Mission finished";
+              ROS_INFO("[MrsActionlibInterface]: Mission finished.");
+              mission_manager_server_ptr_->setSucceeded(action_server_result);
+              return;
+            }
+
+            //mission paused if were tracking the trajectory and we are in RC_mode
+            if (previous_uav_state == uav_state_t::TRAJECTORY && 
+                uav_state_.value() == uav_state_t::RC_MODE) {
+              // mission paused
+              return;
+            }
             break;
           };
         default:
@@ -249,12 +266,12 @@ namespace mrs_mission_manager
       return;
     }
 
-    if (!(uav_state_.state() == uav_state_t::DISARMED || 
-        uav_state_.state() == uav_state_t::ARMED)) {
+    if (!(uav_state_.value() == uav_state_t::DISARMED || 
+        uav_state_.value() == uav_state_t::ARMED)) {
       mrs_mission_manager::waypointMissionResult action_server_result;
       action_server_result.success = false;
       action_server_result.message = "Mission can be loaded only when the drone is not flying.";
-      ROS_ERROR("[MrsActionlibInterface]: %s", result.message.c_str());
+      ROS_ERROR("[MrsActionlibInterface]: %s", action_server_result.message.c_str());
       mission_manager_server_ptr_->setAborted(action_server_result);
       return;
     }
@@ -297,7 +314,7 @@ namespace mrs_mission_manager
     std::scoped_lock lock(action_server_mutex_);
     if (mission_manager_server_ptr_->isActive()) {
       mrs_mission_manager::waypointMissionFeedback action_server_feedback;
-      action_server_feedback.message             = to_string(mission_state_);
+      action_server_feedback.message             = to_string(mission_state_.value());
       mission_manager_server_ptr_->publishFeedback(action_server_feedback);
     }
   }
