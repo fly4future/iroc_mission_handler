@@ -65,6 +65,7 @@ private:
   ros::ServiceClient sc_offboard_;
   ros::ServiceClient sc_land_;
   ros::ServiceClient sc_path_;
+  ros::ServiceClient sc_hover_;
   ros::ServiceClient sc_mission_pause_;
   ros::ServiceClient sc_mission_flying_to_start_;
   ros::ServiceClient sc_mission_start_;
@@ -173,8 +174,12 @@ void MissionManager::onInit() {
   sc_path_ = nh_.serviceClient<mrs_msgs::PathSrv>("svc/path");
   ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/path\' -> \'%s\'", sc_path_.getService().c_str());
 
+  sc_hover_ = nh_.serviceClient<std_srvs::Trigger>("svc/hover");
+  ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/hover\' -> \'%s\'", sc_hover_.getService().c_str());
+
   sc_mission_pause_ = nh_.serviceClient<std_srvs::Trigger>("svc/mission_pause");
   ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/mission_pause\' -> \'%s\'", sc_mission_pause_.getService().c_str());
+
 
   sc_mission_flying_to_start_ = nh_.serviceClient<std_srvs::Trigger>("svc/mission_flying_to_start");
   ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/mission_flying_to_start\' -> \'%s\'", sc_mission_flying_to_start_.getService().c_str());
@@ -220,7 +225,7 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
     ROS_WARN_THROTTLE(1, "[MissionManager]: Waiting for nodelet initialization");
     return;
   }
-  
+
   const uav_state_t previous_uav_state = uav_state_.value();
 
   // | -------------------- UAV state parsing ------------------- |
@@ -252,7 +257,7 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
     switch (mission_state_.value()) {
 
       case mission_state_t::TAKEOFF: {
-        if (uav_state_.value() == uav_state_t::HOVER) {
+        if ((previous_uav_state == uav_state_t::GOTO || previous_uav_state == uav_state_t::TAKEOFF) && uav_state_.value() == uav_state_t::HOVER) {
           ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Takeoff finished.");
           auto resp = callService<std_srvs::Trigger>(sc_mission_flying_to_start_);
           if (!resp.success) {
@@ -287,7 +292,7 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
           switch (action_server_goal_.terminal_action) {
 
             case ActionServerGoal::TERMINAL_ACTION_LAND: {
-              ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Executiong terminal action. Callin land");
+              ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Executiong terminal action. Calling land");
               auto resp = callService<std_srvs::Trigger>(sc_land_);
               if (!resp.success) {
                 ROS_ERROR_THROTTLE(1.0, "[MissionManager]: Failed to call land service.");
@@ -384,16 +389,42 @@ bool MissionManager::missionActivationServiceCallback(std_srvs::Trigger::Request
 
       case mission_state_t::PAUSED: {
         ROS_INFO_STREAM_THROTTLE(1.0, "Calling reactivation.");
-        auto resp = callService<std_srvs::Trigger>(sc_mission_start_);
-        if (!resp.success) {
-          res.success = false;
-          res.message = "Failed to call mission reactivation service.";
-          ROS_ERROR_THROTTLE(1.0, "[MissionManager]: %s", res.message.c_str());
-          break;
+
+        switch (previous_mission_state_) {
+
+          case mission_state_t::EXECUTING: {
+            auto resp = callService<std_srvs::Trigger>(sc_mission_start_);
+            if (!resp.success) {
+              res.success = false;
+              res.message = "Failed to call mission reactivation service.";
+              ROS_ERROR_THROTTLE(1.0, "[MissionManager]: %s", res.message.c_str());
+              break;
+            }
+            res.success = true;
+            res.message = "Mission reactivated";
+            updateMissionState(mission_state_t::EXECUTING);
+            break;
+          };
+
+          case mission_state_t::FLYING_TO_START: {
+            auto resp = callService<std_srvs::Trigger>(sc_mission_flying_to_start_);
+            if (!resp.success) {
+              res.success = false;
+              res.message = "Failed to reactivate flying to mission start service.";
+              ROS_ERROR_THROTTLE(1.0, "[MissionManager]: %s", res.message.c_str());
+              break;
+            }
+            res.success = true;
+            res.message = "Mission reactivated";
+            updateMissionState(mission_state_t::FLYING_TO_START);
+            break;
+          };
+
+          default: {
+            updateMissionState(previous_mission_state_);
+            break;
+          };
         }
-        res.success = true;
-        res.message = "Mission reactivated";
-        updateMissionState(mission_state_t::EXECUTING);
         break;
       };
 
@@ -430,6 +461,21 @@ bool MissionManager::missionPauseServiceCallback(std_srvs::Trigger::Request& req
 
     switch (mission_state_.value()) {
 
+      case mission_state_t::FLYING_TO_START: {
+        ROS_INFO_STREAM_THROTTLE(1.0, "Calling hover.");
+        auto resp = callService<std_srvs::Trigger>(sc_hover_);
+        if (!resp.success) {
+          res.success = false;
+          res.message = "Failed to call hover service.";
+          ROS_ERROR_THROTTLE(1.0, "[MissionManager]: %s", res.message.c_str());
+          break;
+        }
+        res.success = true;
+        res.message = "Mission paused";
+        updateMissionState(mission_state_t::PAUSED);
+        break;
+      };
+
       case mission_state_t::EXECUTING: {
         ROS_INFO_STREAM_THROTTLE(1.0, "Calling pausing.");
         auto resp = callService<std_srvs::Trigger>(sc_mission_pause_);
@@ -447,7 +493,7 @@ bool MissionManager::missionPauseServiceCallback(std_srvs::Trigger::Request& req
 
       default: {
         res.success = false;
-        res.message = "Mission is not in the executing state.";
+        res.message = "Mission is not in the FLYING_TO_START or EXECUTING state.";
         ROS_WARN_THROTTLE(1.0, "[MissionManager]: %s", res.message.c_str());
         break;
       };
@@ -559,7 +605,7 @@ MissionManager::result_t MissionManager::actionGoalValidation(const ActionServer
   msg_path.fly_now      = false;
   msg_path.use_heading  = true;
   // do not use the current position for plannin of the path
-  msg_path.dont_prepend_current_state  = true;
+  msg_path.dont_prepend_current_state = true;
 
   std::string frame_id;
   switch (goal.frame_id) {
