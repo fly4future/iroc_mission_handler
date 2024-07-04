@@ -51,6 +51,8 @@ private:
   enum_helpers::enum_updater<mission_state_t> mission_state_          = {"MISSION STATE", mission_state_t::IDLE};
   mission_state_t                             previous_mission_state_ = mission_state_t::IDLE;
 
+  std::string robot_name_;
+
   std::atomic_bool is_initialized_ = false;
 
   // | ---------------------- ROS subscribers --------------------- |
@@ -126,6 +128,7 @@ void MissionManager::onInit() {
   std::string custom_config_path;
 
   param_loader.loadParam("custom_config", custom_config_path);
+  param_loader.loadParam("robot_name", robot_name_);
 
   if (custom_config_path != "") {
     param_loader.addYamlFile(custom_config_path);
@@ -181,11 +184,11 @@ void MissionManager::onInit() {
 
   // | --------------------- service servers -------------------- |
 
-  ss_activation_ = nh_.advertiseService("srv_server/mission_activation", &MissionManager::missionActivationServiceCallback, this);
-  ROS_INFO("[IROCBridge]: Created ServiceServer on service \'srv_server/mission_activation\' -> \'%s\'", ss_activation_.getService().c_str());
+  ss_activation_ = nh_.advertiseService("svc_server/mission_activation", &MissionManager::missionActivationServiceCallback, this);
+  ROS_INFO("[IROCBridge]: Created ServiceServer on service \'svc_server/mission_activation\' -> \'%s\'", ss_activation_.getService().c_str());
 
-  ss_pause_ = nh_.advertiseService("srv_server/mission_pause", &MissionManager::missionPauseServiceCallback, this);
-  ROS_INFO("[IROCBridge]: Created ServiceServer on service \'srv_server/mission_pause\' -> \'%s\'", ss_pause_.getService().c_str());
+  ss_pause_ = nh_.advertiseService("svc_server/mission_pause", &MissionManager::missionPauseServiceCallback, this);
+  ROS_INFO("[IROCBridge]: Created ServiceServer on service \'svc_server/mission_pause\' -> \'%s\'", ss_pause_.getService().c_str());
 
   // | ------------------------- timers ------------------------- |
 
@@ -217,6 +220,8 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
     ROS_WARN_THROTTLE(1, "[MissionManager]: Waiting for nodelet initialization");
     return;
   }
+  
+  const uav_state_t previous_uav_state = uav_state_.value();
 
   // | -------------------- UAV state parsing ------------------- |
   if (sh_uav_state_.hasMsg()) {
@@ -261,7 +266,7 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
       };
 
       case mission_state_t::FLYING_TO_START: {
-        if (uav_state_.value() == uav_state_t::HOVER) {
+        if (previous_uav_state == uav_state_t::GOTO && uav_state_.value() == uav_state_t::HOVER) {
           ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Flying to start finished");
           auto resp = callService<std_srvs::Trigger>(sc_mission_start_);
           if (!resp.success) {
@@ -276,7 +281,7 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
       case mission_state_t::EXECUTING: {
         // mission finished if were tracking the trajectory and we are now hovering
-        if (uav_state_.value() == uav_state_t::HOVER) {
+        if (previous_uav_state == uav_state_t::TRAJECTORY && uav_state_.value() == uav_state_t::HOVER) {
           ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Mission finished.");
 
           switch (action_server_goal_.terminal_action) {
@@ -535,25 +540,42 @@ void MissionManager::actionPublishFeedback() {
 MissionManager::result_t MissionManager::actionGoalValidation(const ActionServerGoal& goal) {
   std::stringstream ss;
   if (!(goal.frame_id == ActionServerGoal::FRAME_ID_LOCAL || goal.frame_id == ActionServerGoal::FRAME_ID_LATLON)) {
-    ss << "Unknown frame_id = \'" << goal.frame_id << "\', use the predefined ones.";
+    ss << "Unknown frame_id = \'" << int(goal.frame_id) << "\', use the predefined ones.";
     return {false, ss.str()};
   }
   if (!(goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_NONE || goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_LAND ||
         goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_RTL)) {
-    ss << "Unknown terminal_action = \'" << goal.terminal_action << "\', use the predefined ones.";
+    ss << "Unknown terminal_action = \'" << int(goal.terminal_action) << "\', use the predefined ones.";
     return {false, ss.str()};
   }
-  if (goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_LAND || goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_RTL) {
+  if (goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_RTL) {
     ss << "Not implemented terminal action.";
     return {false, ss.str()};
   }
 
   mrs_msgs::Path msg_path;
-  msg_path.points          = goal.points;
-  msg_path.header.stamp    = ros::Time::now();
-  msg_path.header.frame_id = goal.frame_id;
-  msg_path.fly_now         = false;
-  msg_path.use_heading     = true;
+  msg_path.points       = goal.points;
+  msg_path.header.stamp = ros::Time::now();
+  msg_path.fly_now      = false;
+  msg_path.use_heading  = true;
+  // do not use the current position for plannin of the path
+  msg_path.dont_prepend_current_state  = true;
+
+  std::string frame_id;
+  switch (goal.frame_id) {
+    case ActionServerGoal::FRAME_ID_LOCAL: {
+      frame_id = robot_name_ + "/local_origin";
+      break;
+    }
+    case ActionServerGoal::FRAME_ID_LATLON: {
+      frame_id = "latlon_origin";
+      break;
+    }
+    default:
+      break;
+  }
+
+  msg_path.header.frame_id = frame_id;
 
   mrs_msgs::PathSrv::Request srv_path_request;
   srv_path_request.path = msg_path;
@@ -609,7 +631,7 @@ template <typename Svc_T>
 MissionManager::result_t MissionManager::callService(ros::ServiceClient& sc, typename Svc_T::Request req) {
   typename Svc_T::Response res;
   if (sc.call(req, res)) {
-    ROS_INFO_STREAM_THROTTLE(1.0,"Called service \"" << sc.getService() << "\" with response \"" << res.message << "\".");
+    ROS_INFO_STREAM_THROTTLE(1.0, "Called service \"" << sc.getService() << "\" with response \"" << res.message << "\".");
     return {true, res.message};
   } else {
     const std::string msg = "Failed to call service \"" + sc.getService() + "\".";

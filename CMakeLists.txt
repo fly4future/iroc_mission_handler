@@ -44,9 +44,10 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
   )
 
-## | ------------ MRSRobotDiagnostics_StateMonitor ------------ |
+## --------------------------------------------------------------
+## |                            Build                           |
+## --------------------------------------------------------------
 
-## Declare a C++ library
 add_library(MRSMissionManager
   src/mission_manager.cpp
   )
@@ -56,9 +57,23 @@ add_dependencies(MRSMissionManager
   ${${PROJECT_NAME}_EXPORTED_TARGETS}
   )
 
-## Specify libraries to link a library or executable target against
 target_link_libraries(MRSMissionManager
   ${catkin_LIBRARIES}
+  )
+
+## | ---------------------- test example ---------------------- |
+
+add_executable(mission_manager_test_client 
+  src/mission_manager_test_client.cpp
+  )
+
+add_dependencies(mission_manager_test_client 
+  ${catkin_EXPORTED_TARGETS}
+  ${${PROJECT_NAME}_EXPORTED_TARGETS} 
+  )
+
+target_link_libraries(mission_manager_test_client 
+  ${catkin_LIBRARIES} 
   )
 
 ## --------------------------------------------------------------

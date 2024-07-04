@@ -23,6 +23,7 @@
     <node pkg="nodelet" type="nodelet" name="mission_manager" args="$(arg nodelet) mrs_mission_manager/MissionManager $(arg nodelet_manager)" launch-prefix="$(arg launch_prefix_debug)" output="screen">
 
       <param name="config" value="$(find mrs_mission_manager)/config/config.yaml" />
+      <param name="robot_name" value="$(arg UAV_NAME)" />
 
       <param if="$(eval arg('custom_config') == '')" name="custom_config" value="" />
       <param if="$(eval not arg('custom_config') == '' and arg('custom_config')[0] == '/')" name="custom_config" value="$(arg custom_config)" />
@@ -41,8 +42,8 @@
       <remap from="~svc/mission_start" to="control_manager/start_trajectory_tracking" />
 
       <!-- Service servers -->
-      <remap from="~svc/mission_activation" to="mission_activation" />
-      <remap from="~svc/mission_pause" to="mission_pause" />
+      <remap from="~svc_server/mission_activation" to="~mission_activation" />
+      <remap from="~svc_server/mission_pause" to="~mission_pause" />
 
     </node>
 
