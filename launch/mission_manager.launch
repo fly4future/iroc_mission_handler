@@ -31,6 +31,19 @@
       <!-- Subscribers -->
       <remap from="~in/uav_state" to="state_monitor/uav_state" />
 
+      <!-- Service clients -->
+      <remap from="~svc/arm" to="hw_api/arming" />
+      <remap from="~svc/offboard" to="hw_api/offboard" />
+      <remap from="~svc/land" to="uav_manager/land" />
+      <remap from="~svc/path" to="trajectory_generation/path" />
+      <remap from="~svc/mission_pause" to="control_manager/stop_trajectory_tracking" />
+      <remap from="~svc/mission_flying_to_start" to="control_manager/goto_trajectory_start" />
+      <remap from="~svc/mission_start" to="control_manager/start_trajectory_tracking" />
+
+      <!-- Service servers -->
+      <remap from="~svc/mission_activation" to="mission_activation" />
+      <remap from="~svc/mission_pause" to="mission_pause" />
+
     </node>
 
   </group>

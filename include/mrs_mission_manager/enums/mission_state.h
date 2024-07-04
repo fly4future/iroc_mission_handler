@@ -7,15 +7,16 @@
 
 #define X_ENUM_NAME       mission_state_t
 #define X_ENUM_BASE_TYPE  uint8_t
-#define X_ENUM_SEQ                            \
-                          (IDLE)              \
-                          (MISSION_LOADED)    \
-                          (TAKEOFF)           \
-                          (FLYING_TO_START)   \
-                          (EXECUTING)         \
-                          (PAUSED)            \
-                          (RTL)               \
-                          (LAND)              \
+#define X_ENUM_SEQ                                \
+                          (IDLE)                  \
+                          (TAKEOFF)               \
+                          (MISSION_LOADED)        \
+                          (FLYING_TO_START)       \
+                          (EXECUTING)             \
+                          (PAUSED)                \
+                          (PAUSED_DUE_TO_RC_MODE) \
+                          (RTL)                   \
+                          (LAND)                  \
 
 namespace mrs_mission_manager
 {
