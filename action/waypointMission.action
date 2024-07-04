@@ -16,4 +16,4 @@ string message
 ---
 # Define a feedback message
 string message
-float64 euclidean_distance_to_reference
+float64 total_euclidean_distance_to_goal
