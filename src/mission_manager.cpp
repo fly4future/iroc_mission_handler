@@ -455,11 +455,19 @@ void MissionManager::actionCallbackPreempt() {
   ROS_INFO("[MissionManager]: Preemption toggled for ActionServer.");
 
   if (mission_manager_server_ptr_->isActive()) {
-    mrs_mission_manager::waypointMissionResult action_server_result;
-    action_server_result.success = false;
-    action_server_result.message = "Preempted by server";
-    ROS_WARN_STREAM("[MissionManager]: " << action_server_result.message);
-    mission_manager_server_ptr_->setPreempted(action_server_result);
+    if (mission_manager_server_ptr_->isNewGoalAvailable()){
+      mrs_mission_manager::waypointMissionResult action_server_result;
+      action_server_result.success = false;
+      action_server_result.message = "Preempted by client";
+      ROS_WARN_STREAM("[MissionManager]: " << action_server_result.message);
+      mission_manager_server_ptr_->setPreempted(action_server_result);
+    }else{
+      mrs_mission_manager::waypointMissionResult action_server_result;
+      action_server_result.success = false;
+      action_server_result.message = "Cancelled by client";
+      ROS_WARN_STREAM("[MissionManager]: " << action_server_result.message);
+      mission_manager_server_ptr_->setAborted(action_server_result);
+    }
   }
   updateMissionState(mission_state_t::IDLE);
 }
