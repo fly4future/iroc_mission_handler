@@ -13,7 +13,6 @@
                           (MISSION_LOADED)        \
                           (FLYING_TO_START)       \
                           (EXECUTING)             \
-                          (PAUSED)                \
                           (PAUSED_DUE_TO_RC_MODE) \
                           (RTL)                   \
                           (LAND)                  \

@@ -73,9 +73,6 @@ private:
   ros::ServiceServer ss_activation_;
   bool               missionActivationServiceCallback(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
 
-  ros::ServiceServer ss_pause_;
-  bool               missionPauseServiceCallback(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
-
   // | ----------------------- main timer ----------------------- |
 
   ros::Timer timer_main_;
@@ -191,9 +188,6 @@ void MissionManager::onInit() {
 
   ss_activation_ = nh_.advertiseService("svc_server/mission_activation", &MissionManager::missionActivationServiceCallback, this);
   ROS_INFO("[IROCBridge]: Created ServiceServer on service \'svc_server/mission_activation\' -> \'%s\'", ss_activation_.getService().c_str());
-
-  ss_pause_ = nh_.advertiseService("svc_server/mission_pause", &MissionManager::missionPauseServiceCallback, this);
-  ROS_INFO("[IROCBridge]: Created ServiceServer on service \'svc_server/mission_pause\' -> \'%s\'", ss_pause_.getService().c_str());
 
   // | ------------------------- timers ------------------------- |
 
@@ -387,47 +381,6 @@ bool MissionManager::missionActivationServiceCallback(std_srvs::Trigger::Request
         break;
       };
 
-      case mission_state_t::PAUSED: {
-        ROS_INFO_STREAM_THROTTLE(1.0, "Calling reactivation.");
-
-        switch (previous_mission_state_) {
-
-          case mission_state_t::EXECUTING: {
-            auto resp = callService<std_srvs::Trigger>(sc_mission_start_);
-            if (!resp.success) {
-              res.success = false;
-              res.message = "Failed to call mission reactivation service.";
-              ROS_ERROR_THROTTLE(1.0, "[MissionManager]: %s", res.message.c_str());
-              break;
-            }
-            res.success = true;
-            res.message = "Mission reactivated";
-            updateMissionState(mission_state_t::EXECUTING);
-            break;
-          };
-
-          case mission_state_t::FLYING_TO_START: {
-            auto resp = callService<std_srvs::Trigger>(sc_mission_flying_to_start_);
-            if (!resp.success) {
-              res.success = false;
-              res.message = "Failed to reactivate flying to mission start service.";
-              ROS_ERROR_THROTTLE(1.0, "[MissionManager]: %s", res.message.c_str());
-              break;
-            }
-            res.success = true;
-            res.message = "Mission reactivated";
-            updateMissionState(mission_state_t::FLYING_TO_START);
-            break;
-          };
-
-          default: {
-            updateMissionState(previous_mission_state_);
-            break;
-          };
-        }
-        break;
-      };
-
       case mission_state_t::PAUSED_DUE_TO_RC_MODE: {
         res.success = false;
         res.message = "Mission is pause due to active MRS Remote mode. Disable the mode, to continue with the mission execution.";
@@ -450,61 +403,6 @@ bool MissionManager::missionActivationServiceCallback(std_srvs::Trigger::Request
   return true;
 }
 
-//}
-
-/*  missionPauseServiceCallback()//{ */
-
-bool MissionManager::missionPauseServiceCallback(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res) {
-  std::scoped_lock lock(action_server_mutex_);
-  ROS_INFO_STREAM("[MissionManager]: Received mission pause request");
-  if (mission_manager_server_ptr_->isActive()) {
-
-    switch (mission_state_.value()) {
-
-      case mission_state_t::FLYING_TO_START: {
-        ROS_INFO_STREAM_THROTTLE(1.0, "Calling hover.");
-        auto resp = callService<std_srvs::Trigger>(sc_hover_);
-        if (!resp.success) {
-          res.success = false;
-          res.message = "Failed to call hover service.";
-          ROS_ERROR_THROTTLE(1.0, "[MissionManager]: %s", res.message.c_str());
-          break;
-        }
-        res.success = true;
-        res.message = "Mission paused";
-        updateMissionState(mission_state_t::PAUSED);
-        break;
-      };
-
-      case mission_state_t::EXECUTING: {
-        ROS_INFO_STREAM_THROTTLE(1.0, "Calling pausing.");
-        auto resp = callService<std_srvs::Trigger>(sc_mission_pause_);
-        if (!resp.success) {
-          res.success = false;
-          res.message = "Failed to call mission pause service.";
-          ROS_ERROR_THROTTLE(1.0, "[MissionManager]: %s", res.message.c_str());
-          break;
-        }
-        res.success = true;
-        res.message = "Mission paused";
-        updateMissionState(mission_state_t::PAUSED);
-        break;
-      };
-
-      default: {
-        res.success = false;
-        res.message = "Mission is not in the FLYING_TO_START or EXECUTING state.";
-        ROS_WARN_THROTTLE(1.0, "[MissionManager]: %s", res.message.c_str());
-        break;
-      };
-    }
-  } else {
-    res.success = false;
-    res.message = "No active mission.";
-    ROS_WARN_THROTTLE(1.0, "[MissionManager]: %s", res.message.c_str());
-  }
-  return true;
-}
 //}
 
 // | ---------------------- action server callbacks --------------------- |

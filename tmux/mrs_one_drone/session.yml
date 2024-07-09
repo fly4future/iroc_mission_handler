@@ -48,7 +48,6 @@ windows:
       layout: tiled
       panes:
         - history -s rosservice call /$UAV_NAME/mission_manager/mission_activation
-        - history -s rosservice call /$UAV_NAME/mission_manager/mission_pause
   - mission_test:
       layout: tiled
       panes:
