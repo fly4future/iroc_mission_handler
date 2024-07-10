@@ -66,7 +66,6 @@ private:
   ros::ServiceClient sc_land_;
   ros::ServiceClient sc_path_;
   ros::ServiceClient sc_hover_;
-  ros::ServiceClient sc_mission_pause_;
   ros::ServiceClient sc_mission_flying_to_start_;
   ros::ServiceClient sc_mission_start_;
 
@@ -173,10 +172,6 @@ void MissionManager::onInit() {
 
   sc_hover_ = nh_.serviceClient<std_srvs::Trigger>("svc/hover");
   ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/hover\' -> \'%s\'", sc_hover_.getService().c_str());
-
-  sc_mission_pause_ = nh_.serviceClient<std_srvs::Trigger>("svc/mission_pause");
-  ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/mission_pause\' -> \'%s\'", sc_mission_pause_.getService().c_str());
-
 
   sc_mission_flying_to_start_ = nh_.serviceClient<std_srvs::Trigger>("svc/mission_flying_to_start");
   ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/mission_flying_to_start\' -> \'%s\'", sc_mission_flying_to_start_.getService().c_str());
