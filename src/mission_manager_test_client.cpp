@@ -40,13 +40,14 @@ int main(int argc, char **argv) {
   ac.sendGoal(action_client_goal);
 
   // wait for the action to return
-  bool finished_before_timeout = ac.waitForResult(ros::Duration(300.0));
+  bool finished_before_timeout = ac.waitForResult(ros::Duration(20.0));
 
   if (finished_before_timeout) {
     actionlib::SimpleClientGoalState state = ac.getState();
     ROS_INFO("[MissionManagerTestClient]: Action finished: %s", state.toString().c_str());
   } else {
     ROS_INFO("[MissionManagerTestClient]: Action did not finish before the time out.");
+    ac.cancelAllGoals();
   }
 
   return EXIT_SUCCESS;
