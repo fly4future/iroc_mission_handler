@@ -217,6 +217,21 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
     uav_state_.set(mrs_robot_diagnostics::from_ros<uav_state_t>(sh_uav_state_.getMsg()->state));
   }
 
+  if (mission_state_.value() == mission_state_t::LAND) {
+    if (uav_state_.value() == uav_state_t::ARMED || uav_state_.value() == uav_state_t::DISARMED) {
+      ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Landing finished.");
+      if (mission_manager_server_ptr_->isActive()) {
+        mrs_mission_manager::waypointMissionResult action_server_result;
+        action_server_result.success = true;
+        action_server_result.message = "Mission finished";
+        ROS_INFO("[MissionManager]: Mission finished.");
+        mission_manager_server_ptr_->setSucceeded(action_server_result);
+      }
+      updateMissionState(mission_state_t::IDLE);
+      return;
+    }
+  }
+
   if (mission_manager_server_ptr_->isActive()) {
 
     // switch mission to idle if we are in Manual
@@ -315,19 +330,8 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
         break;
       };
 
-
       default:
         break;
-    }
-
-  } else {
-    if (mission_state_.value() == mission_state_t::LAND) {
-      if (uav_state_.value() == uav_state_t::ARMED || uav_state_.value() == uav_state_t::DISARMED) {
-        ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Landing finished.");
-        ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Mission finished.");
-        updateMissionState(mission_state_t::IDLE);
-        return;
-      }
     }
   }
 }
