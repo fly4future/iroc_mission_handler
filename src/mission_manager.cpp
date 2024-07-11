@@ -242,7 +242,7 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
       case mission_state_t::TAKEOFF: {
         if ((previous_uav_state == uav_state_t::GOTO || previous_uav_state == uav_state_t::TAKEOFF) && uav_state_.value() == uav_state_t::HOVER) {
-          ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Takeoff finished.");
+          ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Takeoff finished. Flying to trajectory start.");
           auto resp = callService<std_srvs::Trigger>(sc_mission_flying_to_start_);
           if (!resp.success) {
             ROS_ERROR_THROTTLE(1.0, "[MissionManager]: Failed to call flying to mission start service.");
@@ -271,7 +271,7 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
       case mission_state_t::EXECUTING: {
         // mission finished if were tracking the trajectory and we are now hovering
         if (previous_uav_state == uav_state_t::TRAJECTORY && uav_state_.value() == uav_state_t::HOVER) {
-          ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Mission finished.");
+          ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Trajectory tracking finished.");
 
           switch (action_server_goal_.terminal_action) {
 
@@ -322,8 +322,9 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
   } else {
     if (mission_state_.value() == mission_state_t::LAND) {
-      if (uav_state_.value() == uav_state_t::DISARMED) {
+      if (uav_state_.value() == uav_state_t::ARMED || uav_state_.value() == uav_state_t::DISARMED) {
         ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Landing finished.");
+        ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Mission finished.");
         updateMissionState(mission_state_t::IDLE);
         return;
       }
@@ -354,16 +355,30 @@ bool MissionManager::missionActivationServiceCallback(std_srvs::Trigger::Request
     switch (mission_state_.value()) {
 
       case mission_state_t::MISSION_LOADED: {
-        ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Calling takeoff");
-        auto resp   = callService<std_srvs::Trigger>(sc_takeoff_);
-        res.success = resp.success;
-        res.message = resp.message;
-        if (!resp.success) {
-          ROS_ERROR_THROTTLE(1.0, "[MissionManager]: %s", res.message.c_str());
+        if (!mrs_robot_diagnostics::is_flying(uav_state_.value())) {
+          ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Calling takeoff");
+          auto resp   = callService<std_srvs::Trigger>(sc_takeoff_);
+          res.success = resp.success;
+          res.message = resp.message;
+          if (!resp.success) {
+            ROS_ERROR_THROTTLE(1.0, "[MissionManager]: %s", res.message.c_str());
+            break;
+          }
+          updateMissionState(mission_state_t::TAKEOFF);
+          break;
+        } else {
+
+          ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Flying to trajectory start.");
+          auto resp   = callService<std_srvs::Trigger>(sc_mission_flying_to_start_);
+          res.success = resp.success;
+          res.message = resp.message;
+          if (!resp.success) {
+            ROS_ERROR_THROTTLE(1.0, "[MissionManager]: Failed to call flying to mission start service.");
+            break;
+          }
+          updateMissionState(mission_state_t::FLYING_TO_START);
           break;
         }
-        updateMissionState(mission_state_t::TAKEOFF);
-        break;
       };
 
       case mission_state_t::PAUSED_DUE_TO_RC_MODE: {
@@ -408,22 +423,13 @@ void MissionManager::actionCallbackGoal() {
     return;
   }
 
-  if (!(uav_state_.value() == uav_state_t::DISARMED || uav_state_.value() == uav_state_t::ARMED)) {
-    mrs_mission_manager::waypointMissionResult action_server_result;
-    action_server_result.success = false;
-    action_server_result.message = "Mission can be loaded only when the drone is not flying.";
-    ROS_ERROR("[MissionManager]: %s", action_server_result.message.c_str());
-    mission_manager_server_ptr_->setAborted(action_server_result);
-    return;
-  }
-
   const auto result = actionGoalValidation(*new_action_server_goal);
 
   if (!result.success) {
     mrs_mission_manager::waypointMissionResult action_server_result;
     action_server_result.success = false;
     action_server_result.message = result.message;
-    ROS_ERROR("[MissionManager]: %s", result.message.c_str());
+    ROS_ERROR("[MissionManager]: mission aborted");
     mission_manager_server_ptr_->setAborted(action_server_result);
     return;
   }
@@ -516,15 +522,18 @@ MissionManager::result_t MissionManager::actionGoalValidation(const ActionServer
   std::stringstream ss;
   if (!(goal.frame_id == ActionServerGoal::FRAME_ID_LOCAL || goal.frame_id == ActionServerGoal::FRAME_ID_LATLON)) {
     ss << "Unknown frame_id = \'" << int(goal.frame_id) << "\', use the predefined ones.";
+    ROS_ERROR_STREAM_THROTTLE(1.0, ss.str());
     return {false, ss.str()};
   }
   if (!(goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_NONE || goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_LAND ||
         goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_RTL)) {
     ss << "Unknown terminal_action = \'" << int(goal.terminal_action) << "\', use the predefined ones.";
+    ROS_ERROR_STREAM_THROTTLE(1.0, ss.str());
     return {false, ss.str()};
   }
   if (goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_RTL) {
     ss << "Not implemented terminal action.";
+    ROS_ERROR_STREAM_THROTTLE(1.0, ss.str());
     return {false, ss.str()};
   }
 
@@ -554,8 +563,8 @@ MissionManager::result_t MissionManager::actionGoalValidation(const ActionServer
 
   mrs_msgs::PathSrv::Request srv_path_request;
   srv_path_request.path = msg_path;
-
-  return callService<mrs_msgs::PathSrv>(sc_path_, srv_path_request);
+  auto resp             = callService<mrs_msgs::PathSrv>(sc_path_, srv_path_request);
+  return {resp.success, resp.message};
 }
 
 //}
@@ -582,10 +591,11 @@ MissionManager::result_t MissionManager::callService(ros::ServiceClient& sc, typ
   if (sc.call(req, res)) {
     if (res.success) {
       ROS_INFO_STREAM_THROTTLE(1.0, "Called service \"" << sc.getService() << "\" with response \"" << res.message << "\".");
+      return {true, res.message};
     } else {
       ROS_ERROR_STREAM_THROTTLE(1.0, "Called service \"" << sc.getService() << "\" with response \"" << res.message << "\".");
+      return {false, res.message};
     }
-    return {true, res.message};
   } else {
     const std::string msg = "Failed to call service \"" + sc.getService() + "\".";
     ROS_WARN_STREAM_THROTTLE(1.0, msg);
