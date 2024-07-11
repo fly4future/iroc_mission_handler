@@ -33,8 +33,7 @@
       <remap from="~in/uav_state" to="state_monitor/uav_state" />
 
       <!-- Service clients -->
-      <remap from="~svc/arm" to="hw_api/arming" />
-      <remap from="~svc/offboard" to="hw_api/offboard" />
+      <remap from="~svc/takeoff" to="uav_manager/takeoff" />
       <remap from="~svc/land" to="uav_manager/land" />
       <remap from="~svc/path" to="trajectory_generation/path" />
       <remap from="~svc/hover" to="control_manager/hover" />

@@ -61,8 +61,7 @@ private:
   mrs_lib::SubscribeHandler<mrs_robot_diagnostics::UavState> sh_uav_state_;
 
   // | ----------------------- ROS clients ---------------------- |
-  ros::ServiceClient sc_arm_;
-  ros::ServiceClient sc_offboard_;
+  ros::ServiceClient sc_takeoff_;
   ros::ServiceClient sc_land_;
   ros::ServiceClient sc_path_;
   ros::ServiceClient sc_hover_;
@@ -96,7 +95,6 @@ private:
   result_t actionGoalValidation(const ActionServerGoal& goal);
   void     updateMissionState(const mission_state_t& new_state);
   void     actionPublishFeedback(void);
-  result_t takeoffAction();
 
   // some helper method overloads
   template <typename Svc_T>
@@ -158,11 +156,8 @@ void MissionManager::onInit() {
 
   // | --------------------- service clients -------------------- |
 
-  sc_arm_ = nh_.serviceClient<std_srvs::SetBool>("svc/arm");
-  ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/arm\' -> \'%s\'", sc_arm_.getService().c_str());
-
-  sc_offboard_ = nh_.serviceClient<std_srvs::Trigger>("svc/offboard");
-  ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/offboard\' -> \'%s\'", sc_offboard_.getService().c_str());
+  sc_takeoff_ = nh_.serviceClient<std_srvs::Trigger>("svc/takeoff");
+  ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/offboard\' -> \'%s\'", sc_takeoff_.getService().c_str());
 
   sc_land_ = nh_.serviceClient<std_srvs::Trigger>("svc/land");
   ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/land\' -> \'%s\'", sc_land_.getService().c_str());
@@ -325,8 +320,8 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
         break;
     }
 
-  }else{
-    if(mission_state_.value() == mission_state_t::LAND) {
+  } else {
+    if (mission_state_.value() == mission_state_t::LAND) {
       if (uav_state_.value() == uav_state_t::DISARMED) {
         ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Landing finished.");
         updateMissionState(mission_state_t::IDLE);
@@ -359,13 +354,15 @@ bool MissionManager::missionActivationServiceCallback(std_srvs::Trigger::Request
     switch (mission_state_.value()) {
 
       case mission_state_t::MISSION_LOADED: {
-        auto call_res = takeoffAction();
-        res.success   = call_res.success;
-        res.message   = call_res.message;
-
-        if (call_res.success) {
-          updateMissionState(mission_state_t::TAKEOFF);
+        ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Calling takeoff");
+        auto resp   = callService<std_srvs::Trigger>(sc_takeoff_);
+        res.success = resp.success;
+        res.message = resp.message;
+        if (!resp.success) {
+          ROS_ERROR_THROTTLE(1.0, "[MissionManager]: %s", res.message.c_str());
+          break;
         }
+        updateMissionState(mission_state_t::TAKEOFF);
         break;
       };
 
@@ -476,7 +473,7 @@ void MissionManager::actionCallbackPreempt() {
               break;
             };
 
-            // TODO: add TERMINAL_ACTION_RTL part
+              // TODO: add TERMINAL_ACTION_RTL part
 
             default: {  // in the case of TERMINAL_ACTION_RTL, do the same as for TERMINAL_ACTION_NONE
               ROS_INFO_STREAM_THROTTLE(1.0, "Drone is in the movement -> Calling hover.");
@@ -573,32 +570,6 @@ void MissionManager::updateMissionState(const mission_state_t& new_state) {
   previous_mission_state_ = mission_state_.value();
   mission_state_.set(new_state);
   actionPublishFeedback();
-}
-
-//}
-
-/* takeoffAction() //{ */
-
-MissionManager::result_t MissionManager::takeoffAction() {
-  // firstly, arm the vehicles
-  ROS_INFO_STREAM_THROTTLE(1.0, "Calling arm.");
-  auto resp = callService(sc_arm_, true);
-  if (!resp.success) {
-    ROS_ERROR_STREAM_THROTTLE(1.0, "[MissionManager]: Failed to call arm service.");
-    return {false, "Failed to arm."};
-  }
-
-  const ros::Duration wait_after_arm(1.0);
-  ROS_INFO_STREAM_THROTTLE(1.0, "Waiting " << wait_after_arm.toSec() << "s after arming before swithing to offboard mode.");
-  wait_after_arm.sleep();
-
-  ROS_INFO_STREAM_THROTTLE(1.0, "Calling takeoff by switching to the offboard mode");
-  resp = callService<std_srvs::Trigger>(sc_offboard_);
-  if (!resp.success) {
-    ROS_ERROR_STREAM_THROTTLE(1.0, "[MissionManager]: Failed to call offboard.");
-    return {false, "Failed to call offboard."};
-  }
-  return {true, "Takeoff called."};
 }
 
 //}
