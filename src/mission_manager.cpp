@@ -53,7 +53,8 @@ private:
 
   std::string robot_name_;
 
-  std::atomic_bool is_initialized_ = false;
+  std::atomic_bool is_initialized_   = false;
+  std::atomic_bool action_preempted_ = false;
 
   // | ---------------------- ROS subscribers --------------------- |
   std::shared_ptr<mrs_lib::TimeoutManager> tim_mgr_;
@@ -222,10 +223,17 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
       ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Landing finished.");
       if (mission_manager_server_ptr_->isActive()) {
         mrs_mission_manager::waypointMissionResult action_server_result;
-        action_server_result.success = true;
-        action_server_result.message = "Mission finished";
-        ROS_INFO("[MissionManager]: Mission finished.");
-        mission_manager_server_ptr_->setSucceeded(action_server_result);
+        if (!action_preempted_) {
+          action_server_result.success = true;
+          action_server_result.message = "Mission finished";
+          ROS_INFO("[MissionManager]: Mission finished.");
+          mission_manager_server_ptr_->setSucceeded(action_server_result);
+        } else {
+          action_server_result.success = false;
+          action_server_result.message = "Mission stopped.";
+          ROS_INFO("[MissionManager]: Mission stopped.");
+          mission_manager_server_ptr_->setAborted(action_server_result);
+        }
       }
       updateMissionState(mission_state_t::IDLE);
       return;
@@ -257,21 +265,7 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
       case mission_state_t::TAKEOFF: {
         if ((previous_uav_state == uav_state_t::GOTO || previous_uav_state == uav_state_t::TAKEOFF) && uav_state_.value() == uav_state_t::HOVER) {
-          ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Takeoff finished. Flying to trajectory start.");
-          auto resp = callService<std_srvs::Trigger>(sc_mission_flying_to_start_);
-          if (!resp.success) {
-            ROS_ERROR_THROTTLE(1.0, "[MissionManager]: Failed to call flying to mission start service.");
-            return;
-          }
-          updateMissionState(mission_state_t::FLYING_TO_START);
-          return;
-        }
-        break;
-      };
-
-      case mission_state_t::FLYING_TO_START: {
-        if (previous_uav_state == uav_state_t::GOTO && uav_state_.value() == uav_state_t::HOVER) {
-          ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Flying to start finished");
+          ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Takeoff finished. Executing mission.");
           auto resp = callService<std_srvs::Trigger>(sc_mission_start_);
           if (!resp.success) {
             ROS_ERROR_THROTTLE(1.0, "[MissionManager]: Failed to call mission start service.");
@@ -285,7 +279,7 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
       case mission_state_t::EXECUTING: {
         // mission finished if were tracking the trajectory and we are now hovering
-        if (previous_uav_state == uav_state_t::TRAJECTORY && uav_state_.value() == uav_state_t::HOVER) {
+        if ((previous_uav_state == uav_state_t::TRAJECTORY || previous_uav_state == uav_state_t::GOTO) && uav_state_.value() == uav_state_t::HOVER) {
           ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Trajectory tracking finished.");
 
           switch (action_server_goal_.terminal_action) {
@@ -372,15 +366,15 @@ bool MissionManager::missionActivationServiceCallback(std_srvs::Trigger::Request
           break;
         } else {
 
-          ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Flying to trajectory start.");
-          auto resp   = callService<std_srvs::Trigger>(sc_mission_flying_to_start_);
+          ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Executing mission.");
+          auto resp   = callService<std_srvs::Trigger>(sc_mission_start_);
           res.success = resp.success;
           res.message = resp.message;
           if (!resp.success) {
-            ROS_ERROR_THROTTLE(1.0, "[MissionManager]: Failed to call flying to mission start service.");
+            ROS_ERROR_THROTTLE(1.0, "[MissionManager]: Failed to call mission start service.");
             break;
           }
-          updateMissionState(mission_state_t::FLYING_TO_START);
+          updateMissionState(mission_state_t::EXECUTING);
           break;
         }
       };
@@ -437,6 +431,7 @@ void MissionManager::actionCallbackGoal() {
     mission_manager_server_ptr_->setAborted(action_server_result);
     return;
   }
+  action_preempted_ = false;
   updateMissionState(mission_state_t::MISSION_LOADED);
   action_server_goal_ = *new_action_server_goal;
 }
@@ -457,18 +452,14 @@ void MissionManager::actionCallbackPreempt() {
       ROS_WARN_STREAM("[MissionManager]: " << action_server_result.message);
       mission_manager_server_ptr_->setPreempted(action_server_result);
       updateMissionState(mission_state_t::IDLE);
+
     } else {
       ROS_INFO("[MissionManager]: Cancel toggled for ActionServer.");
-      mrs_mission_manager::waypointMissionResult action_server_result;
-      action_server_result.success = false;
-      action_server_result.message = "Cancelled by client";
-      ROS_WARN_STREAM("[MissionManager]: " << action_server_result.message);
-      mission_manager_server_ptr_->setAborted(action_server_result);
+      action_preempted_ = true;
 
       switch (mission_state_.value()) {
         case mission_state_t::TAKEOFF:
         case mission_state_t::PAUSED_DUE_TO_RC_MODE:
-        case mission_state_t::FLYING_TO_START:
         case mission_state_t::EXECUTING: {
           switch (action_server_goal_.terminal_action) {
 
@@ -491,6 +482,11 @@ void MissionManager::actionCallbackPreempt() {
               if (!resp.success) {
                 ROS_ERROR_THROTTLE(1.0, "[MissionManager]: Failed to call hover service.");
               }
+
+              mrs_mission_manager::waypointMissionResult action_server_result;
+              action_server_result.success = false;
+              action_server_result.message = "Mission stopped.";
+              ROS_INFO("[MissionManager]: Mission stopped.");
               updateMissionState(mission_state_t::IDLE);
               break;
             };
@@ -508,6 +504,7 @@ void MissionManager::actionCallbackPreempt() {
 //}
 
 /* actionPublishFeedback()//{ */
+
 void MissionManager::actionPublishFeedback() {
   std::scoped_lock lock(action_server_mutex_);
   if (mission_manager_server_ptr_->isActive()) {
@@ -516,6 +513,7 @@ void MissionManager::actionPublishFeedback() {
     mission_manager_server_ptr_->publishFeedback(action_server_feedback);
   }
 }
+
 //}
 
 // | -------------------- support functions ------------------- |
@@ -547,7 +545,7 @@ MissionManager::result_t MissionManager::actionGoalValidation(const ActionServer
   msg_path.fly_now      = false;
   msg_path.use_heading  = true;
   // do not use the current position for plannin of the path
-  msg_path.dont_prepend_current_state = true;
+  msg_path.dont_prepend_current_state = false;
 
   std::string frame_id;
   switch (goal.frame_id) {

@@ -11,7 +11,6 @@
                           (IDLE)                  \
                           (TAKEOFF)               \
                           (MISSION_LOADED)        \
-                          (FLYING_TO_START)       \
                           (EXECUTING)             \
                           (PAUSED_DUE_TO_RC_MODE) \
                           (RTL)                   \
