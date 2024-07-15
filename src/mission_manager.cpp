@@ -53,8 +53,8 @@ private:
 
   std::string robot_name_;
 
-  std::atomic_bool is_initialized_   = false;
-  std::atomic_bool action_preempted_ = false;
+  std::atomic_bool is_initialized_  = false;
+  std::atomic_bool action_finished_ = false;
 
   // | ---------------------- ROS subscribers --------------------- |
   std::shared_ptr<mrs_lib::TimeoutManager> tim_mgr_;
@@ -218,12 +218,18 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
     uav_state_.set(mrs_robot_diagnostics::from_ros<uav_state_t>(sh_uav_state_.getMsg()->state));
   }
 
+  if (uav_state_.value() == uav_state_t::LAND && mission_state_.value() != mission_state_t::LAND){
+      ROS_WARN_STREAM_THROTTLE(1.0, "[MissionManager]: Landing detected. Switching to LAND state.");
+      updateMissionState(mission_state_t::LAND);
+      return;
+  }
+
   if (mission_state_.value() == mission_state_t::LAND) {
     if (uav_state_.value() == uav_state_t::ARMED || uav_state_.value() == uav_state_t::DISARMED) {
       ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Landing finished.");
       if (mission_manager_server_ptr_->isActive()) {
         mrs_mission_manager::waypointMissionResult action_server_result;
-        if (!action_preempted_) {
+        if (action_finished_) {
           action_server_result.success = true;
           action_server_result.message = "Mission finished";
           ROS_INFO("[MissionManager]: Mission finished.");
@@ -281,6 +287,7 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
         // mission finished if were tracking the trajectory and we are now hovering
         if ((previous_uav_state == uav_state_t::TRAJECTORY || previous_uav_state == uav_state_t::GOTO) && uav_state_.value() == uav_state_t::HOVER) {
           ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Trajectory tracking finished.");
+          action_finished_ = true;
 
           switch (action_server_goal_.terminal_action) {
 
@@ -431,7 +438,7 @@ void MissionManager::actionCallbackGoal() {
     mission_manager_server_ptr_->setAborted(action_server_result);
     return;
   }
-  action_preempted_ = false;
+  action_finished_ = false;
   updateMissionState(mission_state_t::MISSION_LOADED);
   action_server_goal_ = *new_action_server_goal;
 }
@@ -455,7 +462,6 @@ void MissionManager::actionCallbackPreempt() {
 
     } else {
       ROS_INFO("[MissionManager]: Cancel toggled for ActionServer.");
-      action_preempted_ = true;
 
       switch (mission_state_.value()) {
         case mission_state_t::TAKEOFF:
