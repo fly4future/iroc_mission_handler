@@ -466,7 +466,6 @@ void MissionManager::actionCallbackPreempt() {
 
       switch (mission_state_.value()) {
         case mission_state_t::TAKEOFF:
-        case mission_state_t::PAUSED_DUE_TO_RC_MODE:
         case mission_state_t::EXECUTING: {
           switch (action_server_goal_.terminal_action) {
 
@@ -503,6 +502,12 @@ void MissionManager::actionCallbackPreempt() {
         };
 
         default:
+          mrs_mission_manager::waypointMissionResult action_server_result;
+          action_server_result.success = false;
+          action_server_result.message = "Mission stopped.";
+          mission_manager_server_ptr_->setAborted(action_server_result);
+          ROS_INFO("[MissionManager]: Mission stopped.");
+          updateMissionState(mission_state_t::IDLE);
           break;
       }
     }
