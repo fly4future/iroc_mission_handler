@@ -217,15 +217,16 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
   if (sh_uav_state_.hasMsg()) {
     uav_state_.set(mrs_robot_diagnostics::from_ros<uav_state_t>(sh_uav_state_.getMsg()->state));
   }
+  const bool not_idle_or_land = mission_state_.value() != mission_state_t::IDLE && mission_state_.value() != mission_state_t::LAND;
 
-  if (uav_state_.value() == uav_state_t::LAND && mission_state_.value() != mission_state_t::LAND){
+  if (uav_state_.value() == uav_state_t::LAND && not_idle_or_land){
       ROS_WARN_STREAM_THROTTLE(1.0, "[MissionManager]: Landing detected. Switching to LAND state.");
       updateMissionState(mission_state_t::LAND);
       return;
   }
 
   if (mission_state_.value() == mission_state_t::LAND) {
-    if (uav_state_.value() == uav_state_t::ARMED || uav_state_.value() == uav_state_t::DISARMED) {
+    if (uav_state_.value() == uav_state_t::ARMED || uav_state_.value() == uav_state_t::DISARMED || uav_state_.value() == uav_state_t::OFFBOARD) {
       ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Landing finished.");
       if (mission_manager_server_ptr_->isActive()) {
         mrs_mission_manager::waypointMissionResult action_server_result;
@@ -236,8 +237,8 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
           mission_manager_server_ptr_->setSucceeded(action_server_result);
         } else {
           action_server_result.success = false;
-          action_server_result.message = "Mission stopped.";
-          ROS_INFO("[MissionManager]: Mission stopped.");
+          action_server_result.message = "Mission stopped due to landing.";
+          ROS_WARN("[MissionManager]: Mission stopped due to landing.");
           mission_manager_server_ptr_->setAborted(action_server_result);
         }
       }
