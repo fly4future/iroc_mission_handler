@@ -219,10 +219,10 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
   }
   const bool not_idle_or_land = mission_state_.value() != mission_state_t::IDLE && mission_state_.value() != mission_state_t::LAND;
 
-  if (uav_state_.value() == uav_state_t::LAND && not_idle_or_land){
-      ROS_WARN_STREAM_THROTTLE(1.0, "[MissionManager]: Landing detected. Switching to LAND state.");
-      updateMissionState(mission_state_t::LAND);
-      return;
+  if (uav_state_.value() == uav_state_t::LAND && not_idle_or_land) {
+    ROS_WARN_STREAM_THROTTLE(1.0, "[MissionManager]: Landing detected. Switching to LAND state.");
+    updateMissionState(mission_state_t::LAND);
+    return;
   }
 
   if (mission_state_.value() == mission_state_t::LAND) {
@@ -493,6 +493,7 @@ void MissionManager::actionCallbackPreempt() {
               mrs_mission_manager::waypointMissionResult action_server_result;
               action_server_result.success = false;
               action_server_result.message = "Mission stopped.";
+              mission_manager_server_ptr_->setAborted(action_server_result);
               ROS_INFO("[MissionManager]: Mission stopped.");
               updateMissionState(mission_state_t::IDLE);
               break;
