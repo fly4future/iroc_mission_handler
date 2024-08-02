@@ -14,6 +14,9 @@
 #include <std_srvs/SetBool.h>
 #include <std_srvs/Trigger.h>
 #include <mrs_msgs/PathSrv.h>
+#include <mrs_msgs/GetPathSrv.h>
+#include <mrs_msgs/ValidateReferenceList.h>
+#include <mrs_msgs/TrajectoryReference.h>
 
 #include <atomic>
 #include <mutex>
@@ -38,10 +41,10 @@ public:
 private:
   ros::NodeHandle nh_;
 
-  struct result_t
-  {
+  struct result_t {
     bool        success;
     std::string message;
+
   };
 
   typedef mrs_robot_diagnostics::tracker_state_t tracker_state_t;
@@ -65,10 +68,11 @@ private:
   ros::ServiceClient sc_takeoff_;
   ros::ServiceClient sc_land_;
   ros::ServiceClient sc_path_;
+  ros::ServiceClient sc_get_path_;
   ros::ServiceClient sc_hover_;
   ros::ServiceClient sc_mission_flying_to_start_;
   ros::ServiceClient sc_mission_start_;
-
+  ros::ServiceClient sc_mission_validation_;
   ros::ServiceServer ss_activation_;
   bool               missionActivationServiceCallback(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
 
@@ -166,6 +170,9 @@ void MissionManager::onInit() {
   sc_path_ = nh_.serviceClient<mrs_msgs::PathSrv>("svc/path");
   ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/path\' -> \'%s\'", sc_path_.getService().c_str());
 
+  sc_get_path_ = nh_.serviceClient<mrs_msgs::GetPathSrv>("svc/get_path");
+  ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/get_path\' -> \'%s\'", sc_get_path_.getService().c_str());
+
   sc_hover_ = nh_.serviceClient<std_srvs::Trigger>("svc/hover");
   ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/hover\' -> \'%s\'", sc_hover_.getService().c_str());
 
@@ -174,6 +181,10 @@ void MissionManager::onInit() {
 
   sc_mission_start_ = nh_.serviceClient<std_srvs::Trigger>("svc/mission_start");
   ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/mission_start\' -> \'%s\'", sc_mission_start_.getService().c_str());
+
+  sc_mission_validation_ = nh_.serviceClient<mrs_msgs::ValidateReferenceList>("svc/mission_validation");
+  ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/mission_validation\' -> \'%s\'", sc_mission_validation_.getService().c_str());
+
 
   // | --------------------- service servers -------------------- |
 
@@ -575,10 +586,50 @@ MissionManager::result_t MissionManager::actionGoalValidation(const ActionServer
   }
 
   msg_path.header.frame_id = frame_id;
+  
+  //Validate if valid trajectory
+  mrs_msgs::GetPathSrv::Request srv_get_path_req;
+  mrs_msgs::GetPathSrv::Response srv_get_path_resp;
+  mrs_msgs::ValidateReferenceList::Request srv_validate_ref_list_req;
+  mrs_msgs::ValidateReferenceList::Response srv_validate_ref_list_resp;
+  MissionManager::result_t resp;
+  
+  srv_get_path_req.path = msg_path; 
 
+  if(sc_get_path_.call(srv_get_path_req, srv_get_path_resp)){
+    if(srv_get_path_resp.success){
+      ROS_INFO_STREAM("Called service \"" << sc_get_path_.getService() << "\" with response \"" << srv_get_path_resp.message << "\".");
+    }
+    else {
+      ROS_INFO_STREAM("Failed calling service \"" << sc_get_path_.getService() << "\" with response \"" << srv_get_path_resp.message << "\".");
+      resp.success= srv_get_path_resp.success;
+      resp.message= srv_get_path_resp.message;
+      return {resp.success, resp.message};
+    }
+  }
+  
+  mrs_msgs::TrajectoryReference trajectoryPoints = srv_get_path_resp.trajectory;
+  mrs_msgs::ReferenceList referenceList;
+  referenceList.list  = trajectoryPoints.points;
+  srv_validate_ref_list_req.list = referenceList;
+
+  if(sc_mission_validation_.call(srv_validate_ref_list_req, srv_validate_ref_list_resp)){
+
+    bool all_success = std::all_of(srv_validate_ref_list_resp.success.begin(),srv_validate_ref_list_resp.success.end(), [](bool v) {return v; });
+    if(all_success){
+      ROS_INFO_STREAM("Called service \"" << sc_mission_validation_.getService() << "\" with response \"" << srv_validate_ref_list_resp.message << "\".");
+    }
+    else {
+      ROS_WARN_STREAM("Trajectory outside of safety area, validation from  calling service \"" << sc_mission_validation_.getService() << "\" with response \"" << srv_validate_ref_list_resp.message << "\".");
+      resp.success= srv_get_path_resp.success;
+      resp.message= srv_get_path_resp.message;
+      return {resp.success, resp.message};
+    }
+  }
+ 
   mrs_msgs::PathSrv::Request srv_path_request;
   srv_path_request.path = msg_path;
-  auto resp             = callService<mrs_msgs::PathSrv>(sc_path_, srv_path_request);
+  resp = callService<mrs_msgs::PathSrv> (sc_path_, srv_path_request);
   return {resp.success, resp.message};
 }
 
