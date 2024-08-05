@@ -42,6 +42,7 @@
       <remap from="~svc/mission_flying_to_start" to="control_manager/goto_trajectory_start" />
       <remap from="~svc/mission_start" to="control_manager/start_trajectory_tracking" />
       <remap from="~svc/mission_validation" to="control_manager/validate_reference_list" />
+      <remap from="~svc/trajectory_reference_out" to="control_manager/trajectory_reference" />
 
       <!-- Service servers -->
       <remap from="~svc_server/mission_activation" to="~mission_activation" />
