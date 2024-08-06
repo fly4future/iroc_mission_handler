@@ -19,7 +19,6 @@
 #include <mrs_msgs/TrajectoryReference.h>
 #include <mrs_msgs/TrajectoryReferenceSrv.h>
 #include <mrs_msgs/TransformReferenceSrv.h>
-#include <mrs_lib/transformer.h>
 
 #include <atomic>
 #include <mutex>
@@ -45,10 +44,10 @@ public:
 private:
   ros::NodeHandle nh_;
 
-  struct result_t {
+  struct result_t
+  {
     bool        success;
     std::string message;
-
   };
 
   typedef mrs_robot_diagnostics::tracker_state_t tracker_state_t;
@@ -78,9 +77,9 @@ private:
   ros::ServiceClient sc_mission_start_;
   ros::ServiceClient sc_mission_validation_;
   ros::ServiceClient sc_trajectory_reference_;
-  ros::ServiceClient sc_transform_reference_;
   ros::ServiceServer ss_activation_;
-  bool               missionActivationServiceCallback(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
+
+  bool missionActivationServiceCallback(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
 
   // | ----------------------- main timer ----------------------- |
 
@@ -91,10 +90,6 @@ private:
 
   // | --------------------- actionlib stuff -------------------- |
   //
-
-  // | --------------------- transformer -------------------- |
-  std::shared_ptr<mrs_lib::Transformer> transformer_;
-
 
   typedef actionlib::SimpleActionServer<mrs_mission_manager::waypointMissionAction> MissionManagerServer;
   void                                                                              actionCallbackGoal();
@@ -108,12 +103,10 @@ private:
   // | ------------------ Additional functions ------------------ |
 
   result_t actionGoalValidation(const ActionServerGoal& goal);
-  result_t validateMissionSrv(const mrs_msgs::Path msg); 
+  result_t validateMissionSrv(const mrs_msgs::Path msg);
   void     updateMissionState(const mission_state_t& new_state);
-  mrs_msgs::Path transformPath(const mrs_msgs::Path& path_in, const std::string& target_frame); 
 
-
-  void     actionPublishFeedback(void);
+  void actionPublishFeedback(void);
 
   // some helper method overloads
   template <typename Svc_T>
@@ -198,13 +191,9 @@ void MissionManager::onInit() {
 
   sc_mission_validation_ = nh_.serviceClient<mrs_msgs::ValidateReferenceList>("svc/mission_validation");
   ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/mission_validation\' -> \'%s\'", sc_mission_validation_.getService().c_str());
-  
+
   sc_trajectory_reference_ = nh_.serviceClient<mrs_msgs::TrajectoryReferenceSrv>("svc/trajectory_reference_out");
   ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/trajectory_reference_out\' -> \'%s\'", sc_trajectory_reference_.getService().c_str());
-
-  sc_transform_reference_ = nh_.serviceClient<mrs_msgs::TransformReferenceSrv>("svc/transform_reference");
-  ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/transform_reference\' -> \'%s\'", sc_transform_reference_.getService().c_str());
-
 
   // | --------------------- service servers -------------------- |
 
@@ -222,13 +211,6 @@ void MissionManager::onInit() {
   mission_manager_server_ptr_->registerGoalCallback(boost::bind(&MissionManager::actionCallbackGoal, this));
   mission_manager_server_ptr_->registerPreemptCallback(boost::bind(&MissionManager::actionCallbackPreempt, this));
   mission_manager_server_ptr_->start();
-
-
-  // | --------------------- tf transformer --------------------- |
-
-  transformer_ = std::make_shared<mrs_lib::Transformer>(nh_, "TrajectoryGeneration");
-  transformer_->setDefaultPrefix(robot_name_);
-  transformer_->retryLookupNewest(true);
 
   // | --------------------- finish the init -------------------- |
 
@@ -614,16 +596,16 @@ MissionManager::result_t MissionManager::actionGoalValidation(const ActionServer
 
   msg_path.header.frame_id = frame_id;
 
-  const auto result = validateMissionSrv (msg_path);   
+  const auto result = validateMissionSrv(msg_path);
 
-  if(!result.success){
-    ROS_WARN_STREAM("Trajectory points outside of safety area!"); 
-    return {false, result.message}; 
+  if (!result.success) {
+    ROS_WARN_STREAM("Trajectory points outside of safety area!");
+    return {false, result.message};
   }
 
   else {
 
-    ROS_INFO_STREAM("Valid trajectory"); 
+    ROS_INFO_STREAM("Valid trajectory");
     return {result.success, result.message};
   }
 }
@@ -635,40 +617,35 @@ MissionManager::result_t MissionManager::actionGoalValidation(const ActionServer
 MissionManager::result_t MissionManager::validateMissionSrv(const mrs_msgs::Path msg) {
 
   /* Generation of trajectory */
-  mrs_msgs::GetPathSrv getPathSrv;
+  mrs_msgs::GetPathSrv            getPathSrv;
   mrs_msgs::ValidateReferenceList validateReferenceSrv;
 
   getPathSrv.request.path = msg;
-  if(sc_get_path_.call(getPathSrv)){
-      if(getPathSrv.response.success){
+  if (sc_get_path_.call(getPathSrv)) {
+    if (getPathSrv.response.success) {
       ROS_INFO_STREAM("Called service \"" << sc_get_path_.getService() << "\" with response \"" << getPathSrv.response.message << "\".");
-      }
-      else {
+    } else {
       ROS_INFO_STREAM("Failed calling service \"" << sc_get_path_.getService() << "\" with response \"" << getPathSrv.response.message << "\".");
       return {false, getPathSrv.response.message};
-      }
+    }
   }
 
   /* Validation of trajectory within safety area */
   mrs_msgs::TrajectoryReference trajectory = getPathSrv.response.trajectory;
-  mrs_msgs::ReferenceList waypointList;
-  waypointList.header = trajectory.header;
-  waypointList.list  = trajectory.points;
+  mrs_msgs::ReferenceList       waypointList;
+  waypointList.header               = trajectory.header;
+  waypointList.list                 = trajectory.points;
   validateReferenceSrv.request.list = waypointList;
 
-  if(sc_mission_validation_.call(validateReferenceSrv)){
+  if (sc_mission_validation_.call(validateReferenceSrv)) {
 
-    bool all_success = std::all_of(validateReferenceSrv.response.success.begin(),validateReferenceSrv.response.success.end(), [](bool v) {return v; });
-    if(all_success){
-
-    ROS_INFO_STREAM("Called service \"" << sc_mission_validation_.getService() << "\" with response \"" << validateReferenceSrv.response.message << "\".");
-    }
-    else {
-
-    ROS_WARN_STREAM("Trajectory points outside of safety area, validation from  calling service \"" << sc_mission_validation_.getService() << "\" with response \"" << validateReferenceSrv.response.message << "\".");
-
+    bool all_success = std::all_of(validateReferenceSrv.response.success.begin(), validateReferenceSrv.response.success.end(), [](bool v) { return v; });
+    if (all_success) {
+      ROS_INFO_STREAM("Called service \"" << sc_mission_validation_.getService() << "\" with response \"" << validateReferenceSrv.response.message << "\".");
+    } else {
+      ROS_WARN_STREAM("Trajectory points outside of safety area, validation from  calling service \""
+                      << sc_mission_validation_.getService() << "\" with response \"" << validateReferenceSrv.response.message << "\".");
       return {false, validateReferenceSrv.response.message};
-
     }
   }
   /* Sending generated trajectory to control manager */
@@ -677,63 +654,18 @@ MissionManager::result_t MissionManager::validateMissionSrv(const mrs_msgs::Path
 
   bool res = sc_trajectory_reference_.call(srv);
 
-    if (res){
-      if(!srv.response.success){
-        ROS_WARN("Service call for trajectory_reference returned '%s'", srv.response.message.c_str());
-        return {false, srv.response.message};
-      }
+  if (res) {
+    if (!srv.response.success) {
+      ROS_WARN("Service call for trajectory_reference returned '%s'", srv.response.message.c_str());
+      return {false, srv.response.message};
     }
-    else {
-      ROS_ERROR("Service call for trajectory_reference failed!");
-    }
-  
+  } else {
+    ROS_ERROR("Service call for trajectory_reference failed!");
+  }
+
   return {true, srv.response.message};
-} 
+}
 //}
-
-/* transformPath() //{ */
-
-mrs_msgs::Path MissionManager::transformPath(const mrs_msgs::Path& path_in, const std::string& target_frame) {
-
-  // if we transform to the current control frame, which is in fact the same frame as the tracker_cmd is in
-  if (target_frame == path_in.header.frame_id) {
-    return path_in;
-  }
-
-  // find the transformation
-  auto tf = transformer_->getTransform(path_in.header.frame_id, target_frame, path_in.header.stamp);
-
-  if (!tf) {
-    ROS_ERROR("[TrajectoryGeneration]: could not find transform from '%s' to '%s' in time %f", path_in.header.frame_id.c_str(), target_frame.c_str(),
-              path_in.header.stamp.toSec());
-    return {};
-  }
-
-  mrs_msgs::Path path_out = path_in;
-
-  path_out.header.stamp    = tf.value().header.stamp;
-  path_out.header.frame_id = transformer_->frame_to(tf.value());
-
-  for (size_t i = 0; i < path_in.points.size(); i++) {
-
-    mrs_msgs::ReferenceStamped waypoint;
-
-    waypoint.header    = path_in.header;
-    waypoint.reference = path_in.points.at(i);
-
-    if (auto ret = transformer_->transform(waypoint, tf.value())) {
-
-      path_out.points.at(i) = ret.value().reference;
-
-    } else {
-      return {};
-    }
-  }
-
-  return path_out;
-} 
-//}
-
 
 /* updateMissionState() //{ */
 
