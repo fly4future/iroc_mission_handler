@@ -18,6 +18,7 @@
 #include <mrs_msgs/ValidateReferenceList.h>
 #include <mrs_msgs/TrajectoryReference.h>
 #include <mrs_msgs/TrajectoryReferenceSrv.h>
+#include <mrs_msgs/TransformReferenceSrv.h>
 #include <mrs_lib/transformer.h>
 
 #include <atomic>
@@ -77,6 +78,7 @@ private:
   ros::ServiceClient sc_mission_start_;
   ros::ServiceClient sc_mission_validation_;
   ros::ServiceClient sc_trajectory_reference_;
+  ros::ServiceClient sc_transform_reference_;
   ros::ServiceServer ss_activation_;
   bool               missionActivationServiceCallback(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
 
@@ -199,6 +201,10 @@ void MissionManager::onInit() {
   
   sc_trajectory_reference_ = nh_.serviceClient<mrs_msgs::TrajectoryReferenceSrv>("svc/trajectory_reference_out");
   ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/trajectory_reference_out\' -> \'%s\'", sc_trajectory_reference_.getService().c_str());
+
+  sc_transform_reference_ = nh_.serviceClient<mrs_msgs::TransformReferenceSrv>("svc/transform_reference");
+  ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/transform_reference\' -> \'%s\'", sc_transform_reference_.getService().c_str());
+
 
   // | --------------------- service servers -------------------- |
 
@@ -616,10 +622,8 @@ MissionManager::result_t MissionManager::actionGoalValidation(const ActionServer
   }
 
   else {
-    /* mrs_msgs::PathSrv::Request srv_path_request; */
-    /* srv_path_request.path = msg_path; */
-    /* auto resp = callService<mrs_msgs::PathSrv> (sc_path_, srv_path_request); */
-    
+
+    ROS_INFO_STREAM("Valid trajectory"); 
     return {result.success, result.message};
   }
 }
@@ -630,28 +634,27 @@ MissionManager::result_t MissionManager::actionGoalValidation(const ActionServer
 
 MissionManager::result_t MissionManager::validateMissionSrv(const mrs_msgs::Path msg) {
 
-  //Validate if trajectory within safety area 
-  mrs_msgs::GetPathSrv getPathsrv;
+  /* Generation of trajectory */
+  mrs_msgs::GetPathSrv getPathSrv;
   mrs_msgs::ValidateReferenceList validateReferenceSrv;
 
-  //auto transformed_path = transformPath(msg, "");
-
-  getPathsrv.request.path = msg;
-
-  if(sc_get_path_.call(getPathsrv)){
-      if(getPathsrv.response.success){
-      ROS_INFO_STREAM("Called service \"" << sc_get_path_.getService() << "\" with response \"" << getPathsrv.response.message << "\".");
+  getPathSrv.request.path = msg;
+  if(sc_get_path_.call(getPathSrv)){
+      if(getPathSrv.response.success){
+      ROS_INFO_STREAM("Called service \"" << sc_get_path_.getService() << "\" with response \"" << getPathSrv.response.message << "\".");
       }
       else {
-      ROS_INFO_STREAM("Failed calling service \"" << sc_get_path_.getService() << "\" with response \"" << getPathsrv.response.message << "\".");
-      return {false, getPathsrv.response.message};
+      ROS_INFO_STREAM("Failed calling service \"" << sc_get_path_.getService() << "\" with response \"" << getPathSrv.response.message << "\".");
+      return {false, getPathSrv.response.message};
       }
   }
 
-  mrs_msgs::TrajectoryReference trajectory = getPathsrv.response.trajectory;
-  mrs_msgs::ReferenceList referenceList;
-  referenceList.list  = trajectory.points;
-  validateReferenceSrv.request.list = referenceList;
+  /* Validation of trajectory within safety area */
+  mrs_msgs::TrajectoryReference trajectory = getPathSrv.response.trajectory;
+  mrs_msgs::ReferenceList waypointList;
+  waypointList.header = trajectory.header;
+  waypointList.list  = trajectory.points;
+  validateReferenceSrv.request.list = waypointList;
 
   if(sc_mission_validation_.call(validateReferenceSrv)){
 
@@ -668,10 +671,9 @@ MissionManager::result_t MissionManager::validateMissionSrv(const mrs_msgs::Path
 
     }
   }
-
+  /* Sending generated trajectory to control manager */
   mrs_msgs::TrajectoryReferenceSrv srv;
   srv.request.trajectory = trajectory;
-
 
   bool res = sc_trajectory_reference_.call(srv);
 
@@ -683,7 +685,6 @@ MissionManager::result_t MissionManager::validateMissionSrv(const mrs_msgs::Path
     }
     else {
       ROS_ERROR("Service call for trajectory_reference failed!");
-
     }
   
   return {true, srv.response.message};
