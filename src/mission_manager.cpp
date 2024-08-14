@@ -16,11 +16,15 @@
 #include <mrs_msgs/PathSrv.h>
 #include <mrs_msgs/GetPathSrv.h>
 #include <mrs_msgs/ValidateReferenceList.h>
+#include <mrs_msgs/Reference.h>
 #include <mrs_msgs/TrajectoryReference.h>
 #include <mrs_msgs/TrajectoryReferenceSrv.h>
 #include <mrs_msgs/TransformReferenceSrv.h>
 
+#include <mrs_lib/geometry/misc.h>
+
 #include <atomic>
+#include <tuple>
 #include <mutex>
 
 #include <mrs_robot_diagnostics/parsing_functions.h>
@@ -30,6 +34,10 @@
 
 
 //}
+
+
+using vec2_t = mrs_lib::geometry::vec_t<2>;
+using vec3_t = mrs_lib::geometry::vec_t<3>;
 
 namespace mrs_mission_manager
 {
@@ -66,6 +74,7 @@ private:
   std::shared_ptr<mrs_lib::TimeoutManager> tim_mgr_;
 
   mrs_lib::SubscribeHandler<mrs_robot_diagnostics::UavState> sh_uav_state_;
+  mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics> sh_control_manager_diag_;
 
   // | ----------------------- ROS clients ---------------------- |
   ros::ServiceClient sc_takeoff_;
@@ -77,6 +86,7 @@ private:
   ros::ServiceClient sc_mission_start_;
   ros::ServiceClient sc_mission_validation_;
   ros::ServiceClient sc_trajectory_reference_;
+  ros::ServiceClient sc_transform_reference_;
   ros::ServiceServer ss_activation_;
 
   bool missionActivationServiceCallback(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
@@ -100,13 +110,28 @@ private:
   ActionServerGoal                                 action_server_goal_;
   std::recursive_mutex                             action_server_mutex_;
 
+
+  // | --------------------- mission feedback -------------------- |
+  std::vector<int> path_ids_;
+  mrs_msgs::Path path_; 
+  int _total_waypoints_;
+  int _current_idx_ = 0;
+  mrs_msgs::ReferenceStamped waypoint_;
+  mrs_msgs::ReferenceStamped current_point_;
+  const double _tolerance_ = 1e-6;
+  const double _trajectory_samping_period_ = 0.2;
+
   // | ------------------ Additional functions ------------------ |
 
   result_t actionGoalValidation(const ActionServerGoal& goal);
   result_t validateMissionSrv(const mrs_msgs::Path msg);
+  void     processMissionInfo(const mrs_msgs::TrajectoryReference trajectory, const mrs_msgs::ReferenceList waypoint_list, const mrs_msgs::Path path);
   void     updateMissionState(const mission_state_t& new_state);
+  std::tuple<bool,mrs_msgs::ReferenceStamped> transformReference(mrs_msgs::TransformReferenceSrv transformSrv);
+  double   distance(const mrs_msgs::Reference& waypoint_1, const mrs_msgs::Reference& waypoint_2);
+  void     callbackControlManagerDiag(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg);
 
-  void actionPublishFeedback(void);
+  void     actionPublishFeedback(void);
 
   // some helper method overloads
   template <typename Svc_T>
@@ -165,6 +190,8 @@ void MissionManager::onInit() {
   shopts.transport_hints    = ros::TransportHints().tcpNoDelay();
 
   sh_uav_state_ = mrs_lib::SubscribeHandler<mrs_robot_diagnostics::UavState>(shopts, "in/uav_state");
+  sh_control_manager_diag_ = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diagnostics_in",
+                                                                                            &MissionManager::callbackControlManagerDiag, this);
 
   // | --------------------- service clients -------------------- |
 
@@ -194,6 +221,9 @@ void MissionManager::onInit() {
 
   sc_trajectory_reference_ = nh_.serviceClient<mrs_msgs::TrajectoryReferenceSrv>("svc/trajectory_reference_out");
   ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/trajectory_reference_out\' -> \'%s\'", sc_trajectory_reference_.getService().c_str());
+
+  sc_transform_reference_ = nh_.serviceClient<mrs_msgs::TransformReferenceSrv>("svc/transform_reference");
+  ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/transform_reference\' -> \'%s\'", sc_transform_reference_.getService().c_str());
 
   // | --------------------- service servers -------------------- |
 
@@ -431,6 +461,47 @@ bool MissionManager::missionActivationServiceCallback(std_srvs::Trigger::Request
 
 //}
 
+// | ----------------- msg callback ---------------- |
+
+/* callbackControlManagerDiag() //{ */
+
+void MissionManager::callbackControlManagerDiag(const mrs_msgs::ControlManagerDiagnostics::ConstPtr diagnostics) {
+
+  /* do not continue if the nodelet is not initialized */
+  if (!is_initialized_) {
+    return;
+  }
+
+/*   // get the variable under the mutex */
+/*   mrs_msgs::Reference current_waypoint = mrs_lib::get_mutexed(mutex_current_waypoint_, current_waypoint_); */
+
+/*   // extract the pose part of the odometry */
+/*   geometry_msgs::Pose current_pose = mrs_lib::getPose(sh_odometry_.getMsg()); */
+
+/*   double dist = distance(current_waypoint, current_pose); */
+/*   ROS_INFO("[ExampleWaypointFlier]: Distance to waypoint: %.2f", dist); */
+
+/*   if (have_goal_ && !diagnostics->tracker_status.have_goal) { */
+/*     have_goal_ = false; */
+
+/*     if (dist < _waypoint_desired_dist_) { */
+/*       waypoint_reached_ = true; */
+/*       ROS_INFO("[ExampleWaypointFlier]: Waypoint reached."); */
+
+/*       /1* start idling at the reached waypoint *1/ */
+/*       is_idling_ = true; */
+
+/*       ros::NodeHandle nh("~"); */
+/*       timer_idling_ = nh.createTimer(ros::Duration(_waypoint_idle_time_), &ExampleWaypointFlier::timerIdling, this, */
+/*                                      true);  // the last boolean argument makes the timer run only once */
+
+/*       ROS_INFO("[ExampleWaypointFlier]: Idling for %.2f seconds.", _waypoint_idle_time_); */
+/*     } */
+/*   } */
+}
+
+//}
+
 // | ---------------------- action server callbacks --------------------- |
 
 /*  actionCallbackGoal()//{ */
@@ -577,7 +648,7 @@ MissionManager::result_t MissionManager::actionGoalValidation(const ActionServer
   msg_path.header.stamp = ros::Time::now();
   msg_path.fly_now      = false;
   msg_path.use_heading  = true;
-  // do not use the current position for plannin of the path
+  // do not use the current position for planning of the path
   msg_path.dont_prepend_current_state = false;
 
   std::string frame_id;
@@ -635,7 +706,52 @@ MissionManager::result_t MissionManager::validateMissionSrv(const mrs_msgs::Path
   mrs_msgs::ReferenceList       waypointList;
   waypointList.header               = trajectory.header;
   waypointList.list                 = trajectory.points;
+  _total_waypoints_ = msg.points.size(); 
   validateReferenceSrv.request.list = waypointList;
+  path_ = msg;
+
+  /* TEMP */
+
+/*   _total_waypoints_ = msg.points.size(); */
+
+/*   //print size of the list */
+/*   ROS_INFO_STREAM("Size of the trajectory list: " << waypointList.list.size()); */
+/*   ROS_INFO_STREAM("Size of the path points msg: " << msg.points.size()); */
+
+/*   for (size_t i = 0; i < waypointList.list.size(); i++) { */
+
+/*     current_point_.reference = msg.points.at(_current_idx_); */
+/*     waypoint_.reference = trajectory.points.at(i); */
+
+/*     double dist = distance(current_point_,waypoint_.reference); */
+
+/*     if (dist < _tolerance_){ */
+/*       ROS_INFO("Found the %d point in trajectory, with ID: %zu", _current_idx_,i); */
+/*       path_ids_.push_back(i); */
+
+/*       if(path_ids_.size() == _total_waypoints_){ */
+/*         break; */
+
+/*       } */
+
+/*       _current_idx_++; */
+/*     } */
+/*     /1* Maybe useful for debugging *1/ */
+/*     /1* ROS_INFO("Reference %zu: x=%f, y=%f, z=%f", *1/ */ 
+/*     /1*          i, *1/ */ 
+/*     /1*          waypoint_.reference.position.x, *1/ */ 
+/*     /1*          waypoint_.reference.position.y, *1/ */ 
+/*     /1*          waypoint_.reference.position.z); *1/ */
+
+/*   } */
+
+/*   for(int i=0; i < path_ids_.size(); i++){ */
+/*     ROS_INFO("Point %d with ID: %d", i, path_ids_.at(i)); */
+/*   } */
+
+  /* TEMP */
+
+  processMissionInfo(trajectory, waypointList, path_);
 
   if (sc_mission_validation_.call(validateReferenceSrv)) {
 
@@ -654,16 +770,99 @@ MissionManager::result_t MissionManager::validateMissionSrv(const mrs_msgs::Path
 
   bool res = sc_trajectory_reference_.call(srv);
 
-  if (res) {
-    if (!srv.response.success) {
-      ROS_WARN("Service call for trajectory_reference returned '%s'", srv.response.message.c_str());
-      return {false, srv.response.message};
-    }
-  } else {
-    ROS_ERROR("Service call for trajectory_reference failed!");
+  if (!srv.response.success) {
+    ROS_WARN("Service call for trajectory_reference failed,  returned '%s'", srv.response.message.c_str());
+    return {false, srv.response.message};
+  }
+  else {
+
   }
 
   return {true, srv.response.message};
+}
+//}
+
+/* processMissionInfo() //{ */
+
+void MissionManager::processMissionInfo(const mrs_msgs::TrajectoryReference trajectory, const mrs_msgs::ReferenceList waypoint_list, const mrs_msgs::Path path) {
+  //print size of the list
+  ROS_INFO_STREAM("Size of the trajectory list: " << waypoint_list.list.size());
+  ROS_INFO_STREAM("Size of the path points : " << path.points.size());
+
+  mrs_msgs::TransformReferenceSrv transformSrv_current_point;
+  mrs_msgs::TransformReferenceSrv transformSrv_waypoint;
+
+  for (size_t i = 0; i < waypoint_list.list.size(); i++) {
+
+    current_point_.reference = path.points.at(_current_idx_);
+    waypoint_.reference = trajectory.points.at(i);
+    
+    transformSrv_current_point.request.frame_id = "world_origin";
+    /* Transform reference server needs a reference stamped */
+    transformSrv_current_point.request.reference = current_point_;
+
+    transformSrv_waypoint.request.frame_id = "world_origin";
+    transformSrv_waypoint.request.reference = waypoint_;
+
+    auto [res_1, current_point_local] = transformReference(transformSrv_current_point);
+    auto [res_2, waypoint_local] = transformReference(transformSrv_waypoint);
+ 
+    double dist = distance(current_point_.reference,waypoint_.reference);
+
+
+    ROS_INFO("Distance  %f ", dist);
+
+    if (dist < _tolerance_){
+      ROS_INFO("Found the %d point in trajectory, with ID: %zu", _current_idx_,i);
+      path_ids_.push_back(i);
+
+      if(path_ids_.size() == _total_waypoints_){
+        break;
+
+      }
+
+      _current_idx_++;
+    }
+    /* Maybe useful for debugging */
+    ROS_INFO("Reference %zu: x=%f, y=%f, z=%f", 
+             i, 
+             waypoint_.reference.position.x, 
+             waypoint_.reference.position.y, 
+             waypoint_.reference.position.z);
+
+  }
+
+  for(int i=0; i < path_ids_.size(); i++){
+    ROS_INFO("Point %d with ID: %d", i, path_ids_.at(i));
+  }
+
+}
+//}
+
+/* transformReference() //{ */
+std::tuple<bool,mrs_msgs::ReferenceStamped> MissionManager::transformReference(mrs_msgs::TransformReferenceSrv transformSrv){
+  
+  mrs_msgs::ReferenceStamped waypoint_out;
+
+  if (sc_transform_reference_.call(transformSrv)){
+
+    ROS_INFO_STREAM("Called service \"" << sc_transform_reference_.getService() << "\" with response \"" << transformSrv.response.message << "\".");
+    waypoint_out = transformSrv.response.reference;
+    return std::make_tuple(true, waypoint_out);
+  }
+  else {
+    ROS_WARN_STREAM("Failed while calling service \"" << sc_transform_reference_.getService() << "\" with response \"" << transformSrv.response.message << "\".");
+    return std::make_tuple(false, waypoint_out);
+  }
+
+}
+//}
+
+/* distance() //{ */
+
+double MissionManager::distance(const mrs_msgs::Reference& waypoint_1, const mrs_msgs::Reference& waypoint_2){
+  return mrs_lib::geometry::dist(vec2_t(waypoint_1.position.x, waypoint_1.position.y),
+                                 vec2_t(waypoint_2.position.x, waypoint_2.position.y));
 }
 //}
 

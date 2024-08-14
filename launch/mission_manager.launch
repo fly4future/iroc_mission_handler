@@ -31,6 +31,7 @@
 
       <!-- Subscribers -->
       <remap from="~in/uav_state" to="state_monitor/uav_state" />
+      <remap from="~control_manager_diagnostics_in" to="control_manager/diagnostics" />
 
       <!-- Service clients -->
       <remap from="~svc/takeoff" to="uav_manager/takeoff" />
@@ -43,6 +44,7 @@
       <remap from="~svc/mission_start" to="control_manager/start_trajectory_tracking" />
       <remap from="~svc/mission_validation" to="control_manager/validate_reference_list" />
       <remap from="~svc/trajectory_reference_out" to="control_manager/trajectory_reference" />
+      <remap from="~svc/transform_reference" to="control_manager/transform_reference" />
 
       <!-- Service servers -->
       <remap from="~svc_server/mission_activation" to="~mission_activation" />
