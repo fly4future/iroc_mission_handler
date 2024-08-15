@@ -68,6 +68,7 @@ private:
   std::string robot_name_;
 
   std::atomic_bool is_initialized_  = false;
+  std::atomic_bool mission_info_processed_  = false;
   std::atomic_bool action_finished_ = false;
 
   // | ---------------------- ROS subscribers --------------------- |
@@ -116,7 +117,7 @@ private:
   mrs_msgs::Path                    path_; 
   int                               _total_waypoints_;
   int                               _current_idx_ = 0;
-  int                               idx_current_waypoint_;
+  int                               current_trajectory_idx;
   mrs_msgs::ReferenceStamped        waypoint_;
   mrs_msgs::ReferenceStamped        waypoint_cf_;
   mrs_msgs::ReferenceStamped        current_point_;
@@ -476,6 +477,12 @@ void MissionManager::callbackControlManagerDiag(const mrs_msgs::ControlManagerDi
   if (!is_initialized_) {
     return;
   }
+  /* /1* do not continue if there is no mission  *1/ */
+  /* if ( mission_state_.value() != mission_state_t::IDLE)_ { */
+  /*   return; */
+  /* } */
+
+
 
 /*   // get the variable under the mutex */
 /*   mrs_msgs::Reference current_waypoint = mrs_lib::get_mutexed(mutex_current_waypoint_, current_waypoint_); */
@@ -749,6 +756,10 @@ MissionManager::result_t MissionManager::validateMissionSrv(const mrs_msgs::Path
 /* processMissionInfo() //{ */
 
 void MissionManager::processMissionInfo(const mrs_msgs::TrajectoryReference trajectory, const mrs_msgs::ReferenceList waypoint_list, const mrs_msgs::Path path) {
+  
+  _current_idx_= 0;
+  path_ids_.clear();
+
   //print size of the list
   ROS_INFO_STREAM("Size of the trajectory list: " << waypoint_list.list.size());
   ROS_INFO_STREAM("Size of the path points : " << path.points.size());
@@ -813,6 +824,8 @@ void MissionManager::processMissionInfo(const mrs_msgs::TrajectoryReference traj
   for(int i=0; i < path_ids_.size(); i++){
     ROS_INFO("Point %d with ID: %d", i, path_ids_.at(i));
   }
+
+  mission_info_processed_ = true;
 
 }
 //}
