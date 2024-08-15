@@ -14,6 +14,11 @@
 #include <std_srvs/SetBool.h>
 #include <std_srvs/Trigger.h>
 #include <mrs_msgs/PathSrv.h>
+#include <mrs_msgs/GetPathSrv.h>
+#include <mrs_msgs/ValidateReferenceList.h>
+#include <mrs_msgs/TrajectoryReference.h>
+#include <mrs_msgs/TrajectoryReferenceSrv.h>
+#include <mrs_msgs/TransformReferenceSrv.h>
 
 #include <atomic>
 #include <mutex>
@@ -34,6 +39,7 @@ namespace mrs_mission_manager
 class MissionManager : public nodelet::Nodelet {
 public:
   virtual void onInit();
+
 
 private:
   ros::NodeHandle nh_;
@@ -65,12 +71,15 @@ private:
   ros::ServiceClient sc_takeoff_;
   ros::ServiceClient sc_land_;
   ros::ServiceClient sc_path_;
+  ros::ServiceClient sc_get_path_;
   ros::ServiceClient sc_hover_;
   ros::ServiceClient sc_mission_flying_to_start_;
   ros::ServiceClient sc_mission_start_;
-
+  ros::ServiceClient sc_mission_validation_;
+  ros::ServiceClient sc_trajectory_reference_;
   ros::ServiceServer ss_activation_;
-  bool               missionActivationServiceCallback(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
+
+  bool missionActivationServiceCallback(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
 
   // | ----------------------- main timer ----------------------- |
 
@@ -94,8 +103,10 @@ private:
   // | ------------------ Additional functions ------------------ |
 
   result_t actionGoalValidation(const ActionServerGoal& goal);
+  result_t validateMissionSrv(const mrs_msgs::Path msg);
   void     updateMissionState(const mission_state_t& new_state);
-  void     actionPublishFeedback(void);
+
+  void actionPublishFeedback(void);
 
   // some helper method overloads
   template <typename Svc_T>
@@ -166,6 +177,9 @@ void MissionManager::onInit() {
   sc_path_ = nh_.serviceClient<mrs_msgs::PathSrv>("svc/path");
   ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/path\' -> \'%s\'", sc_path_.getService().c_str());
 
+  sc_get_path_ = nh_.serviceClient<mrs_msgs::GetPathSrv>("svc/get_path");
+  ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/get_path\' -> \'%s\'", sc_get_path_.getService().c_str());
+
   sc_hover_ = nh_.serviceClient<std_srvs::Trigger>("svc/hover");
   ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/hover\' -> \'%s\'", sc_hover_.getService().c_str());
 
@@ -174,6 +188,12 @@ void MissionManager::onInit() {
 
   sc_mission_start_ = nh_.serviceClient<std_srvs::Trigger>("svc/mission_start");
   ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/mission_start\' -> \'%s\'", sc_mission_start_.getService().c_str());
+
+  sc_mission_validation_ = nh_.serviceClient<mrs_msgs::ValidateReferenceList>("svc/mission_validation");
+  ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/mission_validation\' -> \'%s\'", sc_mission_validation_.getService().c_str());
+
+  sc_trajectory_reference_ = nh_.serviceClient<mrs_msgs::TrajectoryReferenceSrv>("svc/trajectory_reference_out");
+  ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/trajectory_reference_out\' -> \'%s\'", sc_trajectory_reference_.getService().c_str());
 
   // | --------------------- service servers -------------------- |
 
@@ -576,12 +596,75 @@ MissionManager::result_t MissionManager::actionGoalValidation(const ActionServer
 
   msg_path.header.frame_id = frame_id;
 
-  mrs_msgs::PathSrv::Request srv_path_request;
-  srv_path_request.path = msg_path;
-  auto resp             = callService<mrs_msgs::PathSrv>(sc_path_, srv_path_request);
-  return {resp.success, resp.message};
+  const auto result = validateMissionSrv(msg_path);
+
+  if (!result.success) {
+    ROS_WARN_STREAM("Trajectory points outside of safety area!");
+    return {false, result.message};
+  }
+
+  else {
+
+    ROS_INFO_STREAM("Valid trajectory");
+    return {result.success, result.message};
+  }
 }
 
+//}
+
+/* validateMissionSrv() //{ */
+
+MissionManager::result_t MissionManager::validateMissionSrv(const mrs_msgs::Path msg) {
+
+  /* Generation of trajectory */
+  mrs_msgs::GetPathSrv            getPathSrv;
+  mrs_msgs::ValidateReferenceList validateReferenceSrv;
+
+  getPathSrv.request.path = msg;
+  if (sc_get_path_.call(getPathSrv)) {
+    if (getPathSrv.response.success) {
+      ROS_INFO_STREAM("Called service \"" << sc_get_path_.getService() << "\" with response \"" << getPathSrv.response.message << "\".");
+    } else {
+      ROS_INFO_STREAM("Failed calling service \"" << sc_get_path_.getService() << "\" with response \"" << getPathSrv.response.message << "\".");
+      return {false, getPathSrv.response.message};
+    }
+  }
+
+  /* Validation of trajectory within safety area */
+  mrs_msgs::TrajectoryReference trajectory = getPathSrv.response.trajectory;
+  mrs_msgs::ReferenceList       waypointList;
+  waypointList.header               = trajectory.header;
+  waypointList.list                 = trajectory.points;
+  validateReferenceSrv.request.list = waypointList;
+
+  if (sc_mission_validation_.call(validateReferenceSrv)) {
+
+    bool all_success = std::all_of(validateReferenceSrv.response.success.begin(), validateReferenceSrv.response.success.end(), [](bool v) { return v; });
+    if (all_success) {
+      ROS_INFO_STREAM("Called service \"" << sc_mission_validation_.getService() << "\" with response \"" << validateReferenceSrv.response.message << "\".");
+    } else {
+      ROS_WARN_STREAM("Trajectory points outside of safety area, validation from  calling service \""
+                      << sc_mission_validation_.getService() << "\" with response \"" << validateReferenceSrv.response.message << "\".");
+      return {false, validateReferenceSrv.response.message};
+    }
+  }
+  /* Sending generated trajectory to control manager */
+  mrs_msgs::TrajectoryReferenceSrv srv;
+  srv.request.trajectory = trajectory;
+
+  bool res = sc_trajectory_reference_.call(srv);
+
+  if (res) {
+    if (!srv.response.success) {
+      ROS_WARN("Service call for trajectory_reference returned '%s'", srv.response.message.c_str());
+      return {false, srv.response.message};
+    }
+  } else {
+    ROS_ERROR("Service call for trajectory_reference failed!");
+  }
+
+  return {true, srv.response.message};
+}
 //}
 
 /* updateMissionState() //{ */
