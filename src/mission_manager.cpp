@@ -69,6 +69,7 @@ private:
 
   std::atomic_bool is_initialized_  = false;
   std::atomic_bool mission_info_processed_  = false;
+  std::atomic_bool finished_tracking_  = false;
   std::atomic_bool action_finished_ = false;
 
   // | ---------------------- ROS subscribers --------------------- |
@@ -117,7 +118,9 @@ private:
   mrs_msgs::Path                    path_; 
   int                               _total_waypoints_;
   int                               _current_idx_ = 0;
-  int                               current_trajectory_idx;
+  int                               goal_idx_ = 0;
+  int                               current_trajectory_idx_;
+  int                               current_goal_;
   mrs_msgs::ReferenceStamped        waypoint_;
   mrs_msgs::ReferenceStamped        waypoint_cf_;
   mrs_msgs::ReferenceStamped        current_point_;
@@ -349,7 +352,7 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
           switch (action_server_goal_.terminal_action) {
 
             case ActionServerGoal::TERMINAL_ACTION_LAND: {
-              ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Executiong terminal action. Calling land");
+              ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Executing terminal action. Calling land");
               auto resp = callService<std_srvs::Trigger>(sc_land_);
               if (!resp.success) {
                 ROS_ERROR_THROTTLE(1.0, "[MissionManager]: Failed to call land service.");
@@ -477,12 +480,31 @@ void MissionManager::callbackControlManagerDiag(const mrs_msgs::ControlManagerDi
   if (!is_initialized_) {
     return;
   }
-  /* /1* do not continue if there is no mission  *1/ */
-  /* if ( mission_state_.value() != mission_state_t::IDLE)_ { */
-  /*   return; */
-  /* } */
 
+  const bool not_loaded_or_executing = mission_state_.value() != mission_state_t::MISSION_LOADED || mission_state_.value() != mission_state_t::EXECUTING;
 
+  /* do not continue if there is no mission ready/ongoing or information for feedback is not ready */
+  if (not_loaded_or_executing && !mission_info_processed_) {
+    return;
+  }
+
+  finished_tracking_ = false;
+
+  current_trajectory_idx_ = diagnostics->tracker_status.trajectory_idx;
+  current_goal_ = path_ids_.at(goal_idx_); 
+
+  if (current_goal_ == current_trajectory_idx_){
+
+    ROS_INFO("[MissionManager]: Reached %d waypoint!", goal_idx_ + 1);
+    goal_idx_++;
+
+    if(goal_idx_ == _total_waypoints_){
+      ROS_INFO("[MissionManager]: Reached last point");
+      goal_idx_=0;
+      finished_tracking_ = true;
+
+    }
+  }
 
 /*   // get the variable under the mutex */
 /*   mrs_msgs::Reference current_waypoint = mrs_lib::get_mutexed(mutex_current_waypoint_, current_waypoint_); */
@@ -757,6 +779,7 @@ MissionManager::result_t MissionManager::validateMissionSrv(const mrs_msgs::Path
 
 void MissionManager::processMissionInfo(const mrs_msgs::TrajectoryReference trajectory, const mrs_msgs::ReferenceList waypoint_list, const mrs_msgs::Path path) {
   
+  mission_info_processed_ = false;
   _current_idx_= 0;
   path_ids_.clear();
 
