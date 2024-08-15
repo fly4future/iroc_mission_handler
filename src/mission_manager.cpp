@@ -112,13 +112,18 @@ private:
 
 
   // | --------------------- mission feedback -------------------- |
-  std::vector<int> path_ids_;
-  mrs_msgs::Path path_; 
-  int _total_waypoints_;
-  int _current_idx_ = 0;
-  mrs_msgs::ReferenceStamped waypoint_;
-  mrs_msgs::ReferenceStamped current_point_;
-  const double _tolerance_ = 1e-6;
+  std::vector<int>                  path_ids_;
+  mrs_msgs::Path                    path_; 
+  int                               _total_waypoints_;
+  int                               _current_idx_ = 0;
+  int                               idx_current_waypoint_;
+  mrs_msgs::ReferenceStamped        waypoint_;
+  mrs_msgs::ReferenceStamped        waypoint_cf_;
+  mrs_msgs::ReferenceStamped        current_point_;
+  mrs_msgs::ReferenceStamped        current_point_cf_;
+  mrs_msgs::TrajectoryReference     transformed_trajectory_; 
+
+  const double _tolerance_ = 0.1;
   const double _trajectory_samping_period_ = 0.2;
 
   // | ------------------ Additional functions ------------------ |
@@ -710,47 +715,6 @@ MissionManager::result_t MissionManager::validateMissionSrv(const mrs_msgs::Path
   validateReferenceSrv.request.list = waypointList;
   path_ = msg;
 
-  /* TEMP */
-
-/*   _total_waypoints_ = msg.points.size(); */
-
-/*   //print size of the list */
-/*   ROS_INFO_STREAM("Size of the trajectory list: " << waypointList.list.size()); */
-/*   ROS_INFO_STREAM("Size of the path points msg: " << msg.points.size()); */
-
-/*   for (size_t i = 0; i < waypointList.list.size(); i++) { */
-
-/*     current_point_.reference = msg.points.at(_current_idx_); */
-/*     waypoint_.reference = trajectory.points.at(i); */
-
-/*     double dist = distance(current_point_,waypoint_.reference); */
-
-/*     if (dist < _tolerance_){ */
-/*       ROS_INFO("Found the %d point in trajectory, with ID: %zu", _current_idx_,i); */
-/*       path_ids_.push_back(i); */
-
-/*       if(path_ids_.size() == _total_waypoints_){ */
-/*         break; */
-
-/*       } */
-
-/*       _current_idx_++; */
-/*     } */
-/*     /1* Maybe useful for debugging *1/ */
-/*     /1* ROS_INFO("Reference %zu: x=%f, y=%f, z=%f", *1/ */ 
-/*     /1*          i, *1/ */ 
-/*     /1*          waypoint_.reference.position.x, *1/ */ 
-/*     /1*          waypoint_.reference.position.y, *1/ */ 
-/*     /1*          waypoint_.reference.position.z); *1/ */
-
-/*   } */
-
-/*   for(int i=0; i < path_ids_.size(); i++){ */
-/*     ROS_INFO("Point %d with ID: %d", i, path_ids_.at(i)); */
-/*   } */
-
-  /* TEMP */
-
   processMissionInfo(trajectory, waypointList, path_);
 
   if (sc_mission_validation_.call(validateReferenceSrv)) {
@@ -791,26 +755,36 @@ void MissionManager::processMissionInfo(const mrs_msgs::TrajectoryReference traj
 
   mrs_msgs::TransformReferenceSrv transformSrv_current_point;
   mrs_msgs::TransformReferenceSrv transformSrv_waypoint;
+  transformed_trajectory_.header.stamp = ros::Time::now();
+
+  bool new_current_point = true; 
 
   for (size_t i = 0; i < waypoint_list.list.size(); i++) {
 
-    current_point_.reference = path.points.at(_current_idx_);
-    waypoint_.reference = trajectory.points.at(i);
-    
-    transformSrv_current_point.request.frame_id = "world_origin";
     /* Transform reference server needs a reference stamped */
-    transformSrv_current_point.request.reference = current_point_;
+    if(new_current_point){
+      current_point_.header = trajectory.header;
+      current_point_.reference = path.points.at(_current_idx_);
+      transformSrv_current_point.request.frame_id = "";
+      transformSrv_current_point.request.reference = current_point_;
 
-    transformSrv_waypoint.request.frame_id = "world_origin";
+      auto [res, transformed_current_point] = transformReference(transformSrv_current_point);
+      current_point_cf_ = transformed_current_point;
+      new_current_point = false;
+    }
+    
+    waypoint_.header = trajectory.header;
+    waypoint_.reference = trajectory.points.at(i);
+   
+    transformSrv_waypoint.request.frame_id = "";
     transformSrv_waypoint.request.reference = waypoint_;
 
-    auto [res_1, current_point_local] = transformReference(transformSrv_current_point);
-    auto [res_2, waypoint_local] = transformReference(transformSrv_waypoint);
- 
-    double dist = distance(current_point_.reference,waypoint_.reference);
+    auto [res, transformed_waypoint] = transformReference(transformSrv_waypoint);
 
+    waypoint_cf_ = transformed_waypoint;
 
-    ROS_INFO("Distance  %f ", dist);
+    transformed_trajectory_.points.push_back(transformed_waypoint.reference);
+    double dist = distance(current_point_cf_.reference, waypoint_cf_.reference);
 
     if (dist < _tolerance_){
       ROS_INFO("Found the %d point in trajectory, with ID: %zu", _current_idx_,i);
@@ -822,15 +796,19 @@ void MissionManager::processMissionInfo(const mrs_msgs::TrajectoryReference traj
       }
 
       _current_idx_++;
+      new_current_point = true;
     }
+
     /* Maybe useful for debugging */
-    ROS_INFO("Reference %zu: x=%f, y=%f, z=%f", 
-             i, 
-             waypoint_.reference.position.x, 
-             waypoint_.reference.position.y, 
-             waypoint_.reference.position.z);
+    /* ROS_INFO("Reference after transformation %zu: x=%f, y=%f, z=%f", */ 
+    /*     i, */ 
+    /*     waypoint_cf_.reference.position.x, */ 
+    /*     waypoint_cf_.reference.position.y, */ 
+    /*     waypoint_cf_.reference.position.z); */
 
   }
+
+  transformed_trajectory_.header.frame_id = waypoint_cf_.header.frame_id;
 
   for(int i=0; i < path_ids_.size(); i++){
     ROS_INFO("Point %d with ID: %d", i, path_ids_.at(i));
@@ -846,7 +824,7 @@ std::tuple<bool,mrs_msgs::ReferenceStamped> MissionManager::transformReference(m
 
   if (sc_transform_reference_.call(transformSrv)){
 
-    ROS_INFO_STREAM("Called service \"" << sc_transform_reference_.getService() << "\" with response \"" << transformSrv.response.message << "\".");
+    /* ROS_INFO_STREAM("Called service \"" << sc_transform_reference_.getService() << "\" with response \"" << transformSrv.response.message << "\"."); */
     waypoint_out = transformSrv.response.reference;
     return std::make_tuple(true, waypoint_out);
   }
@@ -861,8 +839,8 @@ std::tuple<bool,mrs_msgs::ReferenceStamped> MissionManager::transformReference(m
 /* distance() //{ */
 
 double MissionManager::distance(const mrs_msgs::Reference& waypoint_1, const mrs_msgs::Reference& waypoint_2){
-  return mrs_lib::geometry::dist(vec2_t(waypoint_1.position.x, waypoint_1.position.y),
-                                 vec2_t(waypoint_2.position.x, waypoint_2.position.y));
+  return mrs_lib::geometry::dist(vec3_t(waypoint_1.position.x, waypoint_1.position.y,waypoint_1.position.z),
+                                 vec3_t(waypoint_2.position.x, waypoint_2.position.y,waypoint_2.position.z));
 }
 //}
 
