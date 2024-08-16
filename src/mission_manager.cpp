@@ -111,6 +111,7 @@ private:
   typedef mrs_mission_manager::waypointMissionGoal ActionServerGoal;
   ActionServerGoal                                 action_server_goal_;
   std::recursive_mutex                             action_server_mutex_;
+  std::recursive_mutex                             mission_informaton_mutex;
 
 
   // | --------------------- mission feedback -------------------- |
@@ -120,12 +121,18 @@ private:
   int                               _current_idx_ = 0;
   int                               goal_idx_ = 0;
   int                               current_trajectory_idx_;
+  int                               trajectory_length_;
   int                               current_goal_;
   mrs_msgs::ReferenceStamped        waypoint_;
   mrs_msgs::ReferenceStamped        waypoint_cf_;
   mrs_msgs::ReferenceStamped        current_point_;
   mrs_msgs::ReferenceStamped        current_point_cf_;
   mrs_msgs::TrajectoryReference     transformed_trajectory_; 
+
+  double                            mission_progress_;
+  double                            distance_to_finish_;
+  double                            goal_progress_;
+  double                            distance_to_goal_;
 
   const double _tolerance_ = 0.1;
   const double _trajectory_samping_period_ = 0.2;
@@ -476,35 +483,99 @@ bool MissionManager::missionActivationServiceCallback(std_srvs::Trigger::Request
 
 void MissionManager::callbackControlManagerDiag(const mrs_msgs::ControlManagerDiagnostics::ConstPtr diagnostics) {
 
+  std::scoped_lock lock(mission_informaton_mutex);
+
   /* do not continue if the nodelet is not initialized */
   if (!is_initialized_) {
     return;
   }
 
-  const bool not_loaded_or_executing = mission_state_.value() != mission_state_t::MISSION_LOADED || mission_state_.value() != mission_state_t::EXECUTING;
+/*   const bool not_loaded_or_executing = mission_state_.value() != mission_state_t::MISSION_LOADED || mission_state_.value() != mission_state_t::EXECUTING; */
 
-  /* do not continue if there is no mission ready/ongoing or information for feedback is not ready */
-  if (not_loaded_or_executing && !mission_info_processed_) {
-    return;
+/*   /1* do not continue if there is no mission ready/ongoing or information for feedback is not ready *1/ */
+/*   if (not_loaded_or_executing && !mission_info_processed_) { */
+/*     return; */
+/*   } */
+
+  bool have_goal = diagnostics->tracker_status.have_goal;
+
+  if (!have_goal || !mission_info_processed_){
+   goal_idx_ = 0;
+   distance_to_finish_ = 0.0;
+   mission_progress_ = 0.0;
+
+   return;
   }
 
-  finished_tracking_ = false;
-
+  ROS_INFO("[MissionManager]: Current goal idx: %d", goal_idx_);
+  
   current_trajectory_idx_ = diagnostics->tracker_status.trajectory_idx;
+  trajectory_length_ = diagnostics->tracker_status.trajectory_length;
   current_goal_ = path_ids_.at(goal_idx_); 
+  
+  ROS_INFO("[MissionManager]: Current trajectory idx: %d", current_trajectory_idx_);
+  ROS_INFO("[MissionManager]: Current trajectory length: %d", trajectory_length_);
+
+  /* Distance to goal */
+  ROS_INFO("[MissionManager]: Transformed trajectory points size %zu", transformed_trajectory_.points.size());
+  mrs_msgs::Reference current_position = transformed_trajectory_.points.at(current_trajectory_idx_);
+  mrs_msgs::Reference last_position = transformed_trajectory_.points.back();
+
+/*   ROS_INFO("Current Position : x=%f, y=%f, z=%f", */ 
+
+/*       current_position.position.x, */ 
+/*       current_position.position.y, */
+/*       current_position.position.z); */
+
+/*   ROS_INFO("Last Position : x=%f, y=%f, z=%f", */ 
+
+/*       last_position.position.x, */ 
+/*       last_position.position.y, */
+/*       last_position.position.z); */
+
+   /* Restart as will recalculate based on current trajectory idx */
+   distance_to_finish_ = 0.0;
+
+  for(size_t i = goal_idx_; i < path_ids_.size(); i++){
+
+    mrs_msgs::Reference current_position = transformed_trajectory_.points.at(current_trajectory_idx_);
+    int next_closest_goal_idx = path_ids_.at(i);
+    mrs_msgs::Reference next_closest_goal = transformed_trajectory_.points.at(next_closest_goal_idx);
+
+    auto dist = distance (current_position, next_closest_goal);
+    distance_to_finish_+= dist;
+
+  }
+
+  if ( trajectory_length_ > 0 ){
+
+    ROS_INFO("[MissionManager]: Current trajectory idx: %d ", current_trajectory_idx_ );
+    ROS_INFO("[MissionManager]: Total trajectory : %d ", trajectory_length_ );
+    mission_progress_ = (static_cast<double>(current_trajectory_idx_) / trajectory_length_) * 100;
+  } else {
+    mission_progress_ = 0;
+  }
+
+  ROS_INFO("[MissionManager]: Distance to finish %f", distance_to_finish_);
+
+  ROS_INFO("[MissionManager]: Mission Progress %f", mission_progress_ );
 
   if (current_goal_ == current_trajectory_idx_){
-
     ROS_INFO("[MissionManager]: Reached %d waypoint!", goal_idx_ + 1);
-    goal_idx_++;
 
-    if(goal_idx_ == _total_waypoints_){
+    /* If last point in ID's from path points */
+    if(current_trajectory_idx_  == path_ids_.back()){
       ROS_INFO("[MissionManager]: Reached last point");
-      goal_idx_=0;
-      finished_tracking_ = true;
+      distance_to_finish_ = 0.0;
+      mission_progress_ = 100.0;
+    } else {
+
+    goal_idx_++;
 
     }
   }
+
+ 
 
 /*   // get the variable under the mutex */
 /*   mrs_msgs::Reference current_waypoint = mrs_lib::get_mutexed(mutex_current_waypoint_, current_waypoint_); */
@@ -778,10 +849,13 @@ MissionManager::result_t MissionManager::validateMissionSrv(const mrs_msgs::Path
 /* processMissionInfo() //{ */
 
 void MissionManager::processMissionInfo(const mrs_msgs::TrajectoryReference trajectory, const mrs_msgs::ReferenceList waypoint_list, const mrs_msgs::Path path) {
-  
+
+  std::scoped_lock lock(mission_informaton_mutex);
+
   mission_info_processed_ = false;
   _current_idx_= 0;
   path_ids_.clear();
+  transformed_trajectory_.points.clear();
 
   //print size of the list
   ROS_INFO_STREAM("Size of the trajectory list: " << waypoint_list.list.size());
@@ -794,7 +868,7 @@ void MissionManager::processMissionInfo(const mrs_msgs::TrajectoryReference traj
   bool new_current_point = true; 
 
   for (size_t i = 0; i < waypoint_list.list.size(); i++) {
-
+    /* ROS_INFO("[MissionManager]: Current index %d", _current_idx_ ); */
     /* Transform reference server needs a reference stamped */
     if(new_current_point){
       current_point_.header = trajectory.header;
@@ -806,10 +880,10 @@ void MissionManager::processMissionInfo(const mrs_msgs::TrajectoryReference traj
       current_point_cf_ = transformed_current_point;
       new_current_point = false;
     }
-    
+
     waypoint_.header = trajectory.header;
     waypoint_.reference = trajectory.points.at(i);
-   
+
     transformSrv_waypoint.request.frame_id = "";
     transformSrv_waypoint.request.reference = waypoint_;
 
@@ -820,18 +894,35 @@ void MissionManager::processMissionInfo(const mrs_msgs::TrajectoryReference traj
     transformed_trajectory_.points.push_back(transformed_waypoint.reference);
     double dist = distance(current_point_cf_.reference, waypoint_cf_.reference);
 
-    if (dist < _tolerance_){
-      ROS_INFO("Found the %d point in trajectory, with ID: %zu", _current_idx_,i);
+    if (path_ids_.size() == path.points.size()){
+        continue;
+    }
+
+    if (dist < _tolerance_ && _current_idx_ <= path.points.size() - 1 ) {
+
+      ROS_INFO("Found the %d point in trajectory, with ID: %zu", _current_idx_ , i);
       path_ids_.push_back(i);
 
-      if(path_ids_.size() == _total_waypoints_){
-        break;
-
+      if(_current_idx_ == path.points.size() -1){
+        new_current_point = false;
+      } else { 
+        _current_idx_++;
+        new_current_point = true;
       }
-
-      _current_idx_++;
-      new_current_point = true;
     }
+
+/*     /1* post-fix increment of current_idx to match path point size *1/ */
+/*     if ( _current_idx_ + 1 < path.points.size()){ */
+/*       if (dist < _tolerance_){ */
+/*         ROS_INFO("Found the %d point in trajectory, with ID: %zu", _current_idx_,i); */
+/*         path_ids_.push_back(i); */
+/*         _current_idx_++; */
+/*         new_current_point = true; */
+
+/*       } */
+/*     } */
+
+
 
     /* Maybe useful for debugging */
     /* ROS_INFO("Reference after transformation %zu: x=%f, y=%f, z=%f", */ 
