@@ -490,75 +490,63 @@ void MissionManager::callbackControlManagerDiag(const mrs_msgs::ControlManagerDi
     return;
   }
 
-/*   const bool not_loaded_or_executing = mission_state_.value() != mission_state_t::MISSION_LOADED || mission_state_.value() != mission_state_t::EXECUTING; */
-
-/*   /1* do not continue if there is no mission ready/ongoing or information for feedback is not ready *1/ */
-/*   if (not_loaded_or_executing && !mission_info_processed_) { */
-/*     return; */
-/*   } */
-
   bool have_goal = diagnostics->tracker_status.have_goal;
 
   if (!have_goal || !mission_info_processed_){
-   goal_idx_ = 0;
-   distance_to_finish_ = 0.0;
-   mission_progress_ = 0.0;
+    goal_idx_ = 0; // goal_idx_: closest goal index ID  
+    distance_to_finish_ = 0.0;
+    mission_progress_ = 0.0;
 
-   return;
+    return;
   }
 
-  ROS_INFO("[MissionManager]: Current goal idx: %d", goal_idx_);
-  
   current_trajectory_idx_ = diagnostics->tracker_status.trajectory_idx;
   trajectory_length_ = diagnostics->tracker_status.trajectory_length;
   current_goal_ = path_ids_.at(goal_idx_); 
-  
-  ROS_INFO("[MissionManager]: Current trajectory idx: %d", current_trajectory_idx_);
-  ROS_INFO("[MissionManager]: Current trajectory length: %d", trajectory_length_);
 
-  /* Distance to goal */
-  ROS_INFO("[MissionManager]: Transformed trajectory points size %zu", transformed_trajectory_.points.size());
+
+  /* Restart as will recalculate based on current trajectory idx */
+  distance_to_finish_ = 0.0;
+  int position_index;
+
+  /* Calculating distance from current position to closest goal */
   mrs_msgs::Reference current_position = transformed_trajectory_.points.at(current_trajectory_idx_);
-  mrs_msgs::Reference last_position = transformed_trajectory_.points.back();
+  int closest_goal_idx = path_ids_.at(goal_idx_);
+  mrs_msgs::Reference next_closest_goal = transformed_trajectory_.points.at(closest_goal_idx);
 
-/*   ROS_INFO("Current Position : x=%f, y=%f, z=%f", */ 
+  distance_to_goal_ = distance (current_position, next_closest_goal);
+  distance_to_finish_+= distance_to_goal_;
 
-/*       current_position.position.x, */ 
-/*       current_position.position.y, */
-/*       current_position.position.z); */
+  /* Calculating distance between remaining goal segments */
+  for(size_t i = goal_idx_ ; i < path_ids_.size() - 1; i++){
 
-/*   ROS_INFO("Last Position : x=%f, y=%f, z=%f", */ 
+    int closest_goal_idx = path_ids_.at(i);
+    mrs_msgs::Reference closest_goal_position = transformed_trajectory_.points.at(closest_goal_idx);
 
-/*       last_position.position.x, */ 
-/*       last_position.position.y, */
-/*       last_position.position.z); */
+    int next_closest_goal_idx = path_ids_.at(i + 1);
+    mrs_msgs::Reference next_closest_goal_position = transformed_trajectory_.points.at(next_closest_goal_idx);
 
-   /* Restart as will recalculate based on current trajectory idx */
-   distance_to_finish_ = 0.0;
-
-  for(size_t i = goal_idx_; i < path_ids_.size(); i++){
-
-    mrs_msgs::Reference current_position = transformed_trajectory_.points.at(current_trajectory_idx_);
-    int next_closest_goal_idx = path_ids_.at(i);
-    mrs_msgs::Reference next_closest_goal = transformed_trajectory_.points.at(next_closest_goal_idx);
-
-    auto dist = distance (current_position, next_closest_goal);
+    auto dist = distance (closest_goal_position, next_closest_goal_position);
     distance_to_finish_+= dist;
 
   }
 
-  if ( trajectory_length_ > 0 ){
+  /* Calculate goal progress */
+  if ( closest_goal_idx > 0 ){
+    int goal_progress_idx = closest_goal_idx - ( closest_goal_idx - current_trajectory_idx_);
+    goal_progress_ = (static_cast<double>(goal_progress_idx) / closest_goal_idx) * 100;
+  } else {
+    goal_progress_ = 0;
+  }
 
-    ROS_INFO("[MissionManager]: Current trajectory idx: %d ", current_trajectory_idx_ );
-    ROS_INFO("[MissionManager]: Total trajectory : %d ", trajectory_length_ );
+  /* Calculate overall mission progress */
+  if ( trajectory_length_ > 0 ){
     mission_progress_ = (static_cast<double>(current_trajectory_idx_) / trajectory_length_) * 100;
   } else {
+    ROS_WARN("[MissionManager]: Trajectory length is 0!! Check the trajectory was generated succesfully!");
     mission_progress_ = 0;
   }
 
-  ROS_INFO("[MissionManager]: Distance to finish %f", distance_to_finish_);
-
-  ROS_INFO("[MissionManager]: Mission Progress %f", mission_progress_ );
 
   if (current_goal_ == current_trajectory_idx_){
     ROS_INFO("[MissionManager]: Reached %d waypoint!", goal_idx_ + 1);
@@ -570,10 +558,16 @@ void MissionManager::callbackControlManagerDiag(const mrs_msgs::ControlManagerDi
       mission_progress_ = 100.0;
     } else {
 
-    goal_idx_++;
+      goal_idx_++; //Reached current goal, calculating for next goal
 
     }
   }
+
+  ROS_INFO("[MissionManager]: Distance to goal %f", distance_to_goal_);
+  ROS_INFO("[MissionManager]: Goal Progress %f", goal_progress_ );
+  ROS_INFO("[MissionManager]: Distance to finish %f", distance_to_finish_);
+  ROS_INFO("[MissionManager]: Mission Progress %f", mission_progress_ );
+
 
  
 
@@ -716,9 +710,16 @@ void MissionManager::actionCallbackPreempt() {
 
 void MissionManager::actionPublishFeedback() {
   std::scoped_lock lock(action_server_mutex_);
+  std::scoped_lock mission_lock(mission_informaton_mutex); //Is this right?
+
   if (mission_manager_server_ptr_->isActive()) {
     mrs_mission_manager::waypointMissionFeedback action_server_feedback;
     action_server_feedback.message = to_string(mission_state_.value());
+    action_server_feedback.goal_idx = goal_idx_;
+    action_server_feedback.distance_to_closest_goal = distance_to_goal_;
+    action_server_feedback.goal_progress = goal_progress_;
+    action_server_feedback.distance_to_finish = distance_to_finish_;
+    action_server_feedback.mission_progress = mission_progress_;
     mission_manager_server_ptr_->publishFeedback(action_server_feedback);
   }
 }
@@ -868,7 +869,6 @@ void MissionManager::processMissionInfo(const mrs_msgs::TrajectoryReference traj
   bool new_current_point = true; 
 
   for (size_t i = 0; i < waypoint_list.list.size(); i++) {
-    /* ROS_INFO("[MissionManager]: Current index %d", _current_idx_ ); */
     /* Transform reference server needs a reference stamped */
     if(new_current_point){
       current_point_.header = trajectory.header;
@@ -894,35 +894,19 @@ void MissionManager::processMissionInfo(const mrs_msgs::TrajectoryReference traj
     transformed_trajectory_.points.push_back(transformed_waypoint.reference);
     double dist = distance(current_point_cf_.reference, waypoint_cf_.reference);
 
-    if (path_ids_.size() == path.points.size()){
-        continue;
-    }
-
-    if (dist < _tolerance_ && _current_idx_ <= path.points.size() - 1 ) {
-
+    if ( dist < _tolerance_ &&  path_ids_.size() < path.points.size()){
       ROS_INFO("Found the %d point in trajectory, with ID: %zu", _current_idx_ , i);
       path_ids_.push_back(i);
 
-      if(_current_idx_ == path.points.size() -1){
+      if(++_current_idx_ == path.points.size()){
+        /* Stop processing */
         new_current_point = false;
       } else { 
-        _current_idx_++;
+        /* Continue processing */
         new_current_point = true;
       }
+
     }
-
-/*     /1* post-fix increment of current_idx to match path point size *1/ */
-/*     if ( _current_idx_ + 1 < path.points.size()){ */
-/*       if (dist < _tolerance_){ */
-/*         ROS_INFO("Found the %d point in trajectory, with ID: %zu", _current_idx_,i); */
-/*         path_ids_.push_back(i); */
-/*         _current_idx_++; */
-/*         new_current_point = true; */
-
-/*       } */
-/*     } */
-
-
 
     /* Maybe useful for debugging */
     /* ROS_INFO("Reference after transformation %zu: x=%f, y=%f, z=%f", */ 

@@ -15,5 +15,9 @@ bool success
 string message
 ---
 # Define a feedback message
-string message
-float64 total_euclidean_distance_to_goal
+string  message
+uint16  goal_idx
+float64 distance_to_finish
+float64 mission_progress
+float64 distance_to_closest_goal
+float64 goal_progress
