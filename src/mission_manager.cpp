@@ -568,35 +568,6 @@ void MissionManager::callbackControlManagerDiag(const mrs_msgs::ControlManagerDi
   ROS_INFO("[MissionManager]: Distance to finish %f", distance_to_finish_);
   ROS_INFO("[MissionManager]: Mission Progress %f", mission_progress_ );
 
-
- 
-
-/*   // get the variable under the mutex */
-/*   mrs_msgs::Reference current_waypoint = mrs_lib::get_mutexed(mutex_current_waypoint_, current_waypoint_); */
-
-/*   // extract the pose part of the odometry */
-/*   geometry_msgs::Pose current_pose = mrs_lib::getPose(sh_odometry_.getMsg()); */
-
-/*   double dist = distance(current_waypoint, current_pose); */
-/*   ROS_INFO("[ExampleWaypointFlier]: Distance to waypoint: %.2f", dist); */
-
-/*   if (have_goal_ && !diagnostics->tracker_status.have_goal) { */
-/*     have_goal_ = false; */
-
-/*     if (dist < _waypoint_desired_dist_) { */
-/*       waypoint_reached_ = true; */
-/*       ROS_INFO("[ExampleWaypointFlier]: Waypoint reached."); */
-
-/*       /1* start idling at the reached waypoint *1/ */
-/*       is_idling_ = true; */
-
-/*       ros::NodeHandle nh("~"); */
-/*       timer_idling_ = nh.createTimer(ros::Duration(_waypoint_idle_time_), &ExampleWaypointFlier::timerIdling, this, */
-/*                                      true);  // the last boolean argument makes the timer run only once */
-
-/*       ROS_INFO("[ExampleWaypointFlier]: Idling for %.2f seconds.", _waypoint_idle_time_); */
-/*     } */
-/*   } */
 }
 
 //}
