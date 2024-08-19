@@ -122,6 +122,8 @@ private:
   int                               goal_idx_ = 0;
   int                               current_trajectory_idx_;
   int                               trajectory_length_;
+  double                               finish_estimated_time_of_arrival_; //Estimated Time of Arrival (eta)
+  double                               goal_estimated_time_of_arrival_; 
   int                               current_goal_;
   mrs_msgs::ReferenceStamped        waypoint_;
   mrs_msgs::ReferenceStamped        waypoint_cf_;
@@ -533,8 +535,10 @@ void MissionManager::callbackControlManagerDiag(const mrs_msgs::ControlManagerDi
 
   /* Calculate goal progress */
   if ( closest_goal_idx > 0 ){
-    int goal_progress_idx = closest_goal_idx - ( closest_goal_idx - current_trajectory_idx_);
+    int current_progress = closest_goal_idx - current_trajectory_idx_;
+    int goal_progress_idx = closest_goal_idx - (current_progress);
     goal_progress_ = (static_cast<double>(goal_progress_idx) / closest_goal_idx) * 100;
+    goal_estimated_time_of_arrival_ = current_progress * _trajectory_samping_period_; 
   } else {
     goal_progress_ = 0;
   }
@@ -542,6 +546,8 @@ void MissionManager::callbackControlManagerDiag(const mrs_msgs::ControlManagerDi
   /* Calculate overall mission progress */
   if ( trajectory_length_ > 0 ){
     mission_progress_ = (static_cast<double>(current_trajectory_idx_) / trajectory_length_) * 100;
+    finish_estimated_time_of_arrival_= (trajectory_length_ - current_trajectory_idx_) * _trajectory_samping_period_;  
+
   } else {
     ROS_WARN("[MissionManager]: Trajectory length is 0!! Check the trajectory was generated succesfully!");
     mission_progress_ = 0;
@@ -564,8 +570,10 @@ void MissionManager::callbackControlManagerDiag(const mrs_msgs::ControlManagerDi
   }
 
   ROS_INFO("[MissionManager]: Distance to goal %f", distance_to_goal_);
+  ROS_INFO("[MissionManager]: ETA to goal %f", goal_estimated_time_of_arrival_);
   ROS_INFO("[MissionManager]: Goal Progress %f", goal_progress_ );
   ROS_INFO("[MissionManager]: Distance to finish %f", distance_to_finish_);
+  ROS_INFO("[MissionManager]: ETA to finish %f", finish_estimated_time_of_arrival_);
   ROS_INFO("[MissionManager]: Mission Progress %f", mission_progress_ );
 
 }
@@ -688,8 +696,10 @@ void MissionManager::actionPublishFeedback() {
     action_server_feedback.message = to_string(mission_state_.value());
     action_server_feedback.goal_idx = goal_idx_;
     action_server_feedback.distance_to_closest_goal = distance_to_goal_;
+    action_server_feedback.goal_estimated_arrival_time = goal_estimated_time_of_arrival_;
     action_server_feedback.goal_progress = goal_progress_;
     action_server_feedback.distance_to_finish = distance_to_finish_;
+    action_server_feedback.finish_estimated_arrival_time = finish_estimated_time_of_arrival_;
     action_server_feedback.mission_progress = mission_progress_;
     mission_manager_server_ptr_->publishFeedback(action_server_feedback);
   }
