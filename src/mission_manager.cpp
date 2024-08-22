@@ -130,6 +130,7 @@ private:
   mrs_msgs::ReferenceStamped        current_point_;
   mrs_msgs::ReferenceStamped        current_point_cf_;
   mrs_msgs::TrajectoryReference     transformed_trajectory_; 
+  mrs_msgs::ReferenceList           transformed_point_list_;
 
   double                            mission_progress_;
   double                            distance_to_finish_;
@@ -730,13 +731,15 @@ MissionManager::result_t MissionManager::actionGoalValidation(const ActionServer
     return {false, ss.str()};
   }
 
-  mrs_msgs::Path msg_path;
-  msg_path.points       = goal.points;
-  msg_path.header.stamp = ros::Time::now();
-  msg_path.fly_now      = false;
-  msg_path.use_heading  = true;
-  // do not use the current position for planning of the path
-  msg_path.dont_prepend_current_state = false;
+
+    for(int i=0; i< goal.points.size(); i++){
+    ROS_INFO("[MissionManager]: Received goal : x=%f, y=%f, z=%f",
+        goal.points.at(i).position.x,
+        goal.points.at(i).position.y,
+        goal.points.at(i).position.z);
+  }
+
+  mrs_msgs::TransformReferenceSrv transformSrv_goal_point;
 
   std::string frame_id;
   switch (goal.frame_id) {
@@ -752,7 +755,49 @@ MissionManager::result_t MissionManager::actionGoalValidation(const ActionServer
       break;
   }
 
-  msg_path.header.frame_id = frame_id;
+
+
+  for(size_t i=0; i < goal.points.size(); i++){
+   
+    /* waypoint_.header.frame_id = goal.frame_id; */  
+    waypoint_.header.stamp = ros::Time::now(); 
+    waypoint_.header.frame_id = frame_id;
+    waypoint_.reference = goal.points.at(i); 
+
+    transformSrv_goal_point.request.frame_id = "";
+    transformSrv_goal_point.request.reference = waypoint_;
+    
+    auto [res, transformed_current_point] = transformReference(transformSrv_goal_point);
+
+    if(res){
+      ROS_INFO("[MissionManager]: Transformation success");
+      ROS_INFO_STREAM("[MissionManager]: Current control frame " << transformed_current_point.header.frame_id ); 
+    } else {
+      ROS_INFO("[MissionManager]: Transformation failed");
+    }
+    transformed_point_list_.list.push_back(transformed_current_point.reference);
+
+  }
+
+  for(int i=0; i< transformed_point_list_.list.size(); i++){
+    ROS_INFO("[MissionManager]: Transformed points: x=%f, y=%f, z=%f",
+        transformed_point_list_.list.at(i).position.x,
+        transformed_point_list_.list.at(i).position.y,
+        transformed_point_list_.list.at(i).position.z);
+  }
+
+
+
+  mrs_msgs::Path msg_path;
+  /* msg_path.points       = goal.points; */
+  msg_path.points = transformed_point_list_.list;
+  msg_path.header.stamp = ros::Time::now();
+  msg_path.fly_now      = false;
+  msg_path.use_heading  = true;
+  // do not use the current position for planning of the path
+  msg_path.dont_prepend_current_state = false;
+  /* msg_path.header.frame_id = frame_id; */
+  msg_path.header.frame_id = transformed_point_list_.header.frame_id;  
 
   const auto result = validateMissionSrv(msg_path);
 
@@ -773,6 +818,13 @@ MissionManager::result_t MissionManager::actionGoalValidation(const ActionServer
 /* validateMissionSrv() //{ */
 
 MissionManager::result_t MissionManager::validateMissionSrv(const mrs_msgs::Path msg) {
+
+  for(int i=0; i< msg.points.size(); i++){
+    ROS_INFO("[MissionManager]: Points before get path: x=%f, y=%f, z=%f",
+        msg.points.at(i).position.x,
+        msg.points.at(i).position.y,
+        msg.points.at(i).position.z);
+  }
 
   /* Generation of trajectory */
   mrs_msgs::GetPathSrv            getPathSrv;
@@ -797,7 +849,15 @@ MissionManager::result_t MissionManager::validateMissionSrv(const mrs_msgs::Path
   validateReferenceSrv.request.list = waypointList;
   path_ = msg;
 
-  processMissionInfo(trajectory, waypointList, path_);
+
+  for(int i=0; i< trajectory.points.size(); i++){
+    ROS_INFO("[MissionManager]: Get Path trajectory response: x=%f, y=%f, z=%f",
+        trajectory.points.at(i).position.x,
+        trajectory.points.at(i).position.y,
+        trajectory.points.at(i).position.z);
+  }
+
+  /* processMissionInfo(trajectory, waypointList, path_); */
 
   if (sc_mission_validation_.call(validateReferenceSrv)) {
 
