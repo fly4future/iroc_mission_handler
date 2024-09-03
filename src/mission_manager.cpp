@@ -523,12 +523,16 @@ void MissionManager::callbackControlManagerDiag(const mrs_msgs::ControlManagerDi
     distance_to_finish_+= dist;
   }
 
+  const int total_goal_segment = closest_goal_idx - goal_start_;
   /* Calculate goal progress */
-  if ( closest_goal_idx > 0 ) {
+  if ( total_goal_segment > 0 ) {
     const int current_progress = (current_trajectory_idx_ - goal_start_);
     const int total_goal_segment = closest_goal_idx - goal_start_;
-    goal_progress_ = (static_cast<double>(current_trajectory_idx_ - goal_start_) / total_goal_segment) * 100;
-    goal_estimated_time_of_arrival_ = static_cast<double>(closest_goal_idx - current_trajectory_idx_) * _trajectory_samping_period_; 
+    const double calculated_goal_progress = (static_cast<double>(current_trajectory_idx_ - goal_start_) / total_goal_segment) * 100;
+    goal_progress_ = std::min(calculated_goal_progress, 100.0);
+    const double calculated_goal_time = static_cast<double>(closest_goal_idx - current_trajectory_idx_) * _trajectory_samping_period_; 
+    goal_estimated_time_of_arrival_ = std::max(calculated_goal_time, 0.0);
+
   }
   else {
     goal_progress_ = 0;
@@ -536,18 +540,20 @@ void MissionManager::callbackControlManagerDiag(const mrs_msgs::ControlManagerDi
 
   /* Calculate overall mission progress */
   if ( trajectory_length_ > 0 ) {
-    mission_progress_ = (static_cast<double>(current_trajectory_idx_) / trajectory_length_) * 100;
-    finish_estimated_time_of_arrival_= static_cast<double>(trajectory_length_ - current_trajectory_idx_) * _trajectory_samping_period_;  
+    const double calculated_mission_progress = (static_cast<double>(current_trajectory_idx_) / trajectory_length_) * 100;
+    mission_progress_ = std::min(calculated_mission_progress, 100.0);
+    const double calculated_mission_time= static_cast<double>(trajectory_length_ - current_trajectory_idx_) * _trajectory_samping_period_;  
+    finish_estimated_time_of_arrival_ = std::max(calculated_mission_time, 0.0);
   }
   else {
     ROS_WARN("[MissionManager]: Trajectory length is 0!! Check the trajectory was generated succesfully!");
     mission_progress_ = 0;
   }
 
-  if (current_trajectory_goal_idx_ == current_trajectory_idx_) {
+  if (current_trajectory_idx_ >= current_trajectory_goal_idx_) {
     ROS_INFO("[MissionManager]: Reached %d waypoint!", goal_idx_ + 1);
     /* If last point in ID's from path points */
-    if (current_trajectory_idx_  == path_ids_.back()) {
+    if (current_trajectory_idx_  >= path_ids_.back()) {
       ROS_INFO("[MissionManager]: Reached last point");
       distance_to_finish_ = 0.0;
       distance_to_goal_ = 0.0;
