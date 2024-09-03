@@ -129,6 +129,7 @@ private:
   double                            mission_progress_;
   double                            distance_to_finish_;
   double                            goal_progress_;
+  int                               goal_start_ = 0;
   double                            distance_to_goal_;
 
   double tolerance_;
@@ -524,10 +525,10 @@ void MissionManager::callbackControlManagerDiag(const mrs_msgs::ControlManagerDi
 
   /* Calculate goal progress */
   if ( closest_goal_idx > 0 ) {
-    const int current_progress = closest_goal_idx - current_trajectory_idx_;
-    const int goal_progress_idx = closest_goal_idx - current_progress;
-    goal_progress_ = (static_cast<double>(goal_progress_idx) / closest_goal_idx) * 100;
-    goal_estimated_time_of_arrival_ = current_progress * _trajectory_samping_period_; 
+    const int current_progress = (current_trajectory_idx_ - goal_start_);
+    const int total_goal_segment = closest_goal_idx - goal_start_;
+    goal_progress_ = (static_cast<double>(current_trajectory_idx_ - goal_start_) / total_goal_segment) * 100;
+    goal_estimated_time_of_arrival_ = static_cast<double>(closest_goal_idx - current_trajectory_idx_) * _trajectory_samping_period_; 
   }
   else {
     goal_progress_ = 0;
@@ -536,7 +537,7 @@ void MissionManager::callbackControlManagerDiag(const mrs_msgs::ControlManagerDi
   /* Calculate overall mission progress */
   if ( trajectory_length_ > 0 ) {
     mission_progress_ = (static_cast<double>(current_trajectory_idx_) / trajectory_length_) * 100;
-    finish_estimated_time_of_arrival_= (trajectory_length_ - current_trajectory_idx_) * _trajectory_samping_period_;  
+    finish_estimated_time_of_arrival_= static_cast<double>(trajectory_length_ - current_trajectory_idx_) * _trajectory_samping_period_;  
   }
   else {
     ROS_WARN("[MissionManager]: Trajectory length is 0!! Check the trajectory was generated succesfully!");
@@ -552,9 +553,12 @@ void MissionManager::callbackControlManagerDiag(const mrs_msgs::ControlManagerDi
       distance_to_goal_ = 0.0;
       mission_progress_ = 100.0;
       goal_progress_ = 100.0;
+      goal_estimated_time_of_arrival_ = 0.0;
+      finish_estimated_time_of_arrival_ = 0.0;
       mission_info_processed_ = false;
     } 
     else {
+      goal_start_ = closest_goal_idx; 
       goal_idx_++; //Reached current goal, calculating for next goal
 
     }
