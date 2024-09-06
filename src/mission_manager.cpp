@@ -930,6 +930,22 @@ std::tuple<bool,mrs_msgs::ReferenceList> MissionManager::transformReferenceList(
       transformed_reference_list.header = transformed_current_point.header; //Could fill this only once after finishing the transformation
     }
   }
+
+  for (size_t i=0; i < transformed_reference_list.list.size(); i++) {
+
+    ROS_INFO("[MissionManager]: Transformed point %zu  x: %f  y: %f z: %f h: %f", i,
+        transformed_reference_list.list.at(i).position.x,
+        transformed_reference_list.list.at(i).position.y,
+        transformed_reference_list.list.at(i).position.z,
+        transformed_reference_list.list.at(i).heading
+        );
+
+    if(i < transformed_reference_list.list.size() - 1) {
+      const auto dist = distance(transformed_reference_list.list.at(i),transformed_reference_list.list.at(i + 1)); 
+      ROS_INFO("[MissionManager]: Distance to next point: %f", dist);
+    }
+  }
+
   ROS_INFO("[MissionManager]: Transformed reference list succesfully!");
   return std::make_tuple(true, transformed_reference_list);
 }
