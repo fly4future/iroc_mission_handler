@@ -45,6 +45,7 @@
       <remap from="~svc/mission_validation" to="control_manager/validate_reference_list" />
       <remap from="~svc/trajectory_reference_out" to="control_manager/trajectory_reference" />
       <remap from="~svc/transform_reference" to="control_manager/transform_reference" />
+      <remap from="~svc/transform_reference_list" to="control_manager/transform_reference_list" />
 
       <!-- Service servers -->
       <remap from="~svc_server/mission_activation" to="~mission_activation" />

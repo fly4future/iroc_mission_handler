@@ -20,6 +20,7 @@
 #include <mrs_msgs/TrajectoryReference.h>
 #include <mrs_msgs/TrajectoryReferenceSrv.h>
 #include <mrs_msgs/TransformReferenceSrv.h>
+#include <mrs_msgs/TransformReferenceListSrv.h>
 
 #include <mrs_lib/geometry/misc.h>
 
@@ -89,6 +90,7 @@ private:
   ros::ServiceClient sc_mission_validation_;
   ros::ServiceClient sc_trajectory_reference_;
   ros::ServiceClient sc_transform_reference_;
+  ros::ServiceClient sc_transform_reference_list_;
   ros::ServiceServer ss_activation_;
 
   bool missionActivationServiceCallback(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
@@ -240,6 +242,9 @@ void MissionManager::onInit() {
 
   sc_transform_reference_ = nh_.serviceClient<mrs_msgs::TransformReferenceSrv>("svc/transform_reference");
   ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/transform_reference\' -> \'%s\'", sc_transform_reference_.getService().c_str());
+
+  sc_transform_reference_list_ = nh_.serviceClient<mrs_msgs::TransformReferenceListSrv>("svc/transform_reference_list");
+  ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/transform_reference_list\' -> \'%s\'", sc_transform_reference_.getService().c_str());
 
   // | --------------------- service servers -------------------- |
 
@@ -750,7 +755,45 @@ MissionManager::result_t MissionManager::actionGoalValidation(const ActionServer
   goal_points_list.header.frame_id = frame_id;
   goal_points_list.list = goal.points;
 
+  mrs_msgs::ReferenceList test_transform_list;
+
+
   /* This could be replaced with TBD ControlManager Service "transformReferenceList" */
+  mrs_msgs::TransformReferenceListSrv transformSrv_reference_list;
+  transformSrv_reference_list.request.frame_id ="";
+  transformSrv_reference_list.request.list = goal_points_list; 
+
+  if (sc_transform_reference_list_.call(transformSrv_reference_list)) {
+
+    if (transformSrv_reference_list.response.success) {
+      ROS_INFO_STREAM("Transformation success \"" << sc_transform_reference_list_.getService() << "\" with response \"" << transformSrv_reference_list.response.message << "\".");
+      test_transform_list = transformSrv_reference_list.response.list;
+    } else {
+
+      ROS_WARN_STREAM("Transformation failed \"" << sc_transform_reference_.getService() << "\" with response \"" << transformSrv_reference_list.response.message << "\".");
+    }
+
+  } else {
+
+    ROS_WARN_STREAM("Failed while calling service \"" << sc_transform_reference_.getService() << "\" with response \"" << transformSrv_reference_list.response.message << "\".");
+
+  }
+
+
+  for (size_t i=0; i < test_transform_list.list.size(); i++) {
+
+    ROS_INFO("[MissionManager]: Test Transformed point %zu  x: %f  y: %f z: %f h: %f", i,
+        test_transform_list.list.at(i).position.x,
+        test_transform_list.list.at(i).position.y,
+        test_transform_list.list.at(i).position.z,
+        test_transform_list.list.at(i).heading
+        );
+  }
+
+
+
+
+
   const auto [res, transformed_list] = transformReferenceList(goal_points_list);
 
   if (!res) {
