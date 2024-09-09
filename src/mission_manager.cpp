@@ -144,7 +144,7 @@ private:
   void     processMissionInfo(const mrs_msgs::ReferenceList reference_list);
   void     updateMissionState(const mission_state_t& new_state);
   std::tuple<bool,mrs_msgs::ReferenceStamped> transformReference(mrs_msgs::TransformReferenceSrv transformSrv);
-  std::tuple<bool,mrs_msgs::ReferenceList> transformReferenceList(const mrs_msgs::ReferenceList reference_list);
+  std::tuple<bool,mrs_msgs::ReferenceList> transformReferenceList(mrs_msgs::TransformReferenceListSrv transformListSrv);
   double   distance(const mrs_msgs::Reference& waypoint_1, const mrs_msgs::Reference& waypoint_2);
   void     callbackControlManagerDiag(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg);
 
@@ -763,45 +763,23 @@ MissionManager::result_t MissionManager::actionGoalValidation(const ActionServer
   transformSrv_reference_list.request.frame_id ="";
   transformSrv_reference_list.request.list = goal_points_list; 
 
-  if (sc_transform_reference_list_.call(transformSrv_reference_list)) {
-
-    if (transformSrv_reference_list.response.success) {
-      ROS_INFO_STREAM("Transformation success \"" << sc_transform_reference_list_.getService() << "\" with response \"" << transformSrv_reference_list.response.message << "\".");
-      test_transform_list = transformSrv_reference_list.response.list;
-    } else {
-
-      ROS_WARN_STREAM("Transformation failed \"" << sc_transform_reference_.getService() << "\" with response \"" << transformSrv_reference_list.response.message << "\".");
-    }
-
-  } else {
-
-    ROS_WARN_STREAM("Failed while calling service \"" << sc_transform_reference_.getService() << "\" with response \"" << transformSrv_reference_list.response.message << "\".");
-
-  }
-
-
-  for (size_t i=0; i < test_transform_list.list.size(); i++) {
-
-    ROS_INFO("[MissionManager]: Test Transformed point %zu  x: %f  y: %f z: %f h: %f", i,
-        test_transform_list.list.at(i).position.x,
-        test_transform_list.list.at(i).position.y,
-        test_transform_list.list.at(i).position.z,
-        test_transform_list.list.at(i).heading
-        );
-  }
-
-
-
-
-
-  const auto [res, transformed_list] = transformReferenceList(goal_points_list);
+  const auto [res, transformed_list] = transformReferenceList(transformSrv_reference_list);
 
   if (!res) {
     ROS_WARN("[MissionManager]: Failed while transforming the reference list!");
     return {false, "Reference list transformation failed"};
   }
 
-  /* transformed_point_list_ = transformed_list; */
+  for (size_t i=0; i < transformed_list.list.size(); i++) {
+
+    ROS_INFO("[MissionManager]: Transformed point %zu  x: %f  y: %f z: %f h: %f", i,
+        transformed_list.list.at(i).position.x,
+        transformed_list.list.at(i).position.y,
+        transformed_list.list.at(i).position.z,
+        transformed_list.list.at(i).heading
+        );
+  }
+
   mrs_msgs::Path msg_path;
   msg_path.points = transformed_list.list;
   msg_path.header.stamp = ros::Time::now();
@@ -947,50 +925,26 @@ std::tuple<bool,mrs_msgs::ReferenceStamped> MissionManager::transformReference(m
 
 
 /* transformReferenceList() //{ */
-std::tuple<bool,mrs_msgs::ReferenceList> MissionManager::transformReferenceList(const mrs_msgs::ReferenceList reference_list){
+std::tuple<bool,mrs_msgs::ReferenceList> MissionManager::transformReferenceList(mrs_msgs::TransformReferenceListSrv TransformListSrv){
 
-  mrs_msgs::ReferenceStamped        waypoint;
-  mrs_msgs::TransformReferenceSrv transformSrv_goal_point;
-  mrs_msgs::ReferenceList transformed_reference_list;
+  if (sc_transform_reference_list_.call(TransformListSrv)) {
 
-  for (size_t i=0; i < reference_list.list.size(); i++) {
-   
-    waypoint.header.stamp = ros::Time::now(); 
-    waypoint.header.frame_id = reference_list.header.frame_id;
-    waypoint.reference = reference_list.list.at(i); 
+    if (TransformListSrv.response.success) {
+      ROS_INFO_STREAM("Transformation success \"" << sc_transform_reference_list_.getService() << "\" with response \"" << TransformListSrv.response.message << "\".");
+      const auto transformed_list = TransformListSrv.response.list;
+      return std::make_tuple(true, transformed_list);
 
-    transformSrv_goal_point.request.frame_id = "";
-    transformSrv_goal_point.request.reference = waypoint;
-    
-    const auto [res, transformed_current_point] = transformReference(transformSrv_goal_point);
+    } else {
 
-    if (!res) {
-      ROS_INFO("[MissionManager]: Transformation failed");
-      return std::make_tuple(false, transformed_reference_list);
+      ROS_WARN_STREAM("Transformation failed \"" << sc_transform_reference_.getService() << "\" with response \"" << TransformListSrv.response.message << "\".");
+      return std::make_tuple(false, TransformListSrv.request.list);
     }
-    else {
-      transformed_reference_list.list.push_back(transformed_current_point.reference);
-      transformed_reference_list.header = transformed_current_point.header; //Could fill this only once after finishing the transformation
-    }
+
+  } else {
+
+    ROS_WARN_STREAM("Failed while calling service \"" << sc_transform_reference_.getService() << "\" with response \"" << TransformListSrv.response.message << "\".");
+    return std::make_tuple(false, TransformListSrv.request.list);
   }
-
-  for (size_t i=0; i < transformed_reference_list.list.size(); i++) {
-
-    ROS_INFO("[MissionManager]: Transformed point %zu  x: %f  y: %f z: %f h: %f", i,
-        transformed_reference_list.list.at(i).position.x,
-        transformed_reference_list.list.at(i).position.y,
-        transformed_reference_list.list.at(i).position.z,
-        transformed_reference_list.list.at(i).heading
-        );
-
-    if(i < transformed_reference_list.list.size() - 1) {
-      const auto dist = distance(transformed_reference_list.list.at(i),transformed_reference_list.list.at(i + 1)); 
-      ROS_INFO("[MissionManager]: Distance to next point: %f", dist);
-    }
-  }
-
-  ROS_INFO("[MissionManager]: Transformed reference list succesfully!");
-  return std::make_tuple(true, transformed_reference_list);
 }
 //}
 
