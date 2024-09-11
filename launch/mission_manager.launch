@@ -36,6 +36,7 @@
       <!-- Service clients -->
       <remap from="~svc/takeoff" to="uav_manager/takeoff" />
       <remap from="~svc/land" to="uav_manager/land" />
+      <remap from="~svc/land_home" to="uav_manager/land_home" />
       <remap from="~svc/path" to="trajectory_generation/path" />
       <remap from="~svc/get_path" to="trajectory_generation/get_path" />
       <remap from="~svc/hover" to="control_manager/hover" />

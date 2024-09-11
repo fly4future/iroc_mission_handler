@@ -82,6 +82,7 @@ private:
   // | ----------------------- ROS clients ---------------------- |
   ros::ServiceClient sc_takeoff_;
   ros::ServiceClient sc_land_;
+  ros::ServiceClient sc_land_home_;
   ros::ServiceClient sc_path_;
   ros::ServiceClient sc_get_path_;
   ros::ServiceClient sc_hover_;
@@ -218,6 +219,9 @@ void MissionManager::onInit() {
 
   sc_land_ = nh_.serviceClient<std_srvs::Trigger>("svc/land");
   ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/land\' -> \'%s\'", sc_land_.getService().c_str());
+
+  sc_land_home_ = nh_.serviceClient<std_srvs::Trigger>("svc/land_home");
+  ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/land_home\' -> \'%s\'", sc_land_home_.getService().c_str());
 
   sc_path_ = nh_.serviceClient<mrs_msgs::PathSrv>("svc/path");
   ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/path\' -> \'%s\'", sc_path_.getService().c_str());
@@ -375,9 +379,19 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
               break;
             };
 
-              // TODO: add TERMINAL_ACTION_RTL part
+            case ActionServerGoal::TERMINAL_ACTION_RTL: {
+              ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Executing terminal action. Calling land home");
+              auto resp = callService<std_srvs::Trigger>(sc_land_home_);
+              if (!resp.success) {
+                ROS_ERROR_THROTTLE(1.0, "[MissionManager]: Failed to call land home service.");
+                return;
+              }
 
-            default: {  // in the case of TERMINAL_ACTION_RTL, do the same as for TERMINAL_ACTION_NONE
+              updateMissionState(mission_state_t::RTL);
+              break;
+            };
+
+            default: {  
               mrs_mission_manager::waypointMissionResult action_server_result;
               action_server_result.success = true;
               action_server_result.message = "Mission finished";
@@ -636,18 +650,19 @@ void MissionManager::actionCallbackPreempt() {
         case mission_state_t::EXECUTING: {
           switch (action_server_goal_.terminal_action) {
 
-            case ActionServerGoal::TERMINAL_ACTION_LAND: {
-              ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Executiong terminal action. Calling land");
-              auto resp = callService<std_srvs::Trigger>(sc_land_);
-              if (!resp.success) {
-                ROS_ERROR_THROTTLE(1.0, "[MissionManager]: Failed to call land service.");
-                return;
-              }
-              updateMissionState(mission_state_t::LAND);
-              break;
-            };
+            /* case ActionServerGoal::TERMINAL_ACTION_LAND: { */
+            /*   ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Executiong terminal action. Calling land"); */
+            /*   auto resp = callService<std_srvs::Trigger>(sc_land_); */
+            /*   if (!resp.success) { */
+            /*     ROS_ERROR_THROTTLE(1.0, "[MissionManager]: Failed to call land service."); */
+            /*     return; */
+            /*   } */
+            /*   updateMissionState(mission_state_t::LAND); */
+            /*   break; */
+            /* }; */
 
               // TODO: add TERMINAL_ACTION_RTL part
+              // TODO: discuss terminal action for mission abort
 
             default: {  // in the case of TERMINAL_ACTION_RTL, do the same as for TERMINAL_ACTION_NONE
               ROS_INFO_STREAM_THROTTLE(1.0, "Drone is in the movement -> Calling hover.");
@@ -722,11 +737,11 @@ MissionManager::result_t MissionManager::actionGoalValidation(const ActionServer
     ROS_ERROR_STREAM_THROTTLE(1.0, ss.str());
     return {false, ss.str()};
   }
-  if (goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_RTL) {
-    ss << "Not implemented terminal action.";
-    ROS_ERROR_STREAM_THROTTLE(1.0, ss.str());
-    return {false, ss.str()};
-  }
+  /* if (goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_RTL) { */
+  /*   ss << "Not implemented terminal action."; */
+  /*   ROS_ERROR_STREAM_THROTTLE(1.0, ss.str()); */
+  /*   return {false, ss.str()}; */
+  /* } */
 
   for (int i=0; i< goal.points.size(); i++) { 
     ROS_INFO("[MissionManager]: Received goal : x=%f, y=%f, z=%f",

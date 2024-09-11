@@ -44,6 +44,10 @@ windows:
       layout: tiled
       panes:
         - waitForHw; roslaunch mrs_mission_manager mission_manager.launch
+  - arm_and_offboard:
+      layout: tiled
+      panes:
+        - waitForControl; sleep 5 && rosservice call /$UAV_NAME/hw_api/arming "1" && sleep 1 && rosservice call /$UAV_NAME/hw_api/offboard {}  
   - mission_control:
       layout: tiled
       panes:
