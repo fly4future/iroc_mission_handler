@@ -511,7 +511,7 @@ void MissionManager::callbackControlManagerDiag(const mrs_msgs::ControlManagerDi
 
   const bool have_goal = diagnostics->tracker_status.have_goal;
   trajectory_length_ = diagnostics->tracker_status.trajectory_length;
-
+ 
   if (trajectory_length_ == 0 || !mission_info_processed_) {
         return;
   }
@@ -731,6 +731,11 @@ MissionManager::result_t MissionManager::actionGoalValidation(const ActionServer
     ROS_ERROR_STREAM_THROTTLE(1.0, ss.str());
     return {false, ss.str()};
   }
+  if (!(goal.height_id == ActionServerGoal::HEIGHT_ID_AGL || goal.height_id == ActionServerGoal::HEIGHT_ID_AMSL)) {
+    ss << "Unknown height_id = \'" << int(goal.height_id) << "\', use the predefined ones.";
+    ROS_ERROR_STREAM_THROTTLE(1.0, ss.str());
+    return {false, ss.str()};
+  }
   if (!(goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_NONE || goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_LAND ||
         goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_RTL)) {
     ss << "Unknown terminal_action = \'" << int(goal.terminal_action) << "\', use the predefined ones.";
@@ -765,6 +770,13 @@ MissionManager::result_t MissionManager::actionGoalValidation(const ActionServer
       break;
   }
 
+  std::vector<double> height_points;
+  //Saving the AGL height points to be replaced after transformation of latlon points
+  if (goal.height_id == ActionServerGoal::HEIGHT_ID_AGL) {
+    for (size_t i=0; i < goal.points.size(); i++)  
+      height_points.push_back(goal.points.at(i).position.z);
+  }
+ 
   //Create reference list with received points to transform it into current control frame
   mrs_msgs::ReferenceList goal_points_list;
   goal_points_list.header.frame_id = frame_id;
@@ -778,11 +790,17 @@ MissionManager::result_t MissionManager::actionGoalValidation(const ActionServer
   transformSrv_reference_list.request.frame_id ="";
   transformSrv_reference_list.request.list = goal_points_list; 
 
-  const auto [res, transformed_list] = transformReferenceList(transformSrv_reference_list);
+  auto [res, transformed_list] = transformReferenceList(transformSrv_reference_list);
 
   if (!res) {
     ROS_WARN("[MissionManager]: Failed while transforming the reference list!");
     return {false, "Reference list transformation failed"};
+  }
+
+  if (goal.height_id == ActionServerGoal::HEIGHT_ID_AGL) {
+    for (size_t i=0; i < transformed_list.list.size(); i++) {
+      transformed_list.list.at(i).position.z = height_points.at(i);
+    }
   }
 
   for (size_t i=0; i < transformed_list.list.size(); i++) {
@@ -913,7 +931,11 @@ void MissionManager::processMissionInfo(const mrs_msgs::ReferenceList reference_
     }
   }
 
-  mission_info_processed_ = true;
+  if (path_ids_.size() == reference_list.list.size()){
+    mission_info_processed_ = true;
+  } else { 
+    ROS_WARN("[MissionManager]: Did not found all the path correspondences for feedback!");
+  }
 }
 //}
 
