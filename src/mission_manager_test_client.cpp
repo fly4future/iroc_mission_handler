@@ -41,7 +41,7 @@ int main(int argc, char **argv) {
   goal.position.z = 3;
   goal.heading    = 2;
   points.push_back(goal);
-  goal.position.x = 47.397607;
+  goal.position.x = 47.397755;
   goal.position.y = 8.545573;
   goal.position.z = 3;
   goal.heading    = 1.5;

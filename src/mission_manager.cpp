@@ -520,7 +520,6 @@ void MissionManager::callbackControlManagerDiag(const mrs_msgs::ControlManagerDi
   current_trajectory_idx_ = diagnostics->tracker_status.trajectory_idx;
   current_trajectory_goal_idx_ = path_ids_.at(goal_idx_); 
 
-
   /* Restart distance, as we  will recalculate based on current trajectory idx */
   distance_to_finish_ = 0.0;
 
@@ -783,7 +782,6 @@ MissionManager::result_t MissionManager::actionGoalValidation(const ActionServer
   goal_points_list.list = goal.points;
 
   mrs_msgs::ReferenceList test_transform_list;
-
 
   /* This could be replaced with TBD ControlManager Service "transformReferenceList" */
   mrs_msgs::TransformReferenceListSrv transformSrv_reference_list;
