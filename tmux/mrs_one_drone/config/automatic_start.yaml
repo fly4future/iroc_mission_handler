@@ -2,4 +2,5 @@
 # while the timeout is counting down, the takeoff can be aborted by switching off
 # the offboard mode.
 # default = 5 sec
+handle_takeoff: false
 safety_timeout: 1.0 # [s]

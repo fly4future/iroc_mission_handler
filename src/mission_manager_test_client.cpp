@@ -55,7 +55,7 @@ int main(int argc, char **argv) {
   ac.sendGoal(action_client_goal);
 
   // wait for the action to return
-  bool finished_before_timeout = ac.waitForResult(ros::Duration(30.0));
+  bool finished_before_timeout = ac.waitForResult(ros::Duration(500.0));
 
   if (finished_before_timeout) {
     actionlib::SimpleClientGoalState state = ac.getState();
