@@ -88,13 +88,16 @@ private:
   ros::ServiceClient sc_hover_;
   ros::ServiceClient sc_mission_flying_to_start_;
   ros::ServiceClient sc_mission_start_;
+  ros::ServiceClient sc_mission_pause_;
   ros::ServiceClient sc_mission_validation_;
   ros::ServiceClient sc_trajectory_reference_;
   ros::ServiceClient sc_transform_reference_;
   ros::ServiceClient sc_transform_reference_array_;
   ros::ServiceServer ss_activation_;
+  ros::ServiceServer ss_pausing_;
 
   bool missionActivationServiceCallback(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
+  bool missionPausingServiceCallback(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
 
   // | ----------------------- main timer ----------------------- |
 
@@ -254,6 +257,9 @@ void MissionManager::onInit() {
   ss_activation_ = nh_.advertiseService("svc_server/mission_activation", &MissionManager::missionActivationServiceCallback, this);
   ROS_INFO("[IROCBridge]: Created ServiceServer on service \'svc_server/mission_activation\' -> \'%s\'", ss_activation_.getService().c_str());
 
+  ss_pausing_ = nh_.advertiseService("svc_server/mission_pausing", &MissionManager::missionPausingServiceCallback, this);
+  ROS_INFO("[IROCBridge]: Created ServiceServer on service \'svc_server/mission_pausing\' -> \'%s\'", ss_pausing_.getService().c_str());
+
   // | ------------------------- timers ------------------------- |
 
   timer_main_     = nh_.createTimer(ros::Rate(main_timer_rate), &MissionManager::timerMain, this);
@@ -403,6 +409,8 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
           }
           return;
         }
+        ROS_INFO("[MissionManager]: Mission paused!");
+        updateMissionState(mission_state_t::PAUSED);
         break;
       };
 
@@ -481,6 +489,45 @@ bool MissionManager::missionActivationServiceCallback(std_srvs::Trigger::Request
       default: {
         res.success = false;
         res.message = "Mission is already activated.";
+        ROS_WARN_THROTTLE(1.0, "[MissionManager]: %s", res.message.c_str());
+        break;
+      };
+    }
+  } else {
+    res.success = false;
+    res.message = "No active mission.";
+    ROS_WARN_THROTTLE(1.0, "[MissionManager]: %s", res.message.c_str());
+  }
+  return true;
+}
+
+//}
+
+/*  missionPausingServiceCallback()//{ */
+
+bool MissionManager::missionPausingServiceCallback(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res) {
+  std::scoped_lock lock(action_server_mutex_);
+  ROS_INFO_STREAM("[MissionManager]: Received mission activation request");
+  if (mission_manager_server_ptr_->isActive()) {
+
+    switch (mission_state_.value()) {
+
+      case mission_state_t::EXECUTING: {
+          ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Pausing mission.");
+          /* auto resp   = callService<std_srvs::Trigger>(sc_mission_start_); */
+          /* res.success = resp.success; */
+          /* res.message = resp.message; */
+          /* if (!resp.success) { */
+          /*   ROS_ERROR_THROTTLE(1.0, "[MissionManager]: Failed to call mission start service."); */
+          /*   break; */
+          /* } */
+          updateMissionState(mission_state_t::PAUSED);
+          break;
+      };
+
+      default: {
+        res.success = false;
+        res.message = "No mission is currently ongoing to be paused.";
         ROS_WARN_THROTTLE(1.0, "[MissionManager]: %s", res.message.c_str());
         break;
       };
