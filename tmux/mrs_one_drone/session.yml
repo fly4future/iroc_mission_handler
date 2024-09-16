@@ -48,6 +48,7 @@ windows:
       layout: tiled
       panes:
         - waitForControl; sleep 5 && rosservice call /$UAV_NAME/hw_api/arming "1" && sleep 1 && rosservice call /$UAV_NAME/hw_api/offboard {}  
+        - history -s rosservice call /$UAV_NAME/hw_api/arming "1"; history -s rosservice call /$UAV_NAME/hw_api/offboard {}  
   - mission_control:
       layout: tiled
       panes:
