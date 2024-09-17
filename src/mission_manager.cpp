@@ -378,7 +378,7 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
               break;
             };
 
-            case ActionServerGoal::TERMINAL_ACTION_RTL: {
+            case ActionServerGoal::TERMINAL_ACTION_RTH: {
               ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Executing terminal action. Calling land home");
               auto resp = callService<std_srvs::Trigger>(sc_land_home_);
               if (!resp.success) {
@@ -386,7 +386,7 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
                 return;
               }
 
-              updateMissionState(mission_state_t::RTL);
+              updateMissionState(mission_state_t::RTH);
               break;
             };
 
@@ -715,12 +715,12 @@ MissionManager::result_t MissionManager::actionGoalValidation(const ActionServer
     return {false, ss.str()};
   }
   if (!(goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_NONE || goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_LAND ||
-        goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_RTL)) {
+        goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_RTH)) {
     ss << "Unknown terminal_action = \'" << int(goal.terminal_action) << "\', use the predefined ones.";
     ROS_ERROR_STREAM_THROTTLE(1.0, ss.str());
     return {false, ss.str()};
   }
-  /* if (goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_RTL) { */
+  /* if (goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_RTH) { */
   /*   ss << "Not implemented terminal action."; */
   /*   ROS_ERROR_STREAM_THROTTLE(1.0, ss.str()); */
   /*   return {false, ss.str()}; */

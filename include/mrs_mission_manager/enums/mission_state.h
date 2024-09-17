@@ -13,7 +13,7 @@
                           (MISSION_LOADED)        \
                           (EXECUTING)             \
                           (PAUSED_DUE_TO_RC_MODE) \
-                          (RTL)                   \
+                          (RTH)                   \
                           (LAND)                  \
 
 namespace mrs_mission_manager
