@@ -15,11 +15,12 @@
 #include <std_srvs/Trigger.h>
 #include <mrs_msgs/PathSrv.h>
 #include <mrs_msgs/GetPathSrv.h>
-#include <mrs_msgs/ValidateReferenceList.h>
+#include <mrs_msgs/ValidateReferenceArray.h>
 #include <mrs_msgs/Reference.h>
 #include <mrs_msgs/TrajectoryReference.h>
 #include <mrs_msgs/TrajectoryReferenceSrv.h>
 #include <mrs_msgs/TransformReferenceSrv.h>
+#include <mrs_msgs/TransformReferenceArraySrv.h>
 
 #include <mrs_lib/geometry/misc.h>
 
@@ -81,6 +82,7 @@ private:
   // | ----------------------- ROS clients ---------------------- |
   ros::ServiceClient sc_takeoff_;
   ros::ServiceClient sc_land_;
+  ros::ServiceClient sc_land_home_;
   ros::ServiceClient sc_path_;
   ros::ServiceClient sc_get_path_;
   ros::ServiceClient sc_hover_;
@@ -89,6 +91,7 @@ private:
   ros::ServiceClient sc_mission_validation_;
   ros::ServiceClient sc_trajectory_reference_;
   ros::ServiceClient sc_transform_reference_;
+  ros::ServiceClient sc_transform_reference_array_;
   ros::ServiceServer ss_activation_;
 
   bool missionActivationServiceCallback(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
@@ -124,7 +127,6 @@ private:
   int                               current_trajectory_goal_idx_;
   mrs_msgs::ReferenceStamped        waypoint_;
   mrs_msgs::TrajectoryReference     current_trajectory_; 
-  mrs_msgs::ReferenceList           transformed_point_list_;
 
   double                            mission_progress_;
   double                            distance_to_finish_;
@@ -139,10 +141,10 @@ private:
 
   result_t actionGoalValidation(const ActionServerGoal& goal);
   result_t validateMissionSrv(const mrs_msgs::Path msg) ;
-  void     processMissionInfo(const mrs_msgs::ReferenceList reference_list);
+  void     processMissionInfo(const mrs_msgs::ReferenceArray reference_ist);
   void     updateMissionState(const mission_state_t& new_state);
   std::tuple<bool,mrs_msgs::ReferenceStamped> transformReference(mrs_msgs::TransformReferenceSrv transformSrv);
-  std::tuple<bool,mrs_msgs::ReferenceList> transformReferenceList(const mrs_msgs::ReferenceList reference_list);
+  std::tuple<bool,mrs_msgs::ReferenceArray> transformReferenceArray(mrs_msgs::TransformReferenceArraySrv transformArraySrv);
   double   distance(const mrs_msgs::Reference& waypoint_1, const mrs_msgs::Reference& waypoint_2);
   void     callbackControlManagerDiag(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg);
 
@@ -217,6 +219,9 @@ void MissionManager::onInit() {
   sc_land_ = nh_.serviceClient<std_srvs::Trigger>("svc/land");
   ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/land\' -> \'%s\'", sc_land_.getService().c_str());
 
+  sc_land_home_ = nh_.serviceClient<std_srvs::Trigger>("svc/land_home");
+  ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/land_home\' -> \'%s\'", sc_land_home_.getService().c_str());
+
   sc_path_ = nh_.serviceClient<mrs_msgs::PathSrv>("svc/path");
   ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/path\' -> \'%s\'", sc_path_.getService().c_str());
 
@@ -232,7 +237,7 @@ void MissionManager::onInit() {
   sc_mission_start_ = nh_.serviceClient<std_srvs::Trigger>("svc/mission_start");
   ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/mission_start\' -> \'%s\'", sc_mission_start_.getService().c_str());
 
-  sc_mission_validation_ = nh_.serviceClient<mrs_msgs::ValidateReferenceList>("svc/mission_validation");
+  sc_mission_validation_ = nh_.serviceClient<mrs_msgs::ValidateReferenceArray>("svc/mission_validation");
   ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/mission_validation\' -> \'%s\'", sc_mission_validation_.getService().c_str());
 
   sc_trajectory_reference_ = nh_.serviceClient<mrs_msgs::TrajectoryReferenceSrv>("svc/trajectory_reference_out");
@@ -240,6 +245,9 @@ void MissionManager::onInit() {
 
   sc_transform_reference_ = nh_.serviceClient<mrs_msgs::TransformReferenceSrv>("svc/transform_reference");
   ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/transform_reference\' -> \'%s\'", sc_transform_reference_.getService().c_str());
+
+  sc_transform_reference_array_ = nh_.serviceClient<mrs_msgs::TransformReferenceArraySrv>("svc/transform_reference_array");
+  ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/transform_reference_array\' -> \'%s\'", sc_transform_reference_.getService().c_str());
 
   // | --------------------- service servers -------------------- |
 
@@ -370,9 +378,19 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
               break;
             };
 
-              // TODO: add TERMINAL_ACTION_RTL part
+            case ActionServerGoal::TERMINAL_ACTION_RTH: {
+              ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Executing terminal action. Calling land home");
+              auto resp = callService<std_srvs::Trigger>(sc_land_home_);
+              if (!resp.success) {
+                ROS_ERROR_THROTTLE(1.0, "[MissionManager]: Failed to call land home service.");
+                return;
+              }
 
-            default: {  // in the case of TERMINAL_ACTION_RTL, do the same as for TERMINAL_ACTION_NONE
+              updateMissionState(mission_state_t::RTH);
+              break;
+            };
+
+            default: {  
               mrs_mission_manager::waypointMissionResult action_server_result;
               action_server_result.success = true;
               action_server_result.message = "Mission finished";
@@ -492,7 +510,7 @@ void MissionManager::callbackControlManagerDiag(const mrs_msgs::ControlManagerDi
 
   const bool have_goal = diagnostics->tracker_status.have_goal;
   trajectory_length_ = diagnostics->tracker_status.trajectory_length;
-
+ 
   if (trajectory_length_ == 0 || !mission_info_processed_) {
         return;
   }
@@ -500,7 +518,6 @@ void MissionManager::callbackControlManagerDiag(const mrs_msgs::ControlManagerDi
   //Get current trajectory ID, and the goal ID (from correspondence check)
   current_trajectory_idx_ = diagnostics->tracker_status.trajectory_idx;
   current_trajectory_goal_idx_ = path_ids_.at(goal_idx_); 
-
 
   /* Restart distance, as we  will recalculate based on current trajectory idx */
   distance_to_finish_ = 0.0;
@@ -629,37 +646,18 @@ void MissionManager::actionCallbackPreempt() {
       switch (mission_state_.value()) {
         case mission_state_t::TAKEOFF:
         case mission_state_t::EXECUTING: {
-          switch (action_server_goal_.terminal_action) {
 
-            case ActionServerGoal::TERMINAL_ACTION_LAND: {
-              ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Executiong terminal action. Calling land");
-              auto resp = callService<std_srvs::Trigger>(sc_land_);
-              if (!resp.success) {
-                ROS_ERROR_THROTTLE(1.0, "[MissionManager]: Failed to call land service.");
-                return;
-              }
-              updateMissionState(mission_state_t::LAND);
-              break;
-            };
-
-              // TODO: add TERMINAL_ACTION_RTL part
-
-            default: {  // in the case of TERMINAL_ACTION_RTL, do the same as for TERMINAL_ACTION_NONE
-              ROS_INFO_STREAM_THROTTLE(1.0, "Drone is in the movement -> Calling hover.");
-              auto resp = callService<std_srvs::Trigger>(sc_hover_);
-              if (!resp.success) {
-                ROS_ERROR_THROTTLE(1.0, "[MissionManager]: Failed to call hover service.");
-              }
-
-              mrs_mission_manager::waypointMissionResult action_server_result;
-              action_server_result.success = false;
-              action_server_result.message = "Mission stopped.";
-              mission_manager_server_ptr_->setAborted(action_server_result);
-              ROS_INFO("[MissionManager]: Mission stopped.");
-              updateMissionState(mission_state_t::IDLE);
-              break;
-            };
-          };
+          ROS_INFO_STREAM_THROTTLE(1.0, "Drone is in the movement -> Calling hover.");
+          auto resp = callService<std_srvs::Trigger>(sc_hover_);
+          if (!resp.success) {
+          ROS_ERROR_THROTTLE(1.0, "[MissionManager]: Failed to call hover service.");
+          }
+          mrs_mission_manager::waypointMissionResult action_server_result;
+          action_server_result.success = false;
+          action_server_result.message = "Mission stopped.";
+          mission_manager_server_ptr_->setAborted(action_server_result);
+          ROS_INFO("[MissionManager]: Mission stopped.");
+          updateMissionState(mission_state_t::IDLE);
           break;
         };
 
@@ -711,17 +709,22 @@ MissionManager::result_t MissionManager::actionGoalValidation(const ActionServer
     ROS_ERROR_STREAM_THROTTLE(1.0, ss.str());
     return {false, ss.str()};
   }
+  if (!(goal.height_id == ActionServerGoal::HEIGHT_ID_AGL || goal.height_id == ActionServerGoal::HEIGHT_ID_AMSL)) {
+    ss << "Unknown height_id = \'" << int(goal.height_id) << "\', use the predefined ones.";
+    ROS_ERROR_STREAM_THROTTLE(1.0, ss.str());
+    return {false, ss.str()};
+  }
   if (!(goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_NONE || goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_LAND ||
-        goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_RTL)) {
+        goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_RTH)) {
     ss << "Unknown terminal_action = \'" << int(goal.terminal_action) << "\', use the predefined ones.";
     ROS_ERROR_STREAM_THROTTLE(1.0, ss.str());
     return {false, ss.str()};
   }
-  if (goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_RTL) {
-    ss << "Not implemented terminal action.";
-    ROS_ERROR_STREAM_THROTTLE(1.0, ss.str());
-    return {false, ss.str()};
-  }
+  /* if (goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_RTH) { */
+  /*   ss << "Not implemented terminal action."; */
+  /*   ROS_ERROR_STREAM_THROTTLE(1.0, ss.str()); */
+  /*   return {false, ss.str()}; */
+  /* } */
 
   for (int i=0; i< goal.points.size(); i++) { 
     ROS_INFO("[MissionManager]: Received goal : x=%f, y=%f, z=%f",
@@ -745,28 +748,56 @@ MissionManager::result_t MissionManager::actionGoalValidation(const ActionServer
       break;
   }
 
-  //Create reference list with received points to transform it into current control frame
-  mrs_msgs::ReferenceList goal_points_list;
-  goal_points_list.header.frame_id = frame_id;
-  goal_points_list.list = goal.points;
+  std::vector<double> height_points;
+  //Saving the AGL height points to be replaced after transformation of latlon points
+  if (goal.height_id == ActionServerGoal::HEIGHT_ID_AGL) {
+    for (size_t i=0; i < goal.points.size(); i++)  
+      height_points.push_back(goal.points.at(i).position.z);
+  }
+ 
+  //Create reference array with received points to transform it into current control frame
+  mrs_msgs::ReferenceArray goal_points_array;
+  goal_points_array.header.frame_id = frame_id;
+  goal_points_array.array = goal.points;
 
-  /* This could be replaced with TBD ControlManager Service "transformReferenceList" */
-  const auto [res, transformed_list] = transformReferenceList(goal_points_list);
+  mrs_msgs::ReferenceArray test_transform_array;
+
+  /* This could be replaced with TBD ControlManager Service "transformReferenceArray" */
+  mrs_msgs::TransformReferenceArraySrv transformSrv_reference_array;
+  transformSrv_reference_array.request.to_frame_id ="";
+  transformSrv_reference_array.request.array = goal_points_array; 
+
+  auto [res, transformed_array] = transformReferenceArray(transformSrv_reference_array);
 
   if (!res) {
-    ROS_WARN("[MissionManager]: Failed while transforming the reference list!");
-    return {false, "Reference list transformation failed"};
+    ROS_WARN("[MissionManager]: Failed while transforming the reference array!");
+    return {false, "Reference array transformation failed"};
   }
 
-  /* transformed_point_list_ = transformed_list; */
+  if (goal.height_id == ActionServerGoal::HEIGHT_ID_AGL) {
+    for (size_t i=0; i < transformed_array.array.size(); i++) {
+      transformed_array.array.at(i).position.z = height_points.at(i);
+    }
+  }
+
+  for (size_t i=0; i < transformed_array.array.size(); i++) {
+
+    ROS_INFO("[MissionManager]: Transformed point %zu  x: %f  y: %f z: %f h: %f", i,
+        transformed_array.array.at(i).position.x,
+        transformed_array.array.at(i).position.y,
+        transformed_array.array.at(i).position.z,
+        transformed_array.array.at(i).heading
+        );
+  }
+
   mrs_msgs::Path msg_path;
-  msg_path.points = transformed_list.list;
+  msg_path.points = transformed_array.array;
   msg_path.header.stamp = ros::Time::now();
   msg_path.fly_now      = false;
   msg_path.use_heading  = true;
   // do not use the current position for planning of the path
   msg_path.dont_prepend_current_state = false;
-  msg_path.header.frame_id = transformed_list.header.frame_id;  
+  msg_path.header.frame_id = transformed_array.header.frame_id;  
 
   /* Validate if path is within safety area */
   const auto result = validateMissionSrv(msg_path);
@@ -778,7 +809,7 @@ MissionManager::result_t MissionManager::actionGoalValidation(const ActionServer
   else {
     ROS_INFO_STREAM("Valid trajectory");
     /* Trajectory is valid, processing information for feedback */
-    processMissionInfo(transformed_list);
+    processMissionInfo(transformed_array);
     return {result.success, result.message};
   }
 }
@@ -791,7 +822,7 @@ MissionManager::result_t MissionManager::validateMissionSrv(const mrs_msgs::Path
 
   /* Generation of trajectory */
   mrs_msgs::GetPathSrv            getPathSrv;
-  mrs_msgs::ValidateReferenceList validateReferenceSrv;
+  mrs_msgs::ValidateReferenceArray validateReferenceSrv;
 
   getPathSrv.request.path = msg;
   if (sc_get_path_.call(getPathSrv)) {
@@ -810,10 +841,10 @@ MissionManager::result_t MissionManager::validateMissionSrv(const mrs_msgs::Path
 
   /* Validation of trajectory within safety area */
   current_trajectory_ = getPathSrv.response.trajectory;
-  mrs_msgs::ReferenceList       waypointList;
-  waypointList.header               = current_trajectory_.header;
-  waypointList.list                 = current_trajectory_.points;
-  validateReferenceSrv.request.list = waypointList;
+  mrs_msgs::ReferenceArray       waypointArray;
+  waypointArray.header               = current_trajectory_.header;
+  waypointArray.array                 = current_trajectory_.points;
+  validateReferenceSrv.request.array = waypointArray;
 
   if (sc_mission_validation_.call(validateReferenceSrv)) {
     const bool all_success = std::all_of(validateReferenceSrv.response.success.begin(), validateReferenceSrv.response.success.end(), [](bool v) { return v; });
@@ -843,7 +874,7 @@ MissionManager::result_t MissionManager::validateMissionSrv(const mrs_msgs::Path
 
 /* processMissionInfo() //{ */
 
-void MissionManager::processMissionInfo(const mrs_msgs::ReferenceList reference_list) {
+void MissionManager::processMissionInfo(const mrs_msgs::ReferenceArray reference_array) {
 
   std::scoped_lock lock(mission_informaton_mutex);
   //Clear member variables used in feedback
@@ -863,21 +894,25 @@ void MissionManager::processMissionInfo(const mrs_msgs::ReferenceList reference_
   //Currently finding closest sample from trajectory generation and original points
   //TODO: Improve correspondence implementation, can be integrated within MRS trajectory generation to be more accurate
   for (size_t i =0; i < current_trajectory_.points.size(); i++) {
-    current_point = reference_list.list.at(current_goal_idx); 
+    current_point = reference_array.array.at(current_goal_idx); 
     current_trajectory_point = current_trajectory_.points.at(i);
     const double dist = distance(current_point, current_trajectory_point);
 
-    if ( dist < tolerance_ &&  path_ids_.size() < reference_list.list.size()) {
+    if ( dist < tolerance_ &&  path_ids_.size() < reference_array.array.size()) {
       ROS_INFO("Found the %d point in trajectory, with ID: %zu", current_goal_idx , i);
       path_ids_.push_back(i);
-      if (++current_goal_idx == reference_list.list.size()) {
+      if (++current_goal_idx == reference_array.array.size()) {
         ROS_INFO("[MissionManager]: Found all path points ID");
         break;
       } 
     }
   }
 
-  mission_info_processed_ = true;
+  if (path_ids_.size() == reference_array.array.size()){
+    mission_info_processed_ = true;
+  } else { 
+    ROS_WARN("[MissionManager]: Did not found all the path correspondences for feedback!");
+  }
 }
 //}
 
@@ -903,51 +938,27 @@ std::tuple<bool,mrs_msgs::ReferenceStamped> MissionManager::transformReference(m
 //}
 
 
-/* transformReferenceList() //{ */
-std::tuple<bool,mrs_msgs::ReferenceList> MissionManager::transformReferenceList(const mrs_msgs::ReferenceList reference_list){
+/* transformReference() //{ */
+std::tuple<bool,mrs_msgs::ReferenceArray> MissionManager::transformReferenceArray(mrs_msgs::TransformReferenceArraySrv TransformArraySrv){
 
-  mrs_msgs::ReferenceStamped        waypoint;
-  mrs_msgs::TransformReferenceSrv transformSrv_goal_point;
-  mrs_msgs::ReferenceList transformed_reference_list;
+  if (sc_transform_reference_array_.call(TransformArraySrv)) {
 
-  for (size_t i=0; i < reference_list.list.size(); i++) {
-   
-    waypoint.header.stamp = ros::Time::now(); 
-    waypoint.header.frame_id = reference_list.header.frame_id;
-    waypoint.reference = reference_list.list.at(i); 
+    if (TransformArraySrv.response.success) {
+      ROS_INFO_STREAM("Transformation success \"" << sc_transform_reference_array_.getService() << "\" with response \"" << TransformArraySrv.response.message << "\".");
+      const auto transformed_array = TransformArraySrv.response.array;
+      return std::make_tuple(true, transformed_array);
 
-    transformSrv_goal_point.request.frame_id = "";
-    transformSrv_goal_point.request.reference = waypoint;
-    
-    const auto [res, transformed_current_point] = transformReference(transformSrv_goal_point);
+    } else {
 
-    if (!res) {
-      ROS_INFO("[MissionManager]: Transformation failed");
-      return std::make_tuple(false, transformed_reference_list);
+      ROS_WARN_STREAM("Transformation failed \"" << sc_transform_reference_.getService() << "\" with response \"" << TransformArraySrv.response.message << "\".");
+      return std::make_tuple(false, TransformArraySrv.request.array);
     }
-    else {
-      transformed_reference_list.list.push_back(transformed_current_point.reference);
-      transformed_reference_list.header = transformed_current_point.header; //Could fill this only once after finishing the transformation
-    }
+
+  } else {
+
+    ROS_WARN_STREAM("Failed while calling service \"" << sc_transform_reference_.getService() << "\" with response \"" << TransformArraySrv.response.message << "\".");
+    return std::make_tuple(false, TransformArraySrv.request.array);
   }
-
-  for (size_t i=0; i < transformed_reference_list.list.size(); i++) {
-
-    ROS_INFO("[MissionManager]: Transformed point %zu  x: %f  y: %f z: %f h: %f", i,
-        transformed_reference_list.list.at(i).position.x,
-        transformed_reference_list.list.at(i).position.y,
-        transformed_reference_list.list.at(i).position.z,
-        transformed_reference_list.list.at(i).heading
-        );
-
-    if(i < transformed_reference_list.list.size() - 1) {
-      const auto dist = distance(transformed_reference_list.list.at(i),transformed_reference_list.list.at(i + 1)); 
-      ROS_INFO("[MissionManager]: Distance to next point: %f", dist);
-    }
-  }
-
-  ROS_INFO("[MissionManager]: Transformed reference list succesfully!");
-  return std::make_tuple(true, transformed_reference_list);
 }
 //}
 

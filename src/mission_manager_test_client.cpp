@@ -22,25 +22,40 @@ int main(int argc, char **argv) {
   // send a goal to the action
   std::vector<mrs_msgs::Reference> points;
   mrs_msgs::Reference             goal;
-  goal.position.x = 20;
-  goal.position.y = 0;
+
+  //LOCAL POINTS
+  /* goal.position.x = 20; */
+  /* goal.position.y = 0; */
+  /* goal.position.z = 3; */
+  /* goal.heading    = 2; */
+  /* points.push_back(goal); */
+  /* goal.position.x = -10; */
+  /* goal.position.y = 0; */
+  /* goal.position.z = 3; */
+  /* goal.heading    = 1.5; */
+  /* points.push_back(goal); */
+
+  //LATLON POINTS
+  goal.position.x = 47.397745;
+  goal.position.y = 8.545596;
   goal.position.z = 3;
   goal.heading    = 2;
   points.push_back(goal);
-  goal.position.x = -10;
-  goal.position.y = 0;
+  goal.position.x = 47.397755;
+  goal.position.y = 8.545573;
   goal.position.z = 3;
   goal.heading    = 1.5;
   points.push_back(goal);
 
   ActionServerGoal action_client_goal;
-  action_client_goal.frame_id = ActionServerGoal::FRAME_ID_LOCAL;
+  action_client_goal.frame_id = ActionServerGoal::FRAME_ID_LATLON;
+  action_client_goal.height_id = ActionServerGoal::HEIGHT_ID_AGL;
   action_client_goal.points = points;
   action_client_goal.terminal_action = ActionServerGoal::TERMINAL_ACTION_LAND;
   ac.sendGoal(action_client_goal);
 
   // wait for the action to return
-  bool finished_before_timeout = ac.waitForResult(ros::Duration(20.0));
+  bool finished_before_timeout = ac.waitForResult(ros::Duration(500.0));
 
   if (finished_before_timeout) {
     actionlib::SimpleClientGoalState state = ac.getState();

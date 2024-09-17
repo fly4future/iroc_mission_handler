@@ -36,15 +36,17 @@
       <!-- Service clients -->
       <remap from="~svc/takeoff" to="uav_manager/takeoff" />
       <remap from="~svc/land" to="uav_manager/land" />
+      <remap from="~svc/land_home" to="uav_manager/land_home" />
       <remap from="~svc/path" to="trajectory_generation/path" />
       <remap from="~svc/get_path" to="trajectory_generation/get_path" />
       <remap from="~svc/hover" to="control_manager/hover" />
       <remap from="~svc/mission_pause" to="control_manager/stop_trajectory_tracking" />
       <remap from="~svc/mission_flying_to_start" to="control_manager/goto_trajectory_start" />
       <remap from="~svc/mission_start" to="control_manager/start_trajectory_tracking" />
-      <remap from="~svc/mission_validation" to="control_manager/validate_reference_list" />
+      <remap from="~svc/mission_validation" to="control_manager/validate_reference_array" />
       <remap from="~svc/trajectory_reference_out" to="control_manager/trajectory_reference" />
       <remap from="~svc/transform_reference" to="control_manager/transform_reference" />
+      <remap from="~svc/transform_reference_array" to="control_manager/transform_reference_array" />
 
       <!-- Service servers -->
       <remap from="~svc_server/mission_activation" to="~mission_activation" />
