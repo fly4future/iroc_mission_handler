@@ -798,8 +798,8 @@ MissionManager::result_t MissionManager::actionGoalValidation(const ActionServer
   std::vector<double> height_points;
   //Saving the AGL height points to be replaced after transformation of latlon points
   if (goal.height_id == ActionServerGoal::HEIGHT_ID_AGL) {
-    for (size_t i=0; i < goal.points.size(); i++)  
-      height_points.push_back(goal.points.at(i).position.z);
+    for (const auto& point : goal.points)
+      height_points.push_back(point.position.z);
   }
  
   //Create reference array with received points to transform it into current control frame
