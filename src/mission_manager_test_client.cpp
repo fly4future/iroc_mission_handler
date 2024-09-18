@@ -41,11 +41,27 @@ int main(int argc, char **argv) {
   goal.position.z = 3;
   goal.heading    = 2;
   points.push_back(goal);
-  goal.position.x = 47.397755;
-  goal.position.y = 8.545573;
+  goal.position.x = 47.397638;
+  goal.position.y = 8.545487;
   goal.position.z = 3;
   goal.heading    = 1.5;
   points.push_back(goal);
+  goal.position.x = 47.397724;
+  goal.position.y = 8.545204;
+  goal.position.z = 3;
+  goal.heading    = 1.5;
+  points.push_back(goal);
+  goal.position.x = 47.397851;
+  goal.position.y = 8.545342;
+  goal.position.z = 3;
+  goal.heading    = 1.5;
+  points.push_back(goal);
+  goal.position.x = 47.397711;
+  goal.position.y = 8.545375;
+  goal.position.z = 3;
+  goal.heading    = 1.5;
+  points.push_back(goal);
+
 
   ActionServerGoal action_client_goal;
   action_client_goal.frame_id = ActionServerGoal::FRAME_ID_LATLON;

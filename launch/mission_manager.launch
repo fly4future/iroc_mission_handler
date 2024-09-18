@@ -50,6 +50,7 @@
 
       <!-- Service servers -->
       <remap from="~svc_server/mission_activation" to="~mission_activation" />
+      <remap from="~svc_server/mission_pausing" to="~mission_pausing" />
 
     </node>
 
