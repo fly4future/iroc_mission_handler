@@ -152,7 +152,7 @@ private:
   std::tuple<bool,mrs_msgs::ReferenceStamped> transformReference(mrs_msgs::TransformReferenceSrv transformSrv);
   std::tuple<bool,mrs_msgs::ReferenceArray> transformReferenceArray(mrs_msgs::TransformReferenceArraySrv transformArraySrv);
   double   distance(const mrs_msgs::Reference& waypoint_1, const mrs_msgs::Reference& waypoint_2);
-  void     callbackControlManagerDiag(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg);
+  void     controlManagerDiagCallback(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg);
 
   void     actionPublishFeedback(void);
 
@@ -215,7 +215,7 @@ void MissionManager::onInit() {
 
   sh_uav_state_ = mrs_lib::SubscribeHandler<mrs_robot_diagnostics::UavState>(shopts, "in/uav_state");
   sh_control_manager_diag_ = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diagnostics_in",
-                                                                                            &MissionManager::callbackControlManagerDiag, this);
+                                                                                            &MissionManager::controlManagerDiagCallback, this);
 
   // | --------------------- service clients -------------------- |
 
@@ -564,9 +564,9 @@ bool MissionManager::missionPausingServiceCallback(std_srvs::Trigger::Request& r
 
 // | ----------------- msg callback ---------------- |
 
-/* callbackControlManagerDiag() //{ */
+/* controlManagerDiagCallback() //{ */
 
-void MissionManager::callbackControlManagerDiag(const mrs_msgs::ControlManagerDiagnostics::ConstPtr diagnostics) {
+void MissionManager::controlManagerDiagCallback(const mrs_msgs::ControlManagerDiagnostics::ConstPtr diagnostics) {
 
   std::scoped_lock lock(mission_informaton_mutex);
 
