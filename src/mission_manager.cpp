@@ -124,6 +124,7 @@ private:
   // | --------------------- mission feedback -------------------- |
   std::vector<int>                  path_ids_;
   int                               goal_idx_ = 0;
+  int                               global_goal_idx_ = 0;
   int                               current_trajectory_idx_;
   int                               current_trajectory_length_;
   int                               total_progress_ = 0;
@@ -632,8 +633,8 @@ void MissionManager::controlManagerDiagCallback(const mrs_msgs::ControlManagerDi
     ROS_WARN("[MissionManager]: Trajectory length is 0, validate if the trajectory was succesfully generated.");
     mission_progress_ = 0;
   }
-  //DEBUG (To remove)
-  ROS_INFO("[MissionManager]: Mission progress: %f Goal Progress: %f Distance to finish: %f Distance to goal: %f goal eta %f finish eta: %f", mission_progress_, goal_progress_, distance_to_finish_, distance_to_goal_, goal_estimated_time_of_arrival_, finish_estimated_time_of_arrival_);
+
+  ROS_INFO("[MissionManager]: Current goal idx %d", global_goal_idx_ + goal_idx_);
 
   if (current_trajectory_idx_ >= current_trajectory_goal_idx_) {
     ROS_INFO("[MissionManager]: Reached %d waypoint", goal_idx_ + 1);
@@ -752,7 +753,7 @@ void MissionManager::actionPublishFeedback() {
   if (mission_manager_server_ptr_->isActive()) {
     mrs_mission_manager::waypointMissionFeedback action_server_feedback;
     action_server_feedback.message = to_string(mission_state_.value());
-    action_server_feedback.goal_idx = goal_idx_;
+    action_server_feedback.goal_idx = global_goal_idx_ + goal_idx_; // Global goal idx saves previous reached goals for every pausing
     action_server_feedback.distance_to_closest_goal = distance_to_goal_;
     action_server_feedback.goal_estimated_arrival_time = goal_estimated_time_of_arrival_;
     action_server_feedback.goal_progress = goal_progress_;
@@ -1033,6 +1034,7 @@ bool MissionManager::replanMission() {
     ROS_WARN("Service call for trajectory_reference failed,  returned '%s'", srv.response.message.c_str());
     return false;
   } else {
+    global_goal_idx_ += goal_idx_;
     current_path_array_ = remaining_path_array; //If a new pause is triggered, will continue with current path
     current_trajectory_ = getPathSrv.response.trajectory; //Updating the current trajectory used for feedback calculation 
     total_progress_ += current_trajectory_idx_; //Accumulate current progress
