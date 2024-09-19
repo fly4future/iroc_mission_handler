@@ -634,8 +634,6 @@ void MissionManager::controlManagerDiagCallback(const mrs_msgs::ControlManagerDi
     mission_progress_ = 0;
   }
 
-  ROS_INFO("[MissionManager]: Current goal idx %d", global_goal_idx_ + goal_idx_);
-
   if (current_trajectory_idx_ >= current_trajectory_goal_idx_) {
     ROS_INFO("[MissionManager]: Reached %d waypoint", goal_idx_ + 1);
     /* If last point in ID's from path points */
