@@ -122,7 +122,7 @@ private:
 
 
   // | --------------------- mission feedback -------------------- |
-  std::vector<int>                  path_ids_;
+  /* std::vector<int>                  path_ids_; */
   int                               goal_idx_ = 0;
   int                               global_goal_idx_ = 0;
   int                               current_trajectory_idx_;
@@ -133,6 +133,7 @@ private:
   int                               current_trajectory_goal_idx_;
   mrs_msgs::ReferenceArray          current_path_array_;
   mrs_msgs::TrajectoryReference     current_trajectory_; 
+  std::vector<long int>             path_ids_; 
 
   double                            mission_progress_;
   double                            distance_to_finish_;
@@ -905,6 +906,17 @@ MissionManager::result_t MissionManager::validateMissionSrv(const mrs_msgs::Path
   waypointArray.array                 = current_trajectory_.points;
   validateReferenceSrv.request.array = waypointArray;
 
+  //Saving trajectory idx
+  path_ids_ = getPathSrv.response.waypoint_trajectory_idxs;
+
+  ROS_INFO_STREAM("[MissionManager]: Path size: " << msg.points.size()); 
+  ROS_INFO_STREAM("[MissionManager]: Trajectory size: " << getPathSrv.response.trajectory.points.size()); 
+  ROS_INFO_STREAM("[MissionManager]: Trajectory idxs size: " << path_ids_.size());
+  for (auto& id : path_ids_) {
+    ROS_INFO_STREAM("[MissionManager]: id: " << id);
+    
+  }
+
   if (sc_mission_validation_.call(validateReferenceSrv)) {
     const bool all_success = std::all_of(validateReferenceSrv.response.success.begin(), validateReferenceSrv.response.success.end(), [](bool v) { return v; });
     if (all_success) { 
@@ -936,7 +948,6 @@ void MissionManager::processMissionInfo(const mrs_msgs::ReferenceArray reference
 
   std::scoped_lock lock(mission_informaton_mutex);
   //Clear member variables used in feedback
-  path_ids_.clear();
   goal_idx_ = 0;
   distance_to_finish_ = 0.0;
   distance_to_goal_ = 0.0;
@@ -956,15 +967,17 @@ void MissionManager::processMissionInfo(const mrs_msgs::ReferenceArray reference
     current_trajectory_point = current_trajectory_.points.at(i);
     const double dist = distance(current_point, current_trajectory_point);
 
-    if ( dist < tolerance_ &&  path_ids_.size() < reference_array.array.size()) {
+    if ( dist < tolerance_) {
       ROS_INFO("Found the %d point in trajectory, with ID: %zu", current_goal_idx , i);
-      path_ids_.push_back(i);
+      /* path_ids_.push_back(i); */
       if (++current_goal_idx == reference_array.array.size()) {
         ROS_INFO("[MissionManager]: Found all path points ID");
         break;
       } 
     }
   }
+  ROS_INFO_STREAM("[MissionManager]: reference array size: " << reference_array.array.size());
+  ROS_INFO_STREAM("[MissionManager]: path_ids_: " << path_ids_.size());
 
   if (path_ids_.size() == reference_array.array.size()){
     mission_info_processed_ = true;
