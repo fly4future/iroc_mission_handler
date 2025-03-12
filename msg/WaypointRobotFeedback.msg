@@ -1,0 +1,9 @@
+string  name
+string  message
+uint16  goal_idx
+float64 distance_to_finish
+float64 goal_estimated_arrival_time
+float64 mission_progress
+float64 distance_to_closest_goal
+float64 finish_estimated_arrival_time
+float64 goal_progress

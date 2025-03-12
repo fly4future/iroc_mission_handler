@@ -909,6 +909,7 @@ MissionManager::result_t MissionManager::validateMissionSrv(const mrs_msgs::Path
   //Saving trajectory idx
   path_ids_ = getPathSrv.response.waypoint_trajectory_idxs;
 
+  //Debugging
   ROS_INFO_STREAM("[MissionManager]: Path size: " << msg.points.size()); 
   ROS_INFO_STREAM("[MissionManager]: Trajectory size: " << getPathSrv.response.trajectory.points.size()); 
   ROS_INFO_STREAM("[MissionManager]: Trajectory idxs size: " << path_ids_.size());
@@ -916,14 +917,36 @@ MissionManager::result_t MissionManager::validateMissionSrv(const mrs_msgs::Path
     ROS_INFO_STREAM("[MissionManager]: id: " << id);
     
   }
-
+  //Debugging
+  
   if (sc_mission_validation_.call(validateReferenceSrv)) {
-    const bool all_success = std::all_of(validateReferenceSrv.response.success.begin(), validateReferenceSrv.response.success.end(), [](bool v) { return v; });
+    const bool all_success = std::all_of(validateReferenceSrv.response.success.begin(),
+        validateReferenceSrv.response.success.end(), [](bool v) { return v; });
     if (all_success) { 
-      ROS_INFO_STREAM("Called service \"" << sc_mission_validation_.getService() << "\" with response \"" << validateReferenceSrv.response.message << "\".");
+      ROS_INFO_STREAM("Called service \"" << sc_mission_validation_.getService() << "\" with response \""
+      << validateReferenceSrv.response.message << "\".");
     } else {
-      ROS_WARN_STREAM("Trajectory points outside of safety area, validation from  calling service \"" << sc_mission_validation_.getService() << "\" with response \"" << validateReferenceSrv.response.message << "\".");
-      return {false, validateReferenceSrv.response.message};
+      ROS_WARN_STREAM("Trajectory points outside of safety area, validation from  calling service \""
+      << sc_mission_validation_.getService() << "\" with response \"" 
+      << validateReferenceSrv.response.message << "\".");
+
+      std::vector<mrs_msgs::Reference> unvalid_points;
+      for (auto& point_id : path_ids_) {
+          if (!validateReferenceSrv.response.success.at(point_id)) {
+            unvalid_points.push_back(current_trajectory_.points.at(point_id));
+          }
+      }
+      //Debugging
+      for (auto& point : unvalid_points) {
+        ROS_INFO_STREAM("[MissionManager]: unvalid point: " << point);
+      }
+      //Debugging
+      if (unvalid_points.size() == 0) {
+        ROS_WARN("[MissionManager]: The given path is valid, however the UAV seems to be outside of safety area/obstacle.");
+        return {false," Given path for: "+ robot_name_+ " is valid, however the UAV seems to be outside of safety area or inside an obstacle."};
+      } else {
+        return {false,"Unvalid trajectory for "+ robot_name_+ ", trajectory is outside of safety area"};
+      }
     }
   }
 
