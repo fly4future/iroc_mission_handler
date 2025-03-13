@@ -466,7 +466,7 @@ void MissionManager::timerFeedback([[maybe_unused]] const ros::TimerEvent& event
 
 bool MissionManager::missionActivationServiceCallback(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res) {
   std::scoped_lock lock(action_server_mutex_);
-  ROS_INFO_STREAM("[MissionManager]: Received mission activation request");
+  ROS_INFO_STREAM("[MissionManager]: Received mission activation request.");
   if (mission_manager_server_ptr_->isActive()) {
 
     switch (mission_state_.value()) {
@@ -526,13 +526,13 @@ bool MissionManager::missionActivationServiceCallback(std_srvs::Trigger::Request
 
 bool MissionManager::missionPausingServiceCallback(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res) {
   std::scoped_lock lock(action_server_mutex_);
-  ROS_INFO_STREAM("[MissionManager]: Received mission pausing request");
+  ROS_INFO_STREAM("[MissionManager]: Received mission pausing request.");
   if (mission_manager_server_ptr_->isActive()) {
 
     switch (mission_state_.value()) {
 
       case mission_state_t::EXECUTING: {
-          ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Mission paused. Hover started");
+          ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Mission paused. Hover started.");
           auto resp   = callService<std_srvs::Trigger>(sc_mission_pause_);
           res.success = resp.success;
           res.message = resp.message;
@@ -540,7 +540,6 @@ bool MissionManager::missionPausingServiceCallback(std_srvs::Trigger::Request& r
             ROS_ERROR_THROTTLE(1.0, "[MissionManager]: Failed to call stop trajectory tracking service.");
             break;
           }
-          ros::Duration(3).sleep();
           updateMissionState(mission_state_t::PAUSED);
           break;
       };
