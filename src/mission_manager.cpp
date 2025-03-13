@@ -145,17 +145,16 @@ private:
 
   // | ------------------ Additional functions ------------------ |
 
-  result_t actionGoalValidation(const ActionServerGoal& goal);
-  result_t validateMissionSrv(const mrs_msgs::Path msg) ;
-  void     processMissionInfo(const mrs_msgs::ReferenceArray reference_ist);
-  bool     replanMission(void);
-  void     updateMissionState(const mission_state_t& new_state);
+  result_t                                    actionGoalValidation(const ActionServerGoal& goal);
+  result_t                                    validateMissionSrv(const mrs_msgs::Path msg) ;
+  void                                        processMissionInfo(const mrs_msgs::ReferenceArray reference_ist);
+  bool                                        replanMission(void);
+  void                                        updateMissionState(const mission_state_t& new_state);
   std::tuple<bool,mrs_msgs::ReferenceStamped> transformReference(mrs_msgs::TransformReferenceSrv transformSrv);
-  std::tuple<bool,mrs_msgs::ReferenceArray> transformReferenceArray(mrs_msgs::TransformReferenceArraySrv transformArraySrv);
-  double   distance(const mrs_msgs::Reference& waypoint_1, const mrs_msgs::Reference& waypoint_2);
-  void     controlManagerDiagCallback(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg);
-
-  void     actionPublishFeedback(void);
+  std::tuple<bool,mrs_msgs::ReferenceArray>   transformReferenceArray(mrs_msgs::TransformReferenceArraySrv transformArraySrv);
+  double                                      distance(const mrs_msgs::Reference& waypoint_1, const mrs_msgs::Reference& waypoint_2);
+  void                                        controlManagerDiagCallback(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg);
+  void                                        actionPublishFeedback(void);
 
   // some helper method overloads
   template <typename Svc_T>
@@ -900,13 +899,12 @@ MissionManager::result_t MissionManager::validateMissionSrv(const mrs_msgs::Path
 
   /* Validation of trajectory within safety area */
   current_trajectory_ = getPathSrv.response.trajectory;
+  //Saving trajectory idx
+  current_trajectory_idxs_ = getPathSrv.response.waypoint_trajectory_idxs;
   mrs_msgs::ReferenceArray       waypointArray;
   waypointArray.header               = current_trajectory_.header;
   waypointArray.array                 = current_trajectory_.points;
   validateReferenceSrv.request.array = waypointArray;
-
-  //Saving trajectory idx
-  current_trajectory_idxs_ = getPathSrv.response.waypoint_trajectory_idxs;
 
   //Debugging
   ROS_INFO_STREAM("[MissionManager]: Path size: " << msg.points.size()); 
@@ -914,7 +912,6 @@ MissionManager::result_t MissionManager::validateMissionSrv(const mrs_msgs::Path
   ROS_INFO_STREAM("[MissionManager]: Trajectory idxs size: " << current_trajectory_idxs_.size());
   for (auto& id : current_trajectory_idxs_) {
     ROS_INFO_STREAM("[MissionManager]: id: " << id);
-    
   }
   //Debugging
   
@@ -1031,7 +1028,6 @@ bool MissionManager::replanMission() {
     ROS_INFO("[MissionManager]: Remaining point: x:%f y:%f z:%f h:%f ", point.position.x,point.position.y,point.position.z,point.heading);
   }
 
-
   mrs_msgs::Path msg_path;
   msg_path.points = remaining_path_array.array;
   msg_path.header.stamp = ros::Time::now();
@@ -1042,8 +1038,7 @@ bool MissionManager::replanMission() {
   msg_path.header.frame_id = remaining_path_array.header.frame_id;  
 
   /* Generation of trajectory */
-
-  mrs_msgs::GetPathSrv            getPathSrv;
+  mrs_msgs::GetPathSrv getPathSrv;
   getPathSrv.request.path = msg_path;
   if (sc_get_path_.call(getPathSrv)) {
     if (getPathSrv.response.success) {
@@ -1058,7 +1053,6 @@ bool MissionManager::replanMission() {
   }
 
   /* Sending generated trajectory to control manager */
-
   mrs_msgs::TrajectoryReferenceSrv srv;
   srv.request.trajectory = getPathSrv.response.trajectory;
   const bool res = sc_trajectory_reference_.call(srv);
@@ -1067,9 +1061,9 @@ bool MissionManager::replanMission() {
     ROS_WARN("Service call for trajectory_reference failed,  returned '%s'", srv.response.message.c_str());
     return false;
   } else {
-    global_goal_idx_ += goal_idx_;
+    global_goal_idx_ += goal_idx_; //Saving the reached goals
     current_path_array_ = remaining_path_array; //If a new pause is triggered, will continue with current path
-    current_trajectory_ = getPathSrv.response.trajectory; //Updating the current trajectory used for feedback calculation 
+    current_trajectory_ = getPathSrv.response.trajectory; //Updating the current trajectory used in the mission progress calculation 
     current_trajectory_idxs_           = getPathSrv.response.waypoint_trajectory_idxs; //Updating the current_trajectory_idxs_
     total_progress_ += current_trajectory_idx_; //Accumulate current progress
     processMissionInfo(remaining_path_array);
