@@ -122,7 +122,6 @@ private:
 
 
   // | --------------------- mission feedback -------------------- |
-  /* std::vector<int>                  path_ids_; */
   int                               goal_idx_ = 0;
   int                               global_goal_idx_ = 0;
   int                               current_trajectory_idx_;
@@ -133,7 +132,7 @@ private:
   int                               current_trajectory_goal_idx_;
   mrs_msgs::ReferenceArray          current_path_array_;
   mrs_msgs::TrajectoryReference     current_trajectory_; 
-  std::vector<long int>             path_ids_; 
+  std::vector<long int>             current_trajectory_idxs_; 
 
   double                            mission_progress_;
   double                            distance_to_finish_;
@@ -586,24 +585,24 @@ void MissionManager::controlManagerDiagCallback(const mrs_msgs::ControlManagerDi
 
   //Get current trajectory ID, and the goal ID (from correspondence check)
   current_trajectory_idx_ = diagnostics->tracker_status.trajectory_idx;
-  current_trajectory_goal_idx_ = path_ids_.at(goal_idx_); 
+  current_trajectory_goal_idx_ = current_trajectory_idxs_.at(goal_idx_); 
 
   /* Restart distance, as we  will recalculate based on current trajectory idx */
   distance_to_finish_ = 0.0;
 
   /* Calculating distance from current position to closest goal */
   const mrs_msgs::Reference current_position = current_trajectory_.points.at(current_trajectory_idx_);
-  const int closest_goal_idx = path_ids_.at(goal_idx_);
+  const int closest_goal_idx = current_trajectory_idxs_.at(goal_idx_);
   const mrs_msgs::Reference next_closest_goal = current_trajectory_.points.at(closest_goal_idx);
 
   distance_to_goal_ = distance (current_position, next_closest_goal);
   distance_to_finish_+= distance_to_goal_;
 
   /* Calculating distance between remaining goal segments */
-  for(size_t i = goal_idx_ ; i < path_ids_.size() - 1; i++) {
-    const int current_goal_idx = path_ids_.at(i);
+  for(size_t i = goal_idx_ ; i < current_trajectory_idxs_.size() - 1; i++) {
+    const int current_goal_idx = current_trajectory_idxs_.at(i);
     const mrs_msgs::Reference closest_goal_position = current_trajectory_.points.at(current_goal_idx);
-    const int next_goal_idx = path_ids_.at(i + 1);
+    const int next_goal_idx = current_trajectory_idxs_.at(i + 1);
     mrs_msgs::Reference next_closest_goal_position = current_trajectory_.points.at(next_goal_idx);
     const auto dist = distance (closest_goal_position, next_closest_goal_position);
     distance_to_finish_+= dist;
@@ -638,7 +637,7 @@ void MissionManager::controlManagerDiagCallback(const mrs_msgs::ControlManagerDi
   if (current_trajectory_idx_ >= current_trajectory_goal_idx_) {
     ROS_INFO("[MissionManager]: Reached %d waypoint", goal_idx_ + 1);
     /* If last point in ID's from path points */
-    if (current_trajectory_idx_  >= path_ids_.back()) {
+    if (current_trajectory_idx_  >= current_trajectory_idxs_.back()) {
       ROS_INFO("[MissionManager]: Reached last point");
       distance_to_finish_ = 0.0;
       distance_to_goal_ = 0.0;
@@ -907,13 +906,13 @@ MissionManager::result_t MissionManager::validateMissionSrv(const mrs_msgs::Path
   validateReferenceSrv.request.array = waypointArray;
 
   //Saving trajectory idx
-  path_ids_ = getPathSrv.response.waypoint_trajectory_idxs;
+  current_trajectory_idxs_ = getPathSrv.response.waypoint_trajectory_idxs;
 
   //Debugging
   ROS_INFO_STREAM("[MissionManager]: Path size: " << msg.points.size()); 
   ROS_INFO_STREAM("[MissionManager]: Trajectory size: " << getPathSrv.response.trajectory.points.size()); 
-  ROS_INFO_STREAM("[MissionManager]: Trajectory idxs size: " << path_ids_.size());
-  for (auto& id : path_ids_) {
+  ROS_INFO_STREAM("[MissionManager]: Trajectory idxs size: " << current_trajectory_idxs_.size());
+  for (auto& id : current_trajectory_idxs_) {
     ROS_INFO_STREAM("[MissionManager]: id: " << id);
     
   }
@@ -931,7 +930,7 @@ MissionManager::result_t MissionManager::validateMissionSrv(const mrs_msgs::Path
       << validateReferenceSrv.response.message << "\".");
 
       std::vector<mrs_msgs::Reference> unvalid_points;
-      for (auto& point_id : path_ids_) {
+      for (auto& point_id : current_trajectory_idxs_) {
           if (!validateReferenceSrv.response.success.at(point_id)) {
             unvalid_points.push_back(current_trajectory_.points.at(point_id));
           }
@@ -992,7 +991,7 @@ void MissionManager::processMissionInfo(const mrs_msgs::ReferenceArray reference
 
     if ( dist < tolerance_) {
       ROS_INFO("Found the %d point in trajectory, with ID: %zu", current_goal_idx , i);
-      /* path_ids_.push_back(i); */
+      /* current_trajectory_idxs_.push_back(i); */
       if (++current_goal_idx == reference_array.array.size()) {
         ROS_INFO("[MissionManager]: Found all path points ID");
         break;
@@ -1000,9 +999,9 @@ void MissionManager::processMissionInfo(const mrs_msgs::ReferenceArray reference
     }
   }
   ROS_INFO_STREAM("[MissionManager]: reference array size: " << reference_array.array.size());
-  ROS_INFO_STREAM("[MissionManager]: path_ids_: " << path_ids_.size());
+  ROS_INFO_STREAM("[MissionManager]: current_trajectory_idxs_: " << current_trajectory_idxs_.size());
 
-  if (path_ids_.size() == reference_array.array.size()){
+  if (current_trajectory_idxs_.size() == reference_array.array.size()){
     mission_info_processed_ = true;
   } else { 
     ROS_WARN("[MissionManager]: Did not found all the path correspondences for feedback!");
@@ -1071,6 +1070,7 @@ bool MissionManager::replanMission() {
     global_goal_idx_ += goal_idx_;
     current_path_array_ = remaining_path_array; //If a new pause is triggered, will continue with current path
     current_trajectory_ = getPathSrv.response.trajectory; //Updating the current trajectory used for feedback calculation 
+    current_trajectory_idxs_           = getPathSrv.response.waypoint_trajectory_idxs; //Updating the current_trajectory_idxs_
     total_progress_ += current_trajectory_idx_; //Accumulate current progress
     processMissionInfo(remaining_path_array);
     return true;
