@@ -12,6 +12,7 @@
                           (TAKEOFF)               \
                           (MISSION_LOADED)        \
                           (EXECUTING)             \
+                          (FINISHED)              \
                           (PAUSED)                \
                           (PAUSED_DUE_TO_RC_MODE) \
                           (RTH)                   \

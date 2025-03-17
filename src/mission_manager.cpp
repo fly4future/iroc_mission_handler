@@ -371,50 +371,43 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
         break;
       };
 
-      case mission_state_t::EXECUTING: {
-        // mission finished if were tracking the trajectory and we are now hovering
-        if ((previous_uav_state == uav_state_t::TRAJECTORY || previous_uav_state == uav_state_t::GOTO) && uav_state_.value() == uav_state_t::HOVER) {
-          ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Trajectory tracking finished.");
-          action_finished_ = true;
+      case mission_state_t::FINISHED: {
+        switch (action_server_goal_.terminal_action) {
 
-          switch (action_server_goal_.terminal_action) {
+          case ActionServerGoal::TERMINAL_ACTION_LAND: {
+            ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Executing terminal action. Calling land");
+            auto resp = callService<std_srvs::Trigger>(sc_land_);
+            if (!resp.success) {
+              ROS_ERROR_THROTTLE(1.0, "[MissionManager]: Failed to call land service.");
+              return;
+            }
 
-            case ActionServerGoal::TERMINAL_ACTION_LAND: {
-              ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Executing terminal action. Calling land");
-              auto resp = callService<std_srvs::Trigger>(sc_land_);
-              if (!resp.success) {
-                ROS_ERROR_THROTTLE(1.0, "[MissionManager]: Failed to call land service.");
-                return;
-              }
+            updateMissionState(mission_state_t::LAND);
+            break;
+          };
 
-              updateMissionState(mission_state_t::LAND);
-              break;
-            };
+          case ActionServerGoal::TERMINAL_ACTION_RTH: {
+            ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Executing terminal action. Calling land home");
+            auto resp = callService<std_srvs::Trigger>(sc_land_home_);
+            if (!resp.success) {
+              ROS_ERROR_THROTTLE(1.0, "[MissionManager]: Failed to call land home service.");
+              return;
+            }
 
-            case ActionServerGoal::TERMINAL_ACTION_RTH: {
-              ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Executing terminal action. Calling land home");
-              auto resp = callService<std_srvs::Trigger>(sc_land_home_);
-              if (!resp.success) {
-                ROS_ERROR_THROTTLE(1.0, "[MissionManager]: Failed to call land home service.");
-                return;
-              }
+            updateMissionState(mission_state_t::RTH);
+            break;
+          };
 
-              updateMissionState(mission_state_t::RTH);
-              break;
-            };
+          default: {  
+            mrs_mission_manager::waypointMissionResult action_server_result;
+            action_server_result.success = true;
+            action_server_result.message = "Mission finished";
+            ROS_INFO("[MissionManager]: Mission finished.");
+            mission_manager_server_ptr_->setSucceeded(action_server_result);
 
-            default: {  
-              mrs_mission_manager::waypointMissionResult action_server_result;
-              action_server_result.success = true;
-              action_server_result.message = "Mission finished";
-              ROS_INFO("[MissionManager]: Mission finished.");
-              mission_manager_server_ptr_->setSucceeded(action_server_result);
-
-              updateMissionState(mission_state_t::IDLE);
-              break;
-            };
-          }
-          return;
+            updateMissionState(mission_state_t::IDLE);
+            break;
+          };
         }
         break;
       };
@@ -656,6 +649,7 @@ void MissionManager::controlManagerDiagCallback(const mrs_msgs::ControlManagerDi
     /* If last point in ID's from path points */
     if (current_trajectory_idx_  >= current_trajectory_idxs_.back()) {
       ROS_INFO("[MissionManager]: Reached last point");
+      updateMissionState(mission_state_t::FINISHED);
       distance_to_finish_ = 0.0;
       distance_to_goal_ = 0.0;
       mission_progress_ = 100.0;
