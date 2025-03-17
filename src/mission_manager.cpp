@@ -70,9 +70,9 @@ private:
 
   std::atomic_bool is_initialized_  = false;
   std::atomic_bool mission_info_processed_  = false;
-  std::atomic_bool mission_paused_  = false;
   std::atomic_bool finished_tracking_  = false;
   std::atomic_bool action_finished_ = false;
+  std::atomic_bool pause_requested_ = false;
 
   // | ---------------------- ROS subscribers --------------------- |
   std::shared_ptr<mrs_lib::TimeoutManager> tim_mgr_;
@@ -307,14 +307,14 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
   const bool not_idle_or_land = mission_state_.value() != mission_state_t::IDLE && mission_state_.value() != mission_state_t::LAND;
 
   if (uav_state_.value() == uav_state_t::LAND && not_idle_or_land) {
-    ROS_WARN_STREAM_THROTTLE(1.0, "[MissionManager]: Landing detected. Switching to LAND state.");
+    ROS_WARN_STREAM("[MissionManager]: Landing detected. Switching to LAND state.");
     updateMissionState(mission_state_t::LAND);
     return;
   }
 
   if (mission_state_.value() == mission_state_t::LAND) {
     if (uav_state_.value() == uav_state_t::ARMED || uav_state_.value() == uav_state_t::DISARMED || uav_state_.value() == uav_state_t::OFFBOARD) {
-      ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Landing finished.");
+      ROS_INFO_STREAM("[MissionManager]: Landing finished.");
       if (mission_manager_server_ptr_->isActive()) {
         mrs_mission_manager::waypointMissionResult action_server_result;
         if (action_finished_) {
@@ -419,20 +419,6 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
         break;
       };
 
-      case mission_state_t::PAUSED: {
-        const auto resp = replanMission();
-
-        if (!resp) { 
-          ROS_ERROR_THROTTLE(1.0, "[MissionManager]: Failed to replan mission.");
-          return;
-        } else {
-          ROS_INFO("[MissionManager]: Replanning mission succesfully.");
-          updateMissionState(mission_state_t::MISSION_LOADED);
-          mission_paused_ = false;
-        }
-        break;
-      };
-
       case mission_state_t::PAUSED_DUE_TO_RC_MODE: {
         // mission continue if we are again not in RC_mode
         if (uav_state_.value() != uav_state_t::RC_MODE) {
@@ -498,6 +484,31 @@ bool MissionManager::missionActivationServiceCallback(std_srvs::Trigger::Request
         }
       };
 
+      case mission_state_t::PAUSED: {
+        ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Replanning mission from current position");
+        const auto resp_plan = replanMission();
+        if (!resp_plan) { 
+          ROS_ERROR_THROTTLE(1.0, "[MissionManager]: Failed to replan mission.");
+          res.success = false;
+          res.message = "failed to replan mission";
+          break;
+        } else {
+          ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Replanning mission succesfully.");
+          updateMissionState(mission_state_t::MISSION_LOADED);
+        }
+
+        ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Executing mission.");
+        auto resp   = callService<std_srvs::Trigger>(sc_mission_start_);
+        res.success = resp.success;
+        res.message = resp.message;
+        if (!resp.success) {
+          ROS_ERROR_THROTTLE(1.0, "[MissionManager]: Failed to call mission start service.");
+          break;
+        }
+        updateMissionState(mission_state_t::EXECUTING);
+        break;
+      };
+
       case mission_state_t::PAUSED_DUE_TO_RC_MODE: {
         res.success = false;
         res.message = "Mission is pause due to active MRS Remote mode. Disable the mode, to continue with the mission execution.";
@@ -544,9 +555,17 @@ bool MissionManager::missionPausingServiceCallback(std_srvs::Trigger::Request& r
           break;
       };
 
+      case mission_state_t::TAKEOFF: {
+          ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Mission paused. Drone will hover after take off is finished.");
+          res.success = true;
+          res.message = "Switched to PAUSED state.";
+          updateMissionState(mission_state_t::PAUSED);
+          break;
+      };
+
       default: {
         res.success = false;
-        res.message = "No mission is currently ongoing to be paused.";
+        res.message = "Mission is in the state in which cannot be paused.";
         ROS_WARN_THROTTLE(1.0, "[MissionManager]: %s", res.message.c_str());
         break;
       };
@@ -577,7 +596,7 @@ void MissionManager::controlManagerDiagCallback(const mrs_msgs::ControlManagerDi
   const bool have_goal = diagnostics->tracker_status.have_goal;
   current_trajectory_length_ = diagnostics->tracker_status.trajectory_length;
  
-  if (current_trajectory_length_ == 0 || !mission_info_processed_ || mission_paused_) {
+  if (current_trajectory_length_ == 0 || !mission_info_processed_) {
         return;
   }
 
@@ -1008,9 +1027,6 @@ void MissionManager::processMissionInfo(const mrs_msgs::ReferenceArray reference
 /* replanMission() //{ */
 
 bool MissionManager::replanMission() {
-  
-  //To stop the feedback
-  mission_paused_ = true;
   
   mrs_msgs::ReferenceArray remaining_path_array;
 
