@@ -18,7 +18,7 @@
                           (RTH)                   \
                           (LAND)                  \
 
-namespace mrs_mission_manager
+namespace iroc_mission_handler
 {
 
 #include <mrs_robot_diagnostics/enums/enum_macros.h>

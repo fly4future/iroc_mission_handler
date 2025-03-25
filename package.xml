@@ -1,10 +1,10 @@
 <?xml version="1.0"?>
 <package format="2">
 
-  <name>mrs_mission_manager</name>
-  <version>1.0.0</version>
+  <name>iroc_mission_handler</name>
+  <version>1.0.1</version>
   <description>
-    mrs_mission_manager
+    iroc_mission_handler
   </description>
 
   <maintainer email="spurny@fly4future.com">Vojtech Spurny</maintainer>

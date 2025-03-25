@@ -5,7 +5,7 @@
 #include <nodelet/nodelet.h>
 
 #include <actionlib/server/simple_action_server.h>
-#include <mrs_mission_manager/waypointMissionAction.h>
+#include <iroc_mission_handler/waypointMissionAction.h>
 
 #include <mrs_lib/param_loader.h>
 #include <mrs_lib/mutex.h>
@@ -31,7 +31,7 @@
 #include <mrs_robot_diagnostics/parsing_functions.h>
 #include <mrs_robot_diagnostics/UavState.h>
 
-#include "mrs_mission_manager/enums/mission_state.h"
+#include "iroc_mission_handler/enums/mission_state.h"
 
 
 //}
@@ -40,12 +40,12 @@
 using vec2_t = mrs_lib::geometry::vec_t<2>;
 using vec3_t = mrs_lib::geometry::vec_t<3>;
 
-namespace mrs_mission_manager
+namespace iroc_mission_handler
 {
 
-/* class MissionManager //{ */
+/* class MissionHandler //{ */
 
-class MissionManager : public nodelet::Nodelet {
+class MissionHandler : public nodelet::Nodelet {
 public:
   virtual void onInit();
 
@@ -110,12 +110,12 @@ private:
   // | --------------------- actionlib stuff -------------------- |
   //
 
-  typedef actionlib::SimpleActionServer<mrs_mission_manager::waypointMissionAction> MissionManagerServer;
+  typedef actionlib::SimpleActionServer<iroc_mission_handler::waypointMissionAction> MissionHandlerServer;
   void                                                                              actionCallbackGoal();
   void                                                                              actionCallbackPreempt();
-  std::unique_ptr<MissionManagerServer>                                             mission_manager_server_ptr_;
+  std::unique_ptr<MissionHandlerServer>                                             mission_handler_server_ptr_;
 
-  typedef mrs_mission_manager::waypointMissionGoal ActionServerGoal;
+  typedef iroc_mission_handler::waypointMissionGoal ActionServerGoal;
   ActionServerGoal                                 action_server_goal_;
   std::recursive_mutex                             action_server_mutex_;
   std::recursive_mutex                             mission_informaton_mutex;
@@ -169,7 +169,7 @@ private:
 
 /* onInit() //{ */
 
-void MissionManager::onInit() {
+void MissionHandler::onInit() {
 
   /* obtain node handle */
   nh_ = nodelet::Nodelet::getMTPrivateNodeHandle();
@@ -178,7 +178,7 @@ void MissionManager::onInit() {
   ros::Time::waitForValid();
 
   /* load parameters */
-  mrs_lib::ParamLoader param_loader(nh_, "MissionManager");
+  mrs_lib::ParamLoader param_loader(nh_, "MissionHandler");
 
   std::string custom_config_path;
 
@@ -196,7 +196,7 @@ void MissionManager::onInit() {
   tolerance_ = param_loader.loadParam2<double>("correspondence_tolerance");
 
   if (!param_loader.loadedSuccessfully()) {
-    ROS_ERROR("[MissionManager]: Could not load all parameters!");
+    ROS_ERROR("[MissionHandler]: Could not load all parameters!");
     ros::shutdown();
   }
 
@@ -205,7 +205,7 @@ void MissionManager::onInit() {
   tim_mgr_ = std::make_shared<mrs_lib::TimeoutManager>(nh_, ros::Rate(1.0));
   mrs_lib::SubscribeHandlerOptions shopts;
   shopts.nh                 = nh_;
-  shopts.node_name          = "MissionManager";
+  shopts.node_name          = "MissionHandler";
   shopts.no_message_timeout = ros::Duration(5.0);
   shopts.timeout_manager    = tim_mgr_;
   shopts.threadsafe         = true;
@@ -215,7 +215,7 @@ void MissionManager::onInit() {
 
   sh_uav_state_ = mrs_lib::SubscribeHandler<mrs_robot_diagnostics::UavState>(shopts, "in/uav_state");
   sh_control_manager_diag_ = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diagnostics_in",
-                                                                                            &MissionManager::controlManagerDiagCallback, this);
+                                                                                            &MissionHandler::controlManagerDiagCallback, this);
 
   // | --------------------- service clients -------------------- |
 
@@ -261,28 +261,28 @@ void MissionManager::onInit() {
 
   // | --------------------- service servers -------------------- |
 
-  ss_activation_ = nh_.advertiseService("svc_server/mission_activation", &MissionManager::missionActivationServiceCallback, this);
+  ss_activation_ = nh_.advertiseService("svc_server/mission_activation", &MissionHandler::missionActivationServiceCallback, this);
   ROS_INFO("[IROCBridge]: Created ServiceServer on service \'svc_server/mission_activation\' -> \'%s\'", ss_activation_.getService().c_str());
 
-  ss_pausing_ = nh_.advertiseService("svc_server/mission_pausing", &MissionManager::missionPausingServiceCallback, this);
+  ss_pausing_ = nh_.advertiseService("svc_server/mission_pausing", &MissionHandler::missionPausingServiceCallback, this);
   ROS_INFO("[IROCBridge]: Created ServiceServer on service \'svc_server/mission_pausing\' -> \'%s\'", ss_pausing_.getService().c_str());
 
   // | ------------------------- timers ------------------------- |
 
-  timer_main_     = nh_.createTimer(ros::Rate(main_timer_rate), &MissionManager::timerMain, this);
-  timer_feedback_ = nh_.createTimer(ros::Rate(feedback_timer_rate), &MissionManager::timerFeedback, this);
+  timer_main_     = nh_.createTimer(ros::Rate(main_timer_rate), &MissionHandler::timerMain, this);
+  timer_feedback_ = nh_.createTimer(ros::Rate(feedback_timer_rate), &MissionHandler::timerFeedback, this);
 
   // | ------------------ action server methods ----------------- |
   //
-  mission_manager_server_ptr_ = std::make_unique<MissionManagerServer>(nh_, ros::this_node::getName(), false);
-  mission_manager_server_ptr_->registerGoalCallback(boost::bind(&MissionManager::actionCallbackGoal, this));
-  mission_manager_server_ptr_->registerPreemptCallback(boost::bind(&MissionManager::actionCallbackPreempt, this));
-  mission_manager_server_ptr_->start();
+  mission_handler_server_ptr_ = std::make_unique<MissionHandlerServer>(nh_, ros::this_node::getName(), false);
+  mission_handler_server_ptr_->registerGoalCallback(boost::bind(&MissionHandler::actionCallbackGoal, this));
+  mission_handler_server_ptr_->registerPreemptCallback(boost::bind(&MissionHandler::actionCallbackPreempt, this));
+  mission_handler_server_ptr_->start();
 
   // | --------------------- finish the init -------------------- |
 
-  ROS_INFO("[MissionManager]: initialized");
-  ROS_INFO("[MissionManager]: --------------------");
+  ROS_INFO("[MissionHandler]: initialized");
+  ROS_INFO("[MissionHandler]: --------------------");
   is_initialized_ = true;
 }
 
@@ -291,10 +291,10 @@ void MissionManager::onInit() {
 // | ------------------------- timers  ------------------------ |
 
 /* timerMain() //{ */
-void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
+void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
   std::scoped_lock lock(action_server_mutex_);
   if (!is_initialized_) {
-    ROS_WARN_THROTTLE(1, "[MissionManager]: Waiting for nodelet initialization");
+    ROS_WARN_THROTTLE(1, "[MissionHandler]: Waiting for nodelet initialization");
     return;
   }
 
@@ -307,26 +307,26 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
   const bool not_idle_or_land = mission_state_.value() != mission_state_t::IDLE && mission_state_.value() != mission_state_t::LAND;
 
   if (uav_state_.value() == uav_state_t::LAND && not_idle_or_land) {
-    ROS_WARN_STREAM("[MissionManager]: Landing detected. Switching to LAND state.");
+    ROS_WARN_STREAM("[MissionHandler]: Landing detected. Switching to LAND state.");
     updateMissionState(mission_state_t::LAND);
     return;
   }
 
   if (mission_state_.value() == mission_state_t::LAND) {
     if (uav_state_.value() == uav_state_t::ARMED || uav_state_.value() == uav_state_t::DISARMED || uav_state_.value() == uav_state_t::OFFBOARD) {
-      ROS_INFO_STREAM("[MissionManager]: Landing finished.");
-      if (mission_manager_server_ptr_->isActive()) {
-        mrs_mission_manager::waypointMissionResult action_server_result;
+      ROS_INFO_STREAM("[MissionHandler]: Landing finished.");
+      if (mission_handler_server_ptr_->isActive()) {
+        iroc_mission_handler::waypointMissionResult action_server_result;
         if (action_finished_) {
           action_server_result.success = true;
           action_server_result.message = "Mission finished";
-          ROS_INFO("[MissionManager]: Mission finished.");
-          mission_manager_server_ptr_->setSucceeded(action_server_result);
+          ROS_INFO("[MissionHandler]: Mission finished.");
+          mission_handler_server_ptr_->setSucceeded(action_server_result);
         } else {
           action_server_result.success = false;
           action_server_result.message = "Mission stopped due to landing.";
-          ROS_WARN("[MissionManager]: Mission stopped due to landing.");
-          mission_manager_server_ptr_->setAborted(action_server_result);
+          ROS_WARN("[MissionHandler]: Mission stopped due to landing.");
+          mission_handler_server_ptr_->setAborted(action_server_result);
         }
       }
       updateMissionState(mission_state_t::IDLE);
@@ -334,15 +334,15 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
     }
   }
 
-  if (mission_manager_server_ptr_->isActive()) {
+  if (mission_handler_server_ptr_->isActive()) {
 
     // switch mission to idle if we are in Manual
     if (uav_state_.value() == uav_state_t::MANUAL) {
-      mrs_mission_manager::waypointMissionResult action_server_result;
+      iroc_mission_handler::waypointMissionResult action_server_result;
       action_server_result.success = false;
       action_server_result.message = "Mission cancelled because drone is under manual control.";
-      ROS_INFO("[MissionManager]: %s", action_server_result.message.c_str());
-      mission_manager_server_ptr_->setAborted(action_server_result);
+      ROS_INFO("[MissionHandler]: %s", action_server_result.message.c_str());
+      mission_handler_server_ptr_->setAborted(action_server_result);
       updateMissionState(mission_state_t::IDLE);
       return;
     }
@@ -350,7 +350,7 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
     // mission paused if we are in RC_mode
     if (uav_state_.value() == uav_state_t::RC_MODE) {
       ROS_INFO_STREAM_THROTTLE(1.0,
-                               "[MissionManager]: Mission is pause due to active MRS Remote mode. Disable the mode, to continue with the mission execution.");
+                               "[MissionHandler]: Mission is pause due to active MRS Remote mode. Disable the mode, to continue with the mission execution.");
       updateMissionState(mission_state_t::PAUSED_DUE_TO_RC_MODE);
       return;
     }
@@ -359,10 +359,10 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
       case mission_state_t::TAKEOFF: {
         if ((previous_uav_state == uav_state_t::GOTO || previous_uav_state == uav_state_t::TAKEOFF) && uav_state_.value() == uav_state_t::HOVER) {
-          ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Takeoff finished. Executing mission.");
+          ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Takeoff finished. Executing mission.");
           auto resp = callService<std_srvs::Trigger>(sc_mission_start_);
           if (!resp.success) {
-            ROS_ERROR_THROTTLE(1.0, "[MissionManager]: Failed to call mission start service.");
+            ROS_ERROR_THROTTLE(1.0, "[MissionHandler]: Failed to call mission start service.");
             return;
           }
           updateMissionState(mission_state_t::EXECUTING);
@@ -375,10 +375,10 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
         switch (action_server_goal_.terminal_action) {
 
           case ActionServerGoal::TERMINAL_ACTION_LAND: {
-            ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Executing terminal action. Calling land");
+            ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Executing terminal action. Calling land");
             auto resp = callService<std_srvs::Trigger>(sc_land_);
             if (!resp.success) {
-              ROS_ERROR_THROTTLE(1.0, "[MissionManager]: Failed to call land service.");
+              ROS_ERROR_THROTTLE(1.0, "[MissionHandler]: Failed to call land service.");
               return;
             }
 
@@ -387,10 +387,10 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
           };
 
           case ActionServerGoal::TERMINAL_ACTION_RTH: {
-            ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Executing terminal action. Calling land home");
+            ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Executing terminal action. Calling land home");
             auto resp = callService<std_srvs::Trigger>(sc_land_home_);
             if (!resp.success) {
-              ROS_ERROR_THROTTLE(1.0, "[MissionManager]: Failed to call land home service.");
+              ROS_ERROR_THROTTLE(1.0, "[MissionHandler]: Failed to call land home service.");
               return;
             }
 
@@ -399,11 +399,11 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
           };
 
           default: {  
-            mrs_mission_manager::waypointMissionResult action_server_result;
+            iroc_mission_handler::waypointMissionResult action_server_result;
             action_server_result.success = true;
             action_server_result.message = "Mission finished";
-            ROS_INFO("[MissionManager]: Mission finished.");
-            mission_manager_server_ptr_->setSucceeded(action_server_result);
+            ROS_INFO("[MissionHandler]: Mission finished.");
+            mission_handler_server_ptr_->setSucceeded(action_server_result);
 
             updateMissionState(mission_state_t::IDLE);
             break;
@@ -415,7 +415,7 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
       case mission_state_t::PAUSED_DUE_TO_RC_MODE: {
         // mission continue if we are again not in RC_mode
         if (uav_state_.value() != uav_state_t::RC_MODE) {
-          ROS_INFO("[MissionManager]: RC mode disabled. Switching to previous mission mode");
+          ROS_INFO("[MissionHandler]: RC mode disabled. Switching to previous mission mode");
           updateMissionState(previous_mission_state_);
           return;
         }
@@ -430,9 +430,9 @@ void MissionManager::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 //}
 
 /* timerFeedback() //{ */
-void MissionManager::timerFeedback([[maybe_unused]] const ros::TimerEvent& event) {
+void MissionHandler::timerFeedback([[maybe_unused]] const ros::TimerEvent& event) {
   if (!is_initialized_) {
-    ROS_WARN_THROTTLE(1, "[MissionManager]: Waiting for nodelet initialization");
+    ROS_WARN_THROTTLE(1, "[MissionHandler]: Waiting for nodelet initialization");
     return;
   }
   actionPublishFeedback();
@@ -443,33 +443,33 @@ void MissionManager::timerFeedback([[maybe_unused]] const ros::TimerEvent& event
 
 /*  missionActivationServiceCallback()//{ */
 
-bool MissionManager::missionActivationServiceCallback(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res) {
+bool MissionHandler::missionActivationServiceCallback(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res) {
   std::scoped_lock lock(action_server_mutex_);
-  ROS_INFO_STREAM("[MissionManager]: Received mission activation request.");
-  if (mission_manager_server_ptr_->isActive()) {
+  ROS_INFO_STREAM("[MissionHandler]: Received mission activation request.");
+  if (mission_handler_server_ptr_->isActive()) {
 
     switch (mission_state_.value()) {
 
       case mission_state_t::MISSION_LOADED: {
         if (!mrs_robot_diagnostics::is_flying(uav_state_.value())) {
-          ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Calling takeoff");
+          ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Calling takeoff");
           auto resp   = callService<std_srvs::Trigger>(sc_takeoff_);
           res.success = resp.success;
           res.message = resp.message;
           if (!resp.success) {
-            ROS_ERROR_THROTTLE(1.0, "[MissionManager]: %s", res.message.c_str());
+            ROS_ERROR_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
             break;
           }
           updateMissionState(mission_state_t::TAKEOFF);
           break;
         } else {
 
-          ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Executing mission.");
+          ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Executing mission.");
           auto resp   = callService<std_srvs::Trigger>(sc_mission_start_);
           res.success = resp.success;
           res.message = resp.message;
           if (!resp.success) {
-            ROS_ERROR_THROTTLE(1.0, "[MissionManager]: Failed to call mission start service.");
+            ROS_ERROR_THROTTLE(1.0, "[MissionHandler]: Failed to call mission start service.");
             break;
           }
           updateMissionState(mission_state_t::EXECUTING);
@@ -478,24 +478,24 @@ bool MissionManager::missionActivationServiceCallback(std_srvs::Trigger::Request
       };
 
       case mission_state_t::PAUSED: {
-        ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Replanning mission from current position");
+        ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Replanning mission from current position");
         const auto resp_plan = replanMission();
         if (!resp_plan) { 
-          ROS_ERROR_THROTTLE(1.0, "[MissionManager]: Failed to replan mission.");
+          ROS_ERROR_THROTTLE(1.0, "[MissionHandler]: Failed to replan mission.");
           res.success = false;
           res.message = "failed to replan mission";
           break;
         } else {
-          ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Replanning mission succesfully.");
+          ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Replanning mission succesfully.");
           updateMissionState(mission_state_t::MISSION_LOADED);
         }
 
-        ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Executing mission.");
+        ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Executing mission.");
         auto resp   = callService<std_srvs::Trigger>(sc_mission_start_);
         res.success = resp.success;
         res.message = resp.message;
         if (!resp.success) {
-          ROS_ERROR_THROTTLE(1.0, "[MissionManager]: Failed to call mission start service.");
+          ROS_ERROR_THROTTLE(1.0, "[MissionHandler]: Failed to call mission start service.");
           break;
         }
         updateMissionState(mission_state_t::EXECUTING);
@@ -505,21 +505,21 @@ bool MissionManager::missionActivationServiceCallback(std_srvs::Trigger::Request
       case mission_state_t::PAUSED_DUE_TO_RC_MODE: {
         res.success = false;
         res.message = "Mission is pause due to active MRS Remote mode. Disable the mode, to continue with the mission execution.";
-        ROS_ERROR_THROTTLE(1.0, "[MissionManager]: %s", res.message.c_str());
+        ROS_ERROR_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
         break;
       };
 
       default: {
         res.success = false;
         res.message = "Mission is already activated.";
-        ROS_WARN_THROTTLE(1.0, "[MissionManager]: %s", res.message.c_str());
+        ROS_WARN_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
         break;
       };
     }
   } else {
     res.success = false;
     res.message = "No active mission.";
-    ROS_WARN_THROTTLE(1.0, "[MissionManager]: %s", res.message.c_str());
+    ROS_WARN_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
   }
   return true;
 }
@@ -528,20 +528,20 @@ bool MissionManager::missionActivationServiceCallback(std_srvs::Trigger::Request
 
 /*  missionPausingServiceCallback()//{ */
 
-bool MissionManager::missionPausingServiceCallback(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res) {
+bool MissionHandler::missionPausingServiceCallback(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res) {
   std::scoped_lock lock(action_server_mutex_);
-  ROS_INFO_STREAM("[MissionManager]: Received mission pausing request.");
-  if (mission_manager_server_ptr_->isActive()) {
+  ROS_INFO_STREAM("[MissionHandler]: Received mission pausing request.");
+  if (mission_handler_server_ptr_->isActive()) {
 
     switch (mission_state_.value()) {
 
       case mission_state_t::EXECUTING: {
-          ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Mission paused. Hover started.");
+          ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Mission paused. Hover started.");
           auto resp   = callService<std_srvs::Trigger>(sc_mission_pause_);
           res.success = resp.success;
           res.message = resp.message;
           if (!resp.success) {
-            ROS_ERROR_THROTTLE(1.0, "[MissionManager]: Failed to call stop trajectory tracking service.");
+            ROS_ERROR_THROTTLE(1.0, "[MissionHandler]: Failed to call stop trajectory tracking service.");
             break;
           }
           updateMissionState(mission_state_t::PAUSED);
@@ -549,7 +549,7 @@ bool MissionManager::missionPausingServiceCallback(std_srvs::Trigger::Request& r
       };
 
       case mission_state_t::TAKEOFF: {
-          ROS_INFO_STREAM_THROTTLE(1.0, "[MissionManager]: Mission paused. Drone will hover after take off is finished.");
+          ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Mission paused. Drone will hover after take off is finished.");
           res.success = true;
           res.message = "Switched to PAUSED state.";
           updateMissionState(mission_state_t::PAUSED);
@@ -559,14 +559,14 @@ bool MissionManager::missionPausingServiceCallback(std_srvs::Trigger::Request& r
       default: {
         res.success = false;
         res.message = "Mission is in the state in which cannot be paused.";
-        ROS_WARN_THROTTLE(1.0, "[MissionManager]: %s", res.message.c_str());
+        ROS_WARN_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
         break;
       };
     }
   } else {
     res.success = false;
     res.message = "No active mission.";
-    ROS_WARN_THROTTLE(1.0, "[MissionManager]: %s", res.message.c_str());
+    ROS_WARN_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
   }
   return true;
 }
@@ -577,7 +577,7 @@ bool MissionManager::missionPausingServiceCallback(std_srvs::Trigger::Request& r
 
 /* controlManagerDiagCallback() //{ */
 
-void MissionManager::controlManagerDiagCallback(const mrs_msgs::ControlManagerDiagnostics::ConstPtr diagnostics) {
+void MissionHandler::controlManagerDiagCallback(const mrs_msgs::ControlManagerDiagnostics::ConstPtr diagnostics) {
 
   std::scoped_lock lock(mission_informaton_mutex);
 
@@ -640,15 +640,15 @@ void MissionManager::controlManagerDiagCallback(const mrs_msgs::ControlManagerDi
     const double calculated_mission_time= static_cast<double>(current_trajectory_length_ - current_trajectory_idx_) * _trajectory_samping_period_;  
     finish_estimated_time_of_arrival_ = std::max(calculated_mission_time, 0.0);
   } else {
-    ROS_WARN("[MissionManager]: Trajectory length is 0, validate if the trajectory was succesfully generated.");
+    ROS_WARN("[MissionHandler]: Trajectory length is 0, validate if the trajectory was succesfully generated.");
     mission_progress_ = 0;
   }
 
   if (current_trajectory_idx_ >= current_trajectory_goal_idx_) {
-    ROS_INFO("[MissionManager]: Reached %d waypoint", goal_idx_ + 1);
+    ROS_INFO("[MissionHandler]: Reached %d waypoint", goal_idx_ + 1);
     /* If last point in ID's from path points */
     if (current_trajectory_idx_  >= current_trajectory_idxs_.back()) {
-      ROS_INFO("[MissionManager]: Reached last point");
+      ROS_INFO("[MissionHandler]: Reached last point");
       updateMissionState(mission_state_t::FINISHED);
       distance_to_finish_ = 0.0;
       distance_to_goal_ = 0.0;
@@ -671,28 +671,28 @@ void MissionManager::controlManagerDiagCallback(const mrs_msgs::ControlManagerDi
 
 /*  actionCallbackGoal()//{ */
 
-void MissionManager::actionCallbackGoal() {
+void MissionHandler::actionCallbackGoal() {
   std::scoped_lock                                                  lock(action_server_mutex_);
-  boost::shared_ptr<const mrs_mission_manager::waypointMissionGoal> new_action_server_goal = mission_manager_server_ptr_->acceptNewGoal();
-  ROS_INFO_STREAM("[MissionManager]: Action server received a new goal: \n" << *new_action_server_goal);
+  boost::shared_ptr<const iroc_mission_handler::waypointMissionGoal> new_action_server_goal = mission_handler_server_ptr_->acceptNewGoal();
+  ROS_INFO_STREAM("[MissionHandler]: Action server received a new goal: \n" << *new_action_server_goal);
 
   if (!is_initialized_) {
-    mrs_mission_manager::waypointMissionResult action_server_result;
+    iroc_mission_handler::waypointMissionResult action_server_result;
     action_server_result.success = false;
     action_server_result.message = "Not initialized yet";
-    ROS_ERROR("[MissionManager]: not initialized yet");
-    mission_manager_server_ptr_->setAborted(action_server_result);
+    ROS_ERROR("[MissionHandler]: not initialized yet");
+    mission_handler_server_ptr_->setAborted(action_server_result);
     return;
   }
 
   const auto result = actionGoalValidation(*new_action_server_goal);
 
   if (!result.success) {
-    mrs_mission_manager::waypointMissionResult action_server_result;
+    iroc_mission_handler::waypointMissionResult action_server_result;
     action_server_result.success = false;
     action_server_result.message = result.message;
-    ROS_ERROR("[MissionManager]: mission aborted");
-    mission_manager_server_ptr_->setAborted(action_server_result);
+    ROS_ERROR("[MissionHandler]: mission aborted");
+    mission_handler_server_ptr_->setAborted(action_server_result);
     return;
   }
   action_finished_ = false;
@@ -704,21 +704,21 @@ void MissionManager::actionCallbackGoal() {
 
 /*  actionCallbackPreempt()//{ */
 
-void MissionManager::actionCallbackPreempt() {
+void MissionHandler::actionCallbackPreempt() {
   std::scoped_lock lock(action_server_mutex_);
-  if (mission_manager_server_ptr_->isActive()) {
+  if (mission_handler_server_ptr_->isActive()) {
 
-    if (mission_manager_server_ptr_->isNewGoalAvailable()) {
-      ROS_INFO("[MissionManager]: Preemption toggled for ActionServer.");
-      mrs_mission_manager::waypointMissionResult action_server_result;
+    if (mission_handler_server_ptr_->isNewGoalAvailable()) {
+      ROS_INFO("[MissionHandler]: Preemption toggled for ActionServer.");
+      iroc_mission_handler::waypointMissionResult action_server_result;
       action_server_result.success = false;
       action_server_result.message = "Preempted by client";
-      ROS_WARN_STREAM("[MissionManager]: " << action_server_result.message);
-      mission_manager_server_ptr_->setPreempted(action_server_result);
+      ROS_WARN_STREAM("[MissionHandler]: " << action_server_result.message);
+      mission_handler_server_ptr_->setPreempted(action_server_result);
       updateMissionState(mission_state_t::IDLE);
 
     } else {
-      ROS_INFO("[MissionManager]: Cancel toggled for ActionServer.");
+      ROS_INFO("[MissionHandler]: Cancel toggled for ActionServer.");
 
       switch (mission_state_.value()) {
         case mission_state_t::TAKEOFF:
@@ -727,23 +727,23 @@ void MissionManager::actionCallbackPreempt() {
           ROS_INFO_STREAM_THROTTLE(1.0, "Drone is in the movement -> Calling hover.");
           auto resp = callService<std_srvs::Trigger>(sc_hover_);
           if (!resp.success) {
-          ROS_ERROR_THROTTLE(1.0, "[MissionManager]: Failed to call hover service.");
+          ROS_ERROR_THROTTLE(1.0, "[MissionHandler]: Failed to call hover service.");
           }
-          mrs_mission_manager::waypointMissionResult action_server_result;
+          iroc_mission_handler::waypointMissionResult action_server_result;
           action_server_result.success = false;
           action_server_result.message = "Mission stopped.";
-          mission_manager_server_ptr_->setAborted(action_server_result);
-          ROS_INFO("[MissionManager]: Mission stopped.");
+          mission_handler_server_ptr_->setAborted(action_server_result);
+          ROS_INFO("[MissionHandler]: Mission stopped.");
           updateMissionState(mission_state_t::IDLE);
           break;
         };
 
         default:
-          mrs_mission_manager::waypointMissionResult action_server_result;
+          iroc_mission_handler::waypointMissionResult action_server_result;
           action_server_result.success = false;
           action_server_result.message = "Mission stopped.";
-          mission_manager_server_ptr_->setAborted(action_server_result);
-          ROS_INFO("[MissionManager]: Mission stopped.");
+          mission_handler_server_ptr_->setAborted(action_server_result);
+          ROS_INFO("[MissionHandler]: Mission stopped.");
           updateMissionState(mission_state_t::IDLE);
           break;
       }
@@ -755,12 +755,12 @@ void MissionManager::actionCallbackPreempt() {
 
 /* actionPublishFeedback()//{ */
 
-void MissionManager::actionPublishFeedback() {
+void MissionHandler::actionPublishFeedback() {
   std::scoped_lock lock(action_server_mutex_);
   std::scoped_lock mission_lock(mission_informaton_mutex); //Is this right?
 
-  if (mission_manager_server_ptr_->isActive()) {
-    mrs_mission_manager::waypointMissionFeedback action_server_feedback;
+  if (mission_handler_server_ptr_->isActive()) {
+    iroc_mission_handler::waypointMissionFeedback action_server_feedback;
     action_server_feedback.message = to_string(mission_state_.value());
     action_server_feedback.goal_idx = global_goal_idx_ + goal_idx_; // Global goal idx saves previous reached goals for every pausing
     action_server_feedback.distance_to_closest_goal = distance_to_goal_;
@@ -769,7 +769,7 @@ void MissionManager::actionPublishFeedback() {
     action_server_feedback.distance_to_finish = distance_to_finish_;
     action_server_feedback.finish_estimated_arrival_time = finish_estimated_time_of_arrival_;
     action_server_feedback.mission_progress = mission_progress_;
-    mission_manager_server_ptr_->publishFeedback(action_server_feedback);
+    mission_handler_server_ptr_->publishFeedback(action_server_feedback);
   }
 }
 
@@ -779,7 +779,7 @@ void MissionManager::actionPublishFeedback() {
 
 /* actionGoalValidation() //{ */
 
-MissionManager::result_t MissionManager::actionGoalValidation(const ActionServerGoal& goal) {
+MissionHandler::result_t MissionHandler::actionGoalValidation(const ActionServerGoal& goal) {
   std::stringstream ss;
   if (!(goal.frame_id == ActionServerGoal::FRAME_ID_LOCAL || goal.frame_id == ActionServerGoal::FRAME_ID_LATLON)) {
     ss << "Unknown frame_id = \'" << int(goal.frame_id) << "\', use the predefined ones.";
@@ -799,7 +799,7 @@ MissionManager::result_t MissionManager::actionGoalValidation(const ActionServer
   }
  
   for (int i=0; i< goal.points.size(); i++) { 
-    ROS_INFO("[MissionManager]: Received goal : x=%f, y=%f, z=%f",
+    ROS_INFO("[MissionHandler]: Received goal : x=%f, y=%f, z=%f",
         goal.points.at(i).position.x,
         goal.points.at(i).position.y,
         goal.points.at(i).position.z);
@@ -841,7 +841,7 @@ MissionManager::result_t MissionManager::actionGoalValidation(const ActionServer
   auto [res, transformed_array] = transformReferenceArray(transformSrv_reference_array);
 
   if (!res) {
-    ROS_WARN("[MissionManager]: Failed while transforming the reference array!");
+    ROS_WARN("[MissionHandler]: Failed while transforming the reference array!");
     return {false, "Reference array transformation failed"};
   }
 
@@ -854,7 +854,7 @@ MissionManager::result_t MissionManager::actionGoalValidation(const ActionServer
 
   for (size_t i=0; i < transformed_array.array.size(); i++) {
 
-    ROS_INFO("[MissionManager]: Transformed point %zu  x: %f  y: %f z: %f h: %f", i,
+    ROS_INFO("[MissionHandler]: Transformed point %zu  x: %f  y: %f z: %f h: %f", i,
         transformed_array.array.at(i).position.x,
         transformed_array.array.at(i).position.y,
         transformed_array.array.at(i).position.z,
@@ -890,7 +890,7 @@ MissionManager::result_t MissionManager::actionGoalValidation(const ActionServer
 
 /* validateMissionSrv() //{ */
 
-MissionManager::result_t MissionManager::validateMissionSrv(const mrs_msgs::Path msg) {
+MissionHandler::result_t MissionHandler::validateMissionSrv(const mrs_msgs::Path msg) {
 
   /* Generation of trajectory */
   mrs_msgs::GetPathSrv            getPathSrv;
@@ -919,11 +919,11 @@ MissionManager::result_t MissionManager::validateMissionSrv(const mrs_msgs::Path
   validateReferenceSrv.request.array = waypointArray;
 
   //Debugging
-  ROS_INFO_STREAM("[MissionManager]: Path size: " << msg.points.size()); 
-  ROS_INFO_STREAM("[MissionManager]: Trajectory size: " << getPathSrv.response.trajectory.points.size()); 
-  ROS_INFO_STREAM("[MissionManager]: Trajectory idxs size: " << current_trajectory_idxs_.size());
+  ROS_INFO_STREAM("[MissionHandler]: Path size: " << msg.points.size()); 
+  ROS_INFO_STREAM("[MissionHandler]: Trajectory size: " << getPathSrv.response.trajectory.points.size()); 
+  ROS_INFO_STREAM("[MissionHandler]: Trajectory idxs size: " << current_trajectory_idxs_.size());
   for (auto& id : current_trajectory_idxs_) {
-    ROS_INFO_STREAM("[MissionManager]: id: " << id);
+    ROS_INFO_STREAM("[MissionHandler]: id: " << id);
   }
   //Debugging
   
@@ -946,11 +946,11 @@ MissionManager::result_t MissionManager::validateMissionSrv(const mrs_msgs::Path
       }
       //Debugging
       for (auto& point : unvalid_points) {
-        ROS_INFO_STREAM("[MissionManager]: unvalid point: " << point);
+        ROS_INFO_STREAM("[MissionHandler]: unvalid point: " << point);
       }
       //Debugging
       if (unvalid_points.size() == 0) {
-        ROS_WARN("[MissionManager]: The given path is valid, however the UAV seems to be outside of safety area/obstacle.");
+        ROS_WARN("[MissionHandler]: The given path is valid, however the UAV seems to be outside of safety area/obstacle.");
         return {false," Given path for: "+ robot_name_+ " is valid, however the UAV seems to be outside of safety area or inside an obstacle."};
       } else {
         return {false,"Unvalid trajectory for "+ robot_name_+ ", trajectory is outside of safety area"};
@@ -975,7 +975,7 @@ MissionManager::result_t MissionManager::validateMissionSrv(const mrs_msgs::Path
 
 /* processMissionInfo() //{ */
 
-void MissionManager::processMissionInfo(const mrs_msgs::ReferenceArray reference_array) {
+void MissionHandler::processMissionInfo(const mrs_msgs::ReferenceArray reference_array) {
 
   std::scoped_lock lock(mission_informaton_mutex);
   //Clear member variables used in feedback
@@ -1002,25 +1002,25 @@ void MissionManager::processMissionInfo(const mrs_msgs::ReferenceArray reference
       ROS_INFO("Found the %d point in trajectory, with ID: %zu", current_goal_idx , i);
       /* current_trajectory_idxs_.push_back(i); */
       if (++current_goal_idx == reference_array.array.size()) {
-        ROS_INFO("[MissionManager]: Found all path points ID");
+        ROS_INFO("[MissionHandler]: Found all path points ID");
         break;
       } 
     }
   }
-  ROS_INFO_STREAM("[MissionManager]: reference array size: " << reference_array.array.size());
-  ROS_INFO_STREAM("[MissionManager]: current_trajectory_idxs_: " << current_trajectory_idxs_.size());
+  ROS_INFO_STREAM("[MissionHandler]: reference array size: " << reference_array.array.size());
+  ROS_INFO_STREAM("[MissionHandler]: current_trajectory_idxs_: " << current_trajectory_idxs_.size());
 
   if (current_trajectory_idxs_.size() == reference_array.array.size()){
     mission_info_processed_ = true;
   } else { 
-    ROS_WARN("[MissionManager]: Did not found all the path correspondences for feedback!");
+    ROS_WARN("[MissionHandler]: Did not found all the path correspondences for feedback!");
   }
 }
 //}
 
 /* replanMission() //{ */
 
-bool MissionManager::replanMission() {
+bool MissionHandler::replanMission() {
   
   mrs_msgs::ReferenceArray remaining_path_array;
 
@@ -1030,11 +1030,11 @@ bool MissionManager::replanMission() {
       current_path_array_.array.end());
 
   for (const auto& point : current_path_array_.array) {
-    ROS_INFO("[MissionManager]: Current point: x:%f y:%f z:%f h:%f ", point.position.x,point.position.y,point.position.z,point.heading);
+    ROS_INFO("[MissionHandler]: Current point: x:%f y:%f z:%f h:%f ", point.position.x,point.position.y,point.position.z,point.heading);
   }
 
   for (const auto& point : remaining_path_array.array) {
-    ROS_INFO("[MissionManager]: Remaining point: x:%f y:%f z:%f h:%f ", point.position.x,point.position.y,point.position.z,point.heading);
+    ROS_INFO("[MissionHandler]: Remaining point: x:%f y:%f z:%f h:%f ", point.position.x,point.position.y,point.position.z,point.heading);
   }
 
   mrs_msgs::Path msg_path;
@@ -1082,7 +1082,7 @@ bool MissionManager::replanMission() {
 //}
 
 /* transformReference() //{ */
-std::tuple<bool,mrs_msgs::ReferenceStamped> MissionManager::transformReference(mrs_msgs::TransformReferenceSrv transformSrv){
+std::tuple<bool,mrs_msgs::ReferenceStamped> MissionHandler::transformReference(mrs_msgs::TransformReferenceSrv transformSrv){
 
   mrs_msgs::ReferenceStamped waypoint_out;
   if (sc_transform_reference_.call(transformSrv)) {
@@ -1101,7 +1101,7 @@ std::tuple<bool,mrs_msgs::ReferenceStamped> MissionManager::transformReference(m
 //}
 
 /* transformReference() //{ */
-std::tuple<bool,mrs_msgs::ReferenceArray> MissionManager::transformReferenceArray(mrs_msgs::TransformReferenceArraySrv TransformArraySrv){
+std::tuple<bool,mrs_msgs::ReferenceArray> MissionHandler::transformReferenceArray(mrs_msgs::TransformReferenceArraySrv TransformArraySrv){
 
   if (sc_transform_reference_array_.call(TransformArraySrv)) {
 
@@ -1126,7 +1126,7 @@ std::tuple<bool,mrs_msgs::ReferenceArray> MissionManager::transformReferenceArra
 
 /* distance() //{ */
 
-double MissionManager::distance(const mrs_msgs::Reference& waypoint_1, const mrs_msgs::Reference& waypoint_2){
+double MissionHandler::distance(const mrs_msgs::Reference& waypoint_1, const mrs_msgs::Reference& waypoint_2){
   return mrs_lib::geometry::dist(vec3_t(waypoint_1.position.x, waypoint_1.position.y,waypoint_1.position.z),
                                  vec3_t(waypoint_2.position.x, waypoint_2.position.y,waypoint_2.position.z));
 }
@@ -1134,7 +1134,7 @@ double MissionManager::distance(const mrs_msgs::Reference& waypoint_1, const mrs
 
 /* updateMissionState() //{ */
 
-void MissionManager::updateMissionState(const mission_state_t& new_state) {
+void MissionHandler::updateMissionState(const mission_state_t& new_state) {
   if (mission_state_.value() == new_state) {
     return;
   }
@@ -1149,7 +1149,7 @@ void MissionManager::updateMissionState(const mission_state_t& new_state) {
 /* callService() //{ */
 
 template <typename Svc_T>
-MissionManager::result_t MissionManager::callService(ros::ServiceClient& sc, typename Svc_T::Request req) {
+MissionHandler::result_t MissionHandler::callService(ros::ServiceClient& sc, typename Svc_T::Request req) {
   typename Svc_T::Response res;
   if (sc.call(req, res)) {
     if (res.success) {
@@ -1167,11 +1167,11 @@ MissionManager::result_t MissionManager::callService(ros::ServiceClient& sc, typ
 }
 
 template <typename Svc_T>
-MissionManager::result_t MissionManager::callService(ros::ServiceClient& sc) {
+MissionHandler::result_t MissionHandler::callService(ros::ServiceClient& sc) {
   return callService<Svc_T>(sc, {});
 }
 
-MissionManager::result_t MissionManager::callService(ros::ServiceClient& sc, const bool val) {
+MissionHandler::result_t MissionHandler::callService(ros::ServiceClient& sc, const bool val) {
   using svc_t = std_srvs::SetBool;
   svc_t::Request req;
   req.data = val;
@@ -1180,7 +1180,7 @@ MissionManager::result_t MissionManager::callService(ros::ServiceClient& sc, con
 
 //}
 
-}  // namespace mrs_mission_manager
+}  // namespace iroc_mission_handler
 
 #include <pluginlib/class_list_macros.h>
-PLUGINLIB_EXPORT_CLASS(mrs_mission_manager::MissionManager, nodelet::Nodelet);
+PLUGINLIB_EXPORT_CLASS(iroc_mission_handler::MissionHandler, nodelet::Nodelet);

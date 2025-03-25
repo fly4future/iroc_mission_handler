@@ -1,5 +1,5 @@
-<library path="lib/libMRSMissionManager">
-  <class name="mrs_mission_manager/MissionManager" type="mrs_mission_manager::MissionManager" base_class_type="nodelet::Nodelet">
-    <description>Mission manager nodelet</description>
+<library path="lib/libIROCMissionHandler">
+  <class name="iroc_mission_handler/MissionHandler" type="iroc_mission_handler::MissionHandler" base_class_type="nodelet::Nodelet">
+    <description>Mission handler nodelet</description>
   </class>
 </library>

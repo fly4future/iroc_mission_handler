@@ -13,10 +13,10 @@
 
   <group ns="$(arg UAV_NAME)">
 
-    <node name="mission_manager_test_client" pkg="mrs_mission_manager" type="mission_manager_test_client" launch-prefix="$(arg launch_prefix_debug)" output="screen">
+    <node name="mission_handler_test_client" pkg="iroc_mission_handler" type="mission_handler_test_client" launch-prefix="$(arg launch_prefix_debug)" output="screen">
 
       <!-- action server remap -->
-      <remap from="waypoint_mission_action" to="mission_manager" />
+      <remap from="waypoint_mission_action" to="mission_handler" />
 
     </node>
 

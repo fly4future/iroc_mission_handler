@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15.0)
-project(mrs_mission_manager)
+project(iroc_mission_handler)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -17,7 +17,7 @@ set(CATKIN_DEPENDENCIES
   )
 
 set(LIBRARIES
-  MRSMissionManager
+  IROCMissionHandler
   )
 
 find_package(catkin REQUIRED COMPONENTS
@@ -48,31 +48,31 @@ include_directories(
 ## |                            Build                           |
 ## --------------------------------------------------------------
 
-add_library(MRSMissionManager
-  src/mission_manager.cpp
+add_library(IROCMissionHandler
+  src/mission_handler.cpp
   )
 
-add_dependencies(MRSMissionManager
+add_dependencies(IROCMissionHandler
   ${catkin_EXPORTED_TARGETS}
   ${${PROJECT_NAME}_EXPORTED_TARGETS}
   )
 
-target_link_libraries(MRSMissionManager
+target_link_libraries(IROCMissionHandler
   ${catkin_LIBRARIES}
   )
 
 ## | ---------------------- test example ---------------------- |
 
-add_executable(mission_manager_test_client 
-  src/mission_manager_test_client.cpp
+add_executable(mission_handler_test_client 
+  src/mission_handler_test_client.cpp
   )
 
-add_dependencies(mission_manager_test_client 
+add_dependencies(mission_handler_test_client 
   ${catkin_EXPORTED_TARGETS}
   ${${PROJECT_NAME}_EXPORTED_TARGETS} 
   )
 
-target_link_libraries(mission_manager_test_client 
+target_link_libraries(mission_handler_test_client 
   ${catkin_LIBRARIES} 
   )
 
