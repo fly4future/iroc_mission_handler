@@ -781,7 +781,7 @@ void MissionHandler::actionPublishFeedback() {
 
 MissionHandler::result_t MissionHandler::actionGoalValidation(const ActionServerGoal& goal) {
   std::stringstream ss;
-  if (!(goal.frame_id == ActionServerGoal::FRAME_ID_LOCAL || goal.frame_id == ActionServerGoal::FRAME_ID_LATLON)) {
+  if (!(goal.frame_id == ActionServerGoal::FRAME_ID_LOCAL || goal.frame_id == ActionServerGoal::FRAME_ID_LATLON || goal.frame_id == ActionServerGoal::FRAME_ID_FCU)) {
     ss << "Unknown frame_id = \'" << int(goal.frame_id) << "\', use the predefined ones.";
     ROS_ERROR_STREAM_THROTTLE(1.0, ss.str());
     return {false, ss.str()};
@@ -809,11 +809,15 @@ MissionHandler::result_t MissionHandler::actionGoalValidation(const ActionServer
 
   switch (goal.frame_id) {
     case ActionServerGoal::FRAME_ID_LOCAL: {
-      frame_id = robot_name_ + "/local_origin";
+      frame_id = "local_origin";
       break;
     }
     case ActionServerGoal::FRAME_ID_LATLON: {
       frame_id = "latlon_origin";
+      break;
+    }
+    case ActionServerGoal::FRAME_ID_FCU: {
+      frame_id = "fcu";
       break;
     }
     default:
