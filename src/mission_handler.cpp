@@ -817,7 +817,7 @@ MissionHandler::result_t MissionHandler::actionGoalValidation(const ActionServer
       break;
     }
     case ActionServerGoal::FRAME_ID_FCU: {
-      frame_id = "fcu";
+      frame_id = "fcu_untilted";
       break;
     }
     default:
