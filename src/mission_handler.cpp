@@ -797,16 +797,13 @@ MissionHandler::result_t MissionHandler::actionGoalValidation(const ActionServer
     ROS_ERROR_STREAM_THROTTLE(1.0, ss.str());
     return {false, ss.str()};
   }
- 
-  for (int i=0; i< goal.points.size(); i++) { 
-    ROS_INFO("[MissionHandler]: Received goal : x=%f, y=%f, z=%f",
-        goal.points.at(i).position.x,
-        goal.points.at(i).position.y,
-        goal.points.at(i).position.z);
+
+  for (const auto& point : goal.points) {
+    ROS_DEBUG("[MissionHandler]: Point: x:%f y:%f z:%f h:%f ", point.position.x,
+               point.position.y,point.position.z,point.heading);
   }
-
+ 
   std::string frame_id;
-
   switch (goal.frame_id) {
     case ActionServerGoal::FRAME_ID_LOCAL: {
       frame_id = "local_origin";
@@ -870,13 +867,11 @@ MissionHandler::result_t MissionHandler::actionGoalValidation(const ActionServer
     }
   }
 
-  for (size_t i=0; i < transformed_array.array.size(); i++) {
-
-    ROS_INFO("[MissionHandler]: Transformed point %zu  x: %f  y: %f z: %f h: %f", i,
-        transformed_array.array.at(i).position.x,
-        transformed_array.array.at(i).position.y,
-        transformed_array.array.at(i).position.z,
-        transformed_array.array.at(i).heading
+  for (const auto&point : transformed_array.array)  {
+    ROS_DEBUG("[MissionHandler]: Transformed point x: %f  y: %f z: %f h: %f", point.position.x,
+        point.position.y,
+        point.position.z,
+        point.heading
         );
   }
   
@@ -936,15 +931,10 @@ MissionHandler::result_t MissionHandler::validateMissionSrv(const mrs_msgs::Path
   waypointArray.array                 = current_trajectory_.points;
   validateReferenceSrv.request.array = waypointArray;
 
-  //Debugging
-  ROS_INFO_STREAM("[MissionHandler]: Path size: " << msg.points.size()); 
-  ROS_INFO_STREAM("[MissionHandler]: Trajectory size: " << getPathSrv.response.trajectory.points.size()); 
-  ROS_INFO_STREAM("[MissionHandler]: Trajectory idxs size: " << current_trajectory_idxs_.size());
-  for (auto& id : current_trajectory_idxs_) {
-    ROS_INFO_STREAM("[MissionHandler]: id: " << id);
-  }
-  //Debugging
-  
+  ROS_DEBUG_STREAM("[MissionHandler]: Path size: " << msg.points.size()); 
+  ROS_DEBUG_STREAM("[MissionHandler]: Trajectory size: " << getPathSrv.response.trajectory.points.size()); 
+  ROS_DEBUG_STREAM("[MissionHandler]: Trajectory idxs size: " << current_trajectory_idxs_.size());
+
   if (sc_mission_validation_.call(validateReferenceSrv)) {
     const bool all_success = std::all_of(validateReferenceSrv.response.success.begin(),
         validateReferenceSrv.response.success.end(), [](bool v) { return v; });
@@ -962,14 +952,14 @@ MissionHandler::result_t MissionHandler::validateMissionSrv(const mrs_msgs::Path
             unvalid_points.push_back(current_trajectory_.points.at(point_id));
           }
       }
-      //Debugging
+
       for (auto& point : unvalid_points) {
-        ROS_INFO_STREAM("[MissionHandler]: unvalid point: " << point);
+        ROS_WARN_STREAM("[MissionHandler]: Unvalid point: " << point);
       }
-      //Debugging
+
       if (unvalid_points.size() == 0) {
-        ROS_WARN("[MissionHandler]: The given path is valid, however the UAV seems to be outside of safety area/obstacle.");
-        return {false," Given path for: "+ robot_name_+ " is valid, however the UAV seems to be outside of safety area or inside an obstacle."};
+        ROS_WARN("[MissionHandler]: The given points are valid, however the generated trajectory seems to be outside of safety area or within anobstacle.");
+        return {false,"The given points are valid for: "+ robot_name_+ ", however the generated trajectory seems to be outside of safety area or within an obstacle."};
       } else {
         return {false,"Unvalid trajectory for "+ robot_name_+ ", trajectory is outside of safety area"};
       }
@@ -1002,37 +992,7 @@ void MissionHandler::processMissionInfo(const mrs_msgs::ReferenceArray reference
   distance_to_goal_ = 0.0;
   mission_progress_ = 0.0;
   goal_progress_ = 0.0;
-  mission_info_processed_ = false;
-
-  int current_goal_idx = 0;
-  mrs_msgs::Reference current_point;
-  mrs_msgs::Reference current_trajectory_point;
-
-  //Find corresponding trajectory ID's from the original received points
-  //Currently finding closest sample from trajectory generation and original points
-  //TODO: Improve correspondence implementation, can be integrated within MRS trajectory generation to be more accurate
-  for (size_t i =0; i < current_trajectory_.points.size(); i++) {
-    current_point = reference_array.array.at(current_goal_idx); 
-    current_trajectory_point = current_trajectory_.points.at(i);
-    const double dist = distance(current_point, current_trajectory_point);
-
-    if ( dist < tolerance_) {
-      ROS_INFO("Found the %d point in trajectory, with ID: %zu", current_goal_idx , i);
-      /* current_trajectory_idxs_.push_back(i); */
-      if (++current_goal_idx == reference_array.array.size()) {
-        ROS_INFO("[MissionHandler]: Found all path points ID");
-        break;
-      } 
-    }
-  }
-  ROS_INFO_STREAM("[MissionHandler]: reference array size: " << reference_array.array.size());
-  ROS_INFO_STREAM("[MissionHandler]: current_trajectory_idxs_: " << current_trajectory_idxs_.size());
-
-  if (current_trajectory_idxs_.size() == reference_array.array.size()){
-    mission_info_processed_ = true;
-  } else { 
-    ROS_WARN("[MissionHandler]: Did not found all the path correspondences for feedback!");
-  }
+  mission_info_processed_ = true;
 }
 //}
 
@@ -1048,11 +1008,11 @@ bool MissionHandler::replanMission() {
       current_path_array_.array.end());
 
   for (const auto& point : current_path_array_.array) {
-    ROS_INFO("[MissionHandler]: Current point: x:%f y:%f z:%f h:%f ", point.position.x,point.position.y,point.position.z,point.heading);
+    ROS_DEBUG("[MissionHandler]: Traversed point: x:%f y:%f z:%f h:%f ", point.position.x,point.position.y,point.position.z,point.heading);
   }
 
   for (const auto& point : remaining_path_array.array) {
-    ROS_INFO("[MissionHandler]: Remaining point: x:%f y:%f z:%f h:%f ", point.position.x,point.position.y,point.position.z,point.heading);
+    ROS_DEBUG("[MissionHandler]: Remaining point: x:%f y:%f z:%f h:%f ", point.position.x,point.position.y,point.position.z,point.heading);
   }
 
   mrs_msgs::Path msg_path;
