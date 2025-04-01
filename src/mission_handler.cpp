@@ -362,7 +362,7 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
           ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Takeoff finished. Executing mission.");
           auto resp = callService<std_srvs::Trigger>(sc_mission_start_);
           if (!resp.success) {
-            ROS_ERROR_THROTTLE(1.0, "[MissionHandler]: Failed to call mission start service.");
+            ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call mission start service.");
             return;
           }
           updateMissionState(mission_state_t::EXECUTING);
@@ -378,7 +378,7 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
             ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Executing terminal action. Calling land");
             auto resp = callService<std_srvs::Trigger>(sc_land_);
             if (!resp.success) {
-              ROS_ERROR_THROTTLE(1.0, "[MissionHandler]: Failed to call land service.");
+              ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call land service.");
               return;
             }
 
@@ -390,7 +390,7 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
             ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Executing terminal action. Calling land home");
             auto resp = callService<std_srvs::Trigger>(sc_land_home_);
             if (!resp.success) {
-              ROS_ERROR_THROTTLE(1.0, "[MissionHandler]: Failed to call land home service.");
+              ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call land home service.");
               return;
             }
 
@@ -457,7 +457,7 @@ bool MissionHandler::missionActivationServiceCallback(std_srvs::Trigger::Request
           res.success = resp.success;
           res.message = resp.message;
           if (!resp.success) {
-            ROS_ERROR_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
+            ROS_WARN_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
             break;
           }
           updateMissionState(mission_state_t::TAKEOFF);
@@ -469,7 +469,7 @@ bool MissionHandler::missionActivationServiceCallback(std_srvs::Trigger::Request
           res.success = resp.success;
           res.message = resp.message;
           if (!resp.success) {
-            ROS_ERROR_THROTTLE(1.0, "[MissionHandler]: Failed to call mission start service.");
+            ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call mission start service.");
             break;
           }
           updateMissionState(mission_state_t::EXECUTING);
@@ -481,7 +481,7 @@ bool MissionHandler::missionActivationServiceCallback(std_srvs::Trigger::Request
         ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Replanning mission from current position");
         const auto resp_plan = replanMission();
         if (!resp_plan) { 
-          ROS_ERROR_THROTTLE(1.0, "[MissionHandler]: Failed to replan mission.");
+          ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to replan mission.");
           res.success = false;
           res.message = "failed to replan mission";
           break;
@@ -495,7 +495,7 @@ bool MissionHandler::missionActivationServiceCallback(std_srvs::Trigger::Request
         res.success = resp.success;
         res.message = resp.message;
         if (!resp.success) {
-          ROS_ERROR_THROTTLE(1.0, "[MissionHandler]: Failed to call mission start service.");
+          ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call mission start service.");
           break;
         }
         updateMissionState(mission_state_t::EXECUTING);
@@ -505,7 +505,7 @@ bool MissionHandler::missionActivationServiceCallback(std_srvs::Trigger::Request
       case mission_state_t::PAUSED_DUE_TO_RC_MODE: {
         res.success = false;
         res.message = "Mission is pause due to active MRS Remote mode. Disable the mode, to continue with the mission execution.";
-        ROS_ERROR_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
+        ROS_WARN_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
         break;
       };
 
@@ -541,7 +541,7 @@ bool MissionHandler::missionPausingServiceCallback(std_srvs::Trigger::Request& r
           res.success = resp.success;
           res.message = resp.message;
           if (!resp.success) {
-            ROS_ERROR_THROTTLE(1.0, "[MissionHandler]: Failed to call stop trajectory tracking service.");
+            ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call stop trajectory tracking service.");
             break;
           }
           updateMissionState(mission_state_t::PAUSED);
@@ -680,7 +680,7 @@ void MissionHandler::actionCallbackGoal() {
     iroc_mission_handler::waypointMissionResult action_server_result;
     action_server_result.success = false;
     action_server_result.message = "Not initialized yet";
-    ROS_ERROR("[MissionHandler]: not initialized yet");
+    ROS_WARN("[MissionHandler]: not initialized yet");
     mission_handler_server_ptr_->setAborted(action_server_result);
     return;
   }
@@ -691,7 +691,7 @@ void MissionHandler::actionCallbackGoal() {
     iroc_mission_handler::waypointMissionResult action_server_result;
     action_server_result.success = false;
     action_server_result.message = result.message;
-    ROS_ERROR("[MissionHandler]: mission aborted");
+    ROS_WARN("[MissionHandler]: mission aborted");
     mission_handler_server_ptr_->setAborted(action_server_result);
     return;
   }
@@ -727,7 +727,7 @@ void MissionHandler::actionCallbackPreempt() {
           ROS_INFO_STREAM_THROTTLE(1.0, "Drone is in the movement -> Calling hover.");
           auto resp = callService<std_srvs::Trigger>(sc_hover_);
           if (!resp.success) {
-          ROS_ERROR_THROTTLE(1.0, "[MissionHandler]: Failed to call hover service.");
+          ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call hover service.");
           }
           iroc_mission_handler::waypointMissionResult action_server_result;
           action_server_result.success = false;
@@ -783,18 +783,18 @@ MissionHandler::result_t MissionHandler::actionGoalValidation(const ActionServer
   std::stringstream ss;
   if (!(goal.frame_id == ActionServerGoal::FRAME_ID_LOCAL || goal.frame_id == ActionServerGoal::FRAME_ID_LATLON || goal.frame_id == ActionServerGoal::FRAME_ID_FCU)) {
     ss << "Unknown frame_id = \'" << int(goal.frame_id) << "\', use the predefined ones.";
-    ROS_ERROR_STREAM_THROTTLE(1.0, ss.str());
+    ROS_WARN_STREAM_THROTTLE(1.0, ss.str());
     return {false, ss.str()};
   }
   if (!(goal.height_id == ActionServerGoal::HEIGHT_ID_AGL || goal.height_id == ActionServerGoal::HEIGHT_ID_AMSL || goal.height_id == ActionServerGoal::HEIGHT_ID_FCU)) {
     ss << "Unknown height_id = \'" << int(goal.height_id) << "\', use the predefined ones.";
-    ROS_ERROR_STREAM_THROTTLE(1.0, ss.str());
+    ROS_WARN_STREAM_THROTTLE(1.0, ss.str());
     return {false, ss.str()};
   }
   if (!(goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_NONE || goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_LAND ||
         goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_RTH)) {
     ss << "Unknown terminal_action = \'" << int(goal.terminal_action) << "\', use the predefined ones.";
-    ROS_ERROR_STREAM_THROTTLE(1.0, ss.str());
+    ROS_WARN_STREAM_THROTTLE(1.0, ss.str());
     return {false, ss.str()};
   }
 
@@ -1134,7 +1134,7 @@ MissionHandler::result_t MissionHandler::callService(ros::ServiceClient& sc, typ
       ROS_INFO_STREAM_THROTTLE(1.0, "Called service \"" << sc.getService() << "\" with response \"" << res.message << "\".");
       return {true, res.message};
     } else {
-      ROS_ERROR_STREAM_THROTTLE(1.0, "Called service \"" << sc.getService() << "\" with response \"" << res.message << "\".");
+      ROS_WARN_STREAM_THROTTLE(1.0, "Called service \"" << sc.getService() << "\" with response \"" << res.message << "\".");
       return {false, res.message};
     }
   } else {
