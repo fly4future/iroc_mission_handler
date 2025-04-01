@@ -786,7 +786,7 @@ MissionHandler::result_t MissionHandler::actionGoalValidation(const ActionServer
     ROS_ERROR_STREAM_THROTTLE(1.0, ss.str());
     return {false, ss.str()};
   }
-  if (!(goal.height_id == ActionServerGoal::HEIGHT_ID_AGL || goal.height_id == ActionServerGoal::HEIGHT_ID_AMSL)) {
+  if (!(goal.height_id == ActionServerGoal::HEIGHT_ID_AGL || goal.height_id == ActionServerGoal::HEIGHT_ID_AMSL || goal.height_id == ActionServerGoal::HEIGHT_ID_FCU)) {
     ss << "Unknown height_id = \'" << int(goal.height_id) << "\', use the predefined ones.";
     ROS_ERROR_STREAM_THROTTLE(1.0, ss.str());
     return {false, ss.str()};
@@ -824,8 +824,22 @@ MissionHandler::result_t MissionHandler::actionGoalValidation(const ActionServer
       break;
   }
 
+  if (sh_uav_state_.hasMsg()) {
+    uav_state_.set(mrs_robot_diagnostics::from_ros<uav_state_t>(sh_uav_state_.getMsg()->state));
+  }
+
+  //Reject mission if fcu_frame is set and uav not flying
+  if (goal.frame_id == ActionServerGoal::FRAME_ID_FCU) {
+    if (uav_state_.value() != uav_state_t::HOVER) {
+      ss << "FCU frame is set but uav is not in the air ";
+      ROS_WARN_STREAM( ss.str());
+      return {false, ss.str()};
+    }
+  }
+
+  //Saving the AGL height points specified in the goal, this is needed as they will be
+  //replaced after doing a transformation with latlon points
   std::vector<double> height_points;
-  //Saving the AGL height points to be replaced after transformation of latlon points
   if (goal.height_id == ActionServerGoal::HEIGHT_ID_AGL) {
     for (const auto& point : goal.points) {
       height_points.push_back(point.position.z);

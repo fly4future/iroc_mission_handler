@@ -9,6 +9,7 @@ uint8 FRAME_ID_FCU=2
 # Flag to specify the height for the points: Above ground level (AGL) or Above Mean Sea Level (AMSL)
 uint8 HEIGHT_ID_AGL=0
 uint8 HEIGHT_ID_AMSL=1
+uint8 HEIGHT_ID_FCU=2
 
 # Define the goal
 uint8 frame_id
