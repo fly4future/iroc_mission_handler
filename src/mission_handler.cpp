@@ -59,6 +59,12 @@ private:
     std::string message;
   };
 
+  struct path_segments_t
+  {
+    mrs_msgs::Path path;
+    bool is_valid;
+  };
+
   typedef mrs_robot_diagnostics::tracker_state_t tracker_state_t;
   typedef mrs_robot_diagnostics::uav_state_t     uav_state_t;
 
@@ -120,7 +126,6 @@ private:
   std::recursive_mutex                             action_server_mutex_;
   std::recursive_mutex                             mission_informaton_mutex;
 
-
   // | --------------------- mission feedback -------------------- |
   int                               goal_idx_ = 0;
   int                               global_goal_idx_ = 0;
@@ -147,6 +152,7 @@ private:
 
   result_t                                    actionGoalValidation(const ActionServerGoal& goal);
   result_t                                    validateMissionSrv(const mrs_msgs::Path msg) ;
+  std::vector<path_segments_t>                pathValidation(const mrs_msgs::Path msg) ;
   void                                        processMissionInfo(const mrs_msgs::ReferenceArray reference_ist);
   bool                                        replanMission(void);
   void                                        updateMissionState(const mission_state_t& new_state);
@@ -905,6 +911,8 @@ MissionHandler::result_t MissionHandler::actionGoalValidation(const ActionServer
 
 MissionHandler::result_t MissionHandler::validateMissionSrv(const mrs_msgs::Path msg) {
 
+  auto path_segments = pathValidation(msg);
+
   /* Generation of trajectory */
   mrs_msgs::GetPathSrv            getPathSrv;
   mrs_msgs::ValidateReferenceArray validateReferenceSrv;
@@ -934,6 +942,10 @@ MissionHandler::result_t MissionHandler::validateMissionSrv(const mrs_msgs::Path
   ROS_DEBUG_STREAM("[MissionHandler]: Path size: " << msg.points.size()); 
   ROS_DEBUG_STREAM("[MissionHandler]: Trajectory size: " << getPathSrv.response.trajectory.points.size()); 
   ROS_DEBUG_STREAM("[MissionHandler]: Trajectory idxs size: " << current_trajectory_idxs_.size());
+
+  for (const auto& id: current_trajectory_idxs_) {
+    ROS_DEBUG_STREAM("[MissionHandler]: Trajectory idx: " << id); 
+  }
 
   if (sc_mission_validation_.call(validateReferenceSrv)) {
     const bool all_success = std::all_of(validateReferenceSrv.response.success.begin(),
@@ -978,6 +990,71 @@ MissionHandler::result_t MissionHandler::validateMissionSrv(const mrs_msgs::Path
   } else {
     return {true, srv.response.message};
   }
+}
+//}
+
+/* pathValidation() //{ */
+
+ std::vector<MissionHandler::path_segments_t> MissionHandler::pathValidation(const mrs_msgs::Path msg) {
+
+  std::map<bool,std::vector<mrs_msgs::Path>> path_segments_map;
+  std::vector<path_segments_t> path_segments;
+  bool in_valid_segment = true;  
+
+  path_segments_t current_segment_t;
+
+  
+  // Add the first point to start a segment
+  current_segment_t.path.points.push_back(msg.points[0]); 
+  current_segment_t.is_valid = in_valid_segment;
+
+  // Process points from index 1 to end
+  for (size_t i = 1; i < msg.points.size(); i++) {
+    double dist = distance(msg.points[i-1], msg.points[i]);
+
+    if (dist > 0.05) {
+      // Valid distance between points
+      if (!in_valid_segment && !current_segment_t.path.points.empty()) {
+        // We were in an invalid segment, save it and start a new valid one
+        current_segment_t.is_valid = in_valid_segment;
+        path_segments.push_back(current_segment_t);
+        current_segment_t.path.points.clear();
+        in_valid_segment = true;
+      }
+    } else {
+      // Invalid distance between points
+      if (in_valid_segment && !current_segment_t.path.points.empty()) {
+        // We were in a valid segment, save it and start a new invalid one
+        current_segment_t.is_valid = in_valid_segment;
+        path_segments.push_back(current_segment_t);
+        current_segment_t.path.points.clear();
+        in_valid_segment = false;
+      }
+    }
+
+    // Add the current point to the segment
+    current_segment_t.path.points.push_back(msg.points[i]);
+  }
+
+  // Add the last segment if it's not empty
+  if (!current_segment_t.path.points.empty()) {
+    current_segment_t.is_valid = in_valid_segment;
+    path_segments.push_back(current_segment_t);
+  }
+
+  //This is a debug log/ to remove after testing
+  ROS_INFO("[MissionHandler]: Path segments: %zu", path_segments.size());
+  //Print path segments
+  int segment_idx = 0;
+  for (const auto& segment : path_segments) {
+    auto valid = segment.is_valid ? "Valid" : "Invalid"; 
+    ROS_INFO("[MissionHandler]: Segment %d: %s", ++segment_idx, valid);
+    for (const auto& point : segment.path.points) {
+      ROS_INFO("[MissionHandler]: Point: %f, %f, %f Heading: %f", point.position.x, point.position.y, point.position.z, point.heading);
+    }
+  }
+
+  return path_segments; 
 }
 //}
 
