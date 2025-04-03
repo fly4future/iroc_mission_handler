@@ -63,6 +63,12 @@ private:
     std::string message;
   };
 
+  struct path_segments_t
+  {
+    mrs_msgs::Path path;
+    bool is_valid;
+  };
+
   typedef mrs_robot_diagnostics::tracker_state_t tracker_state_t;
   typedef mrs_robot_diagnostics::uav_state_t     uav_state_t;
 
@@ -124,7 +130,6 @@ private:
   std::recursive_mutex                             action_server_mutex_;
   std::recursive_mutex                             mission_informaton_mutex;
 
-
   // | --------------------- mission feedback -------------------- |
   int                               goal_idx_ = 0;
   int                               global_goal_idx_ = 0;
@@ -151,6 +156,7 @@ private:
 
   result_t                                    actionGoalValidation(const ActionServerGoal& goal);
   result_t                                    validateMissionSrv(const mrs_msgs::Path msg) ;
+  std::vector<path_segments_t>                pathValidation(const mrs_msgs::Path msg) ;
   void                                        processMissionInfo(const mrs_msgs::ReferenceArray reference_ist);
   bool                                        replanMission(void);
   void                                        updateMissionState(const mission_state_t& new_state);
@@ -366,7 +372,7 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
           ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Takeoff finished. Executing mission.");
           auto resp = callService<std_srvs::Trigger>(sc_mission_start_);
           if (!resp.success) {
-            ROS_ERROR_THROTTLE(1.0, "[MissionHandler]: Failed to call mission start service.");
+            ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call mission start service.");
             return;
           }
           updateMissionState(mission_state_t::EXECUTING);
@@ -382,7 +388,7 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
             ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Executing terminal action. Calling land");
             auto resp = callService<std_srvs::Trigger>(sc_land_);
             if (!resp.success) {
-              ROS_ERROR_THROTTLE(1.0, "[MissionHandler]: Failed to call land service.");
+              ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call land service.");
               return;
             }
 
@@ -394,7 +400,7 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
             ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Executing terminal action. Calling land home");
             auto resp = callService<std_srvs::Trigger>(sc_land_home_);
             if (!resp.success) {
-              ROS_ERROR_THROTTLE(1.0, "[MissionHandler]: Failed to call land home service.");
+              ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call land home service.");
               return;
             }
 
@@ -461,7 +467,7 @@ bool MissionHandler::missionActivationServiceCallback(std_srvs::Trigger::Request
           res.success = resp.success;
           res.message = resp.message;
           if (!resp.success) {
-            ROS_ERROR_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
+            ROS_WARN_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
             break;
           }
           updateMissionState(mission_state_t::TAKEOFF);
@@ -473,7 +479,7 @@ bool MissionHandler::missionActivationServiceCallback(std_srvs::Trigger::Request
           res.success = resp.success;
           res.message = resp.message;
           if (!resp.success) {
-            ROS_ERROR_THROTTLE(1.0, "[MissionHandler]: Failed to call mission start service.");
+            ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call mission start service.");
             break;
           }
           updateMissionState(mission_state_t::EXECUTING);
@@ -485,7 +491,7 @@ bool MissionHandler::missionActivationServiceCallback(std_srvs::Trigger::Request
         ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Replanning mission from current position");
         const auto resp_plan = replanMission();
         if (!resp_plan) { 
-          ROS_ERROR_THROTTLE(1.0, "[MissionHandler]: Failed to replan mission.");
+          ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to replan mission.");
           res.success = false;
           res.message = "failed to replan mission";
           break;
@@ -499,7 +505,7 @@ bool MissionHandler::missionActivationServiceCallback(std_srvs::Trigger::Request
         res.success = resp.success;
         res.message = resp.message;
         if (!resp.success) {
-          ROS_ERROR_THROTTLE(1.0, "[MissionHandler]: Failed to call mission start service.");
+          ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call mission start service.");
           break;
         }
         updateMissionState(mission_state_t::EXECUTING);
@@ -509,7 +515,7 @@ bool MissionHandler::missionActivationServiceCallback(std_srvs::Trigger::Request
       case mission_state_t::PAUSED_DUE_TO_RC_MODE: {
         res.success = false;
         res.message = "Mission is pause due to active MRS Remote mode. Disable the mode, to continue with the mission execution.";
-        ROS_ERROR_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
+        ROS_WARN_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
         break;
       };
 
@@ -545,7 +551,7 @@ bool MissionHandler::missionPausingServiceCallback(std_srvs::Trigger::Request& r
           res.success = resp.success;
           res.message = resp.message;
           if (!resp.success) {
-            ROS_ERROR_THROTTLE(1.0, "[MissionHandler]: Failed to call stop trajectory tracking service.");
+            ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call stop trajectory tracking service.");
             break;
           }
           updateMissionState(mission_state_t::PAUSED);
@@ -684,7 +690,7 @@ void MissionHandler::actionCallbackGoal() {
     iroc_mission_handler::waypointMissionResult action_server_result;
     action_server_result.success = false;
     action_server_result.message = "Not initialized yet";
-    ROS_ERROR("[MissionHandler]: not initialized yet");
+    ROS_WARN("[MissionHandler]: not initialized yet");
     mission_handler_server_ptr_->setAborted(action_server_result);
     return;
   }
@@ -695,7 +701,7 @@ void MissionHandler::actionCallbackGoal() {
     iroc_mission_handler::waypointMissionResult action_server_result;
     action_server_result.success = false;
     action_server_result.message = result.message;
-    ROS_ERROR("[MissionHandler]: mission aborted");
+    ROS_WARN("[MissionHandler]: mission aborted");
     mission_handler_server_ptr_->setAborted(action_server_result);
     return;
   }
@@ -731,7 +737,7 @@ void MissionHandler::actionCallbackPreempt() {
           ROS_INFO_STREAM_THROTTLE(1.0, "Drone is in the movement -> Calling hover.");
           auto resp = callService<std_srvs::Trigger>(sc_hover_);
           if (!resp.success) {
-          ROS_ERROR_THROTTLE(1.0, "[MissionHandler]: Failed to call hover service.");
+          ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call hover service.");
           }
           iroc_mission_handler::waypointMissionResult action_server_result;
           action_server_result.success = false;
@@ -787,30 +793,27 @@ MissionHandler::result_t MissionHandler::actionGoalValidation(const ActionServer
   std::stringstream ss;
   if (!(goal.frame_id == ActionServerGoal::FRAME_ID_LOCAL || goal.frame_id == ActionServerGoal::FRAME_ID_LATLON || goal.frame_id == ActionServerGoal::FRAME_ID_FCU)) {
     ss << "Unknown frame_id = \'" << int(goal.frame_id) << "\', use the predefined ones.";
-    ROS_ERROR_STREAM_THROTTLE(1.0, ss.str());
+    ROS_WARN_STREAM_THROTTLE(1.0, ss.str());
     return {false, ss.str()};
   }
-  if (!(goal.height_id == ActionServerGoal::HEIGHT_ID_AGL || goal.height_id == ActionServerGoal::HEIGHT_ID_AMSL)) {
+  if (!(goal.height_id == ActionServerGoal::HEIGHT_ID_AGL || goal.height_id == ActionServerGoal::HEIGHT_ID_AMSL || goal.height_id == ActionServerGoal::HEIGHT_ID_FCU)) {
     ss << "Unknown height_id = \'" << int(goal.height_id) << "\', use the predefined ones.";
-    ROS_ERROR_STREAM_THROTTLE(1.0, ss.str());
+    ROS_WARN_STREAM_THROTTLE(1.0, ss.str());
     return {false, ss.str()};
   }
   if (!(goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_NONE || goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_LAND ||
         goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_RTH)) {
     ss << "Unknown terminal_action = \'" << int(goal.terminal_action) << "\', use the predefined ones.";
-    ROS_ERROR_STREAM_THROTTLE(1.0, ss.str());
+    ROS_WARN_STREAM_THROTTLE(1.0, ss.str());
     return {false, ss.str()};
   }
- 
-  for (int i=0; i< goal.points.size(); i++) { 
-    ROS_INFO("[MissionHandler]: Received goal : x=%f, y=%f, z=%f",
-        goal.points.at(i).position.x,
-        goal.points.at(i).position.y,
-        goal.points.at(i).position.z);
+
+  for (const auto& point : goal.points) {
+    ROS_DEBUG("[MissionHandler]: Point: x:%f y:%f z:%f h:%f ", point.position.x,
+               point.position.y,point.position.z,point.heading);
   }
-
+ 
   std::string frame_id;
-
   switch (goal.frame_id) {
     case ActionServerGoal::FRAME_ID_LOCAL: {
       frame_id = "local_origin";
@@ -828,8 +831,22 @@ MissionHandler::result_t MissionHandler::actionGoalValidation(const ActionServer
       break;
   }
 
+  if (sh_uav_state_.hasMsg()) {
+    uav_state_.set(mrs_robot_diagnostics::from_ros<uav_state_t>(sh_uav_state_.getMsg()->state));
+  }
+
+  //Reject mission if fcu_frame is set and uav not flying
+  if (goal.frame_id == ActionServerGoal::FRAME_ID_FCU) {
+    if (uav_state_.value() != uav_state_t::HOVER) {
+      ss << "FCU frame is set but uav is not in the air ";
+      ROS_WARN_STREAM( ss.str());
+      return {false, ss.str()};
+    }
+  }
+
+  //Saving the AGL height points specified in the goal, this is needed as they will be
+  //replaced after doing a transformation with latlon points
   std::vector<double> height_points;
-  //Saving the AGL height points to be replaced after transformation of latlon points
   if (goal.height_id == ActionServerGoal::HEIGHT_ID_AGL) {
     for (const auto& point : goal.points) {
       height_points.push_back(point.position.z);
@@ -860,13 +877,11 @@ MissionHandler::result_t MissionHandler::actionGoalValidation(const ActionServer
     }
   }
 
-  for (size_t i=0; i < transformed_array.array.size(); i++) {
-
-    ROS_INFO("[MissionHandler]: Transformed point %zu  x: %f  y: %f z: %f h: %f", i,
-        transformed_array.array.at(i).position.x,
-        transformed_array.array.at(i).position.y,
-        transformed_array.array.at(i).position.z,
-        transformed_array.array.at(i).heading
+  for (const auto&point : transformed_array.array)  {
+    ROS_DEBUG("[MissionHandler]: Transformed point x: %f  y: %f z: %f h: %f", point.position.x,
+        point.position.y,
+        point.position.z,
+        point.heading
         );
   }
   
@@ -900,6 +915,8 @@ MissionHandler::result_t MissionHandler::actionGoalValidation(const ActionServer
 
 MissionHandler::result_t MissionHandler::validateMissionSrv(const mrs_msgs::Path msg) {
 
+  auto path_segments = pathValidation(msg);
+
   /* Generation of trajectory */
   mrs_msgs::GetPathSrv            getPathSrv;
   mrs_msgs::ValidateReferenceArray validateReferenceSrv;
@@ -926,15 +943,14 @@ MissionHandler::result_t MissionHandler::validateMissionSrv(const mrs_msgs::Path
   waypointArray.array                 = current_trajectory_.points;
   validateReferenceSrv.request.array = waypointArray;
 
-  //Debugging
-  ROS_INFO_STREAM("[MissionHandler]: Path size: " << msg.points.size()); 
-  ROS_INFO_STREAM("[MissionHandler]: Trajectory size: " << getPathSrv.response.trajectory.points.size()); 
-  ROS_INFO_STREAM("[MissionHandler]: Trajectory idxs size: " << current_trajectory_idxs_.size());
-  for (auto& id : current_trajectory_idxs_) {
-    ROS_INFO_STREAM("[MissionHandler]: id: " << id);
+  ROS_DEBUG_STREAM("[MissionHandler]: Path size: " << msg.points.size()); 
+  ROS_DEBUG_STREAM("[MissionHandler]: Trajectory size: " << getPathSrv.response.trajectory.points.size()); 
+  ROS_DEBUG_STREAM("[MissionHandler]: Trajectory idxs size: " << current_trajectory_idxs_.size());
+
+  for (const auto& id: current_trajectory_idxs_) {
+    ROS_DEBUG_STREAM("[MissionHandler]: Trajectory idx: " << id); 
   }
-  //Debugging
-  
+
   if (sc_mission_validation_.call(validateReferenceSrv)) {
     const bool all_success = std::all_of(validateReferenceSrv.response.success.begin(),
         validateReferenceSrv.response.success.end(), [](bool v) { return v; });
@@ -952,14 +968,14 @@ MissionHandler::result_t MissionHandler::validateMissionSrv(const mrs_msgs::Path
             unvalid_points.push_back(current_trajectory_.points.at(point_id));
           }
       }
-      //Debugging
+
       for (auto& point : unvalid_points) {
-        ROS_INFO_STREAM("[MissionHandler]: unvalid point: " << point);
+        ROS_WARN_STREAM("[MissionHandler]: Unvalid point: " << point);
       }
-      //Debugging
+
       if (unvalid_points.size() == 0) {
-        ROS_WARN("[MissionHandler]: The given path is valid, however the UAV seems to be outside of safety area/obstacle.");
-        return {false," Given path for: "+ robot_name_+ " is valid, however the UAV seems to be outside of safety area or inside an obstacle."};
+        ROS_WARN("[MissionHandler]: The given points are valid, however the generated trajectory seems to be outside of safety area or within anobstacle.");
+        return {false,"The given points are valid for: "+ robot_name_+ ", however the generated trajectory seems to be outside of safety area or within an obstacle."};
       } else {
         return {false,"Unvalid trajectory for "+ robot_name_+ ", trajectory is outside of safety area"};
       }
@@ -981,6 +997,71 @@ MissionHandler::result_t MissionHandler::validateMissionSrv(const mrs_msgs::Path
 }
 //}
 
+/* pathValidation() //{ */
+
+ std::vector<MissionHandler::path_segments_t> MissionHandler::pathValidation(const mrs_msgs::Path msg) {
+
+  std::map<bool,std::vector<mrs_msgs::Path>> path_segments_map;
+  std::vector<path_segments_t> path_segments;
+  bool in_valid_segment = true;  
+
+  path_segments_t current_segment_t;
+
+  
+  // Add the first point to start a segment
+  current_segment_t.path.points.push_back(msg.points[0]); 
+  current_segment_t.is_valid = in_valid_segment;
+
+  // Process points from index 1 to end
+  for (size_t i = 1; i < msg.points.size(); i++) {
+    double dist = distance(msg.points[i-1], msg.points[i]);
+
+    if (dist > 0.05) {
+      // Valid distance between points
+      if (!in_valid_segment && !current_segment_t.path.points.empty()) {
+        // We were in an invalid segment, save it and start a new valid one
+        current_segment_t.is_valid = in_valid_segment;
+        path_segments.push_back(current_segment_t);
+        current_segment_t.path.points.clear();
+        in_valid_segment = true;
+      }
+    } else {
+      // Invalid distance between points
+      if (in_valid_segment && !current_segment_t.path.points.empty()) {
+        // We were in a valid segment, save it and start a new invalid one
+        current_segment_t.is_valid = in_valid_segment;
+        path_segments.push_back(current_segment_t);
+        current_segment_t.path.points.clear();
+        in_valid_segment = false;
+      }
+    }
+
+    // Add the current point to the segment
+    current_segment_t.path.points.push_back(msg.points[i]);
+  }
+
+  // Add the last segment if it's not empty
+  if (!current_segment_t.path.points.empty()) {
+    current_segment_t.is_valid = in_valid_segment;
+    path_segments.push_back(current_segment_t);
+  }
+
+  //This is a debug log/ to remove after testing
+  ROS_INFO("[MissionHandler]: Path segments: %zu", path_segments.size());
+  //Print path segments
+  int segment_idx = 0;
+  for (const auto& segment : path_segments) {
+    auto valid = segment.is_valid ? "Valid" : "Invalid"; 
+    ROS_INFO("[MissionHandler]: Segment %d: %s", ++segment_idx, valid);
+    for (const auto& point : segment.path.points) {
+      ROS_INFO("[MissionHandler]: Point: %f, %f, %f Heading: %f", point.position.x, point.position.y, point.position.z, point.heading);
+    }
+  }
+
+  return path_segments; 
+}
+//}
+
 /* processMissionInfo() //{ */
 
 void MissionHandler::processMissionInfo(const mrs_msgs::ReferenceArray reference_array) {
@@ -992,37 +1073,7 @@ void MissionHandler::processMissionInfo(const mrs_msgs::ReferenceArray reference
   distance_to_goal_ = 0.0;
   mission_progress_ = 0.0;
   goal_progress_ = 0.0;
-  mission_info_processed_ = false;
-
-  int current_goal_idx = 0;
-  mrs_msgs::Reference current_point;
-  mrs_msgs::Reference current_trajectory_point;
-
-  //Find corresponding trajectory ID's from the original received points
-  //Currently finding closest sample from trajectory generation and original points
-  //TODO: Improve correspondence implementation, can be integrated within MRS trajectory generation to be more accurate
-  for (size_t i =0; i < current_trajectory_.points.size(); i++) {
-    current_point = reference_array.array.at(current_goal_idx); 
-    current_trajectory_point = current_trajectory_.points.at(i);
-    const double dist = distance(current_point, current_trajectory_point);
-
-    if ( dist < tolerance_) {
-      ROS_INFO("Found the %d point in trajectory, with ID: %zu", current_goal_idx , i);
-      /* current_trajectory_idxs_.push_back(i); */
-      if (++current_goal_idx == reference_array.array.size()) {
-        ROS_INFO("[MissionHandler]: Found all path points ID");
-        break;
-      } 
-    }
-  }
-  ROS_INFO_STREAM("[MissionHandler]: reference array size: " << reference_array.array.size());
-  ROS_INFO_STREAM("[MissionHandler]: current_trajectory_idxs_: " << current_trajectory_idxs_.size());
-
-  if (current_trajectory_idxs_.size() == reference_array.array.size()){
-    mission_info_processed_ = true;
-  } else { 
-    ROS_WARN("[MissionHandler]: Did not found all the path correspondences for feedback!");
-  }
+  mission_info_processed_ = true;
 }
 //}
 
@@ -1038,11 +1089,11 @@ bool MissionHandler::replanMission() {
       current_path_array_.array.end());
 
   for (const auto& point : current_path_array_.array) {
-    ROS_INFO("[MissionHandler]: Current point: x:%f y:%f z:%f h:%f ", point.position.x,point.position.y,point.position.z,point.heading);
+    ROS_DEBUG("[MissionHandler]: Traversed point: x:%f y:%f z:%f h:%f ", point.position.x,point.position.y,point.position.z,point.heading);
   }
 
   for (const auto& point : remaining_path_array.array) {
-    ROS_INFO("[MissionHandler]: Remaining point: x:%f y:%f z:%f h:%f ", point.position.x,point.position.y,point.position.z,point.heading);
+    ROS_DEBUG("[MissionHandler]: Remaining point: x:%f y:%f z:%f h:%f ", point.position.x,point.position.y,point.position.z,point.heading);
   }
 
   mrs_msgs::Path msg_path;
@@ -1164,7 +1215,7 @@ MissionHandler::result_t MissionHandler::callService(ros::ServiceClient& sc, typ
       ROS_INFO_STREAM_THROTTLE(1.0, "Called service \"" << sc.getService() << "\" with response \"" << res.message << "\".");
       return {true, res.message};
     } else {
-      ROS_ERROR_STREAM_THROTTLE(1.0, "Called service \"" << sc.getService() << "\" with response \"" << res.message << "\".");
+      ROS_WARN_STREAM_THROTTLE(1.0, "Called service \"" << sc.getService() << "\" with response \"" << res.message << "\".");
       return {false, res.message};
     }
   } else {
