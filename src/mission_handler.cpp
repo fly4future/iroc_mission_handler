@@ -21,15 +21,19 @@
 #include <mrs_msgs/TrajectoryReferenceSrv.h>
 #include <mrs_msgs/TransformReferenceSrv.h>
 #include <mrs_msgs/TransformReferenceArraySrv.h>
+#include <mrs_msgs/ControlManagerDiagnostics.h>
+
+#include <mrs_robot_diagnostics/enums/uav_state.h>
+#include <mrs_robot_diagnostics/enums/tracker_state.h>
+#include <mrs_robot_diagnostics/enums/enum_helpers.h>
+
+#include <mrs_robot_diagnostics/UavState.h>
 
 #include <mrs_lib/geometry/misc.h>
 
 #include <atomic>
 #include <tuple>
 #include <mutex>
-
-#include <mrs_robot_diagnostics/parsing_functions.h>
-#include <mrs_robot_diagnostics/UavState.h>
 
 #include "iroc_mission_handler/enums/mission_state.h"
 
