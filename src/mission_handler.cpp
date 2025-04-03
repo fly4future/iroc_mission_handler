@@ -30,6 +30,7 @@
 #include <mrs_robot_diagnostics/UavState.h>
 
 #include <mrs_lib/geometry/misc.h>
+#include <mrs_lib/geometry/cyclic.h>
 
 #include <atomic>
 #include <tuple>
@@ -44,6 +45,8 @@
 using vec2_t = mrs_lib::geometry::vec_t<2>;
 using vec3_t = mrs_lib::geometry::vec_t<3>;
 
+using radians  = mrs_lib::geometry::radians;
+using sradians = mrs_lib::geometry::sradians;
 namespace iroc_mission_handler
 {
 
@@ -154,21 +157,27 @@ private:
 
   // | ------------------ Additional functions ------------------ |
 
-  result_t                                    actionGoalValidation(const ActionServerGoal& goal);
-  result_t                                    validateMissionSrv(const mrs_msgs::Path msg) ;
-  std::vector<path_segments_t>                pathValidation(const mrs_msgs::Path msg) ;
-  void                                        processMissionInfo(const mrs_msgs::ReferenceArray reference_ist);
-  bool                                        replanMission(void);
-  void                                        updateMissionState(const mission_state_t& new_state);
-  std::tuple<bool,mrs_msgs::ReferenceStamped> transformReference(mrs_msgs::TransformReferenceSrv transformSrv);
-  std::tuple<bool,mrs_msgs::ReferenceArray>   transformReferenceArray(mrs_msgs::TransformReferenceArraySrv transformArraySrv);
-  double                                      distance(const mrs_msgs::Reference& waypoint_1, const mrs_msgs::Reference& waypoint_2);
-  void                                        controlManagerDiagCallback(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg);
-  void                                        actionPublishFeedback(void);
+  result_t                                           actionGoalValidation(const ActionServerGoal& goal);
+  result_t                                           validateMissionSrv(const mrs_msgs::Path msg) ;
+  std::vector<path_segments_t>                       pathValidation(const mrs_msgs::Path msg) ;
+  std::vector<mrs_msgs::Reference>                   generateHeadingTrajectory(const mrs_msgs::Path& path, double T);
+  std::tuple<result_t,mrs_msgs::TrajectoryReference> getTrajectoryFromSegments(std::vector<path_segments_t> path_segments);
+  void                                               processMissionInfo(const mrs_msgs::ReferenceArray reference_ist);
+  bool                                               replanMission(void);
+  void                                               updateMissionState(const mission_state_t& new_state);
+  std::tuple<bool,mrs_msgs::ReferenceStamped>        transformReference(mrs_msgs::TransformReferenceSrv transformSrv);
+  std::tuple<bool,mrs_msgs::ReferenceArray>          transformReferenceArray(mrs_msgs::TransformReferenceArraySrv transformArraySrv);
+  double                                             distance(const mrs_msgs::Reference& waypoint_1, const mrs_msgs::Reference& waypoint_2);
+  void                                               controlManagerDiagCallback(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg);
+  void                                               actionPublishFeedback(void);
 
   // some helper method overloads
   template <typename Svc_T>
   result_t callService(ros::ServiceClient& sc, typename Svc_T::Request req);
+
+  template <typename Svc_T>
+  result_t callService(ros::ServiceClient& sc, typename Svc_T::Request req, typename Svc_T::Response& res);
+
 
   template <typename Svc_T>
   result_t callService(ros::ServiceClient& sc);
@@ -917,10 +926,23 @@ MissionHandler::result_t MissionHandler::validateMissionSrv(const mrs_msgs::Path
 
   auto path_segments = pathValidation(msg);
 
+  //Debugging/to remove 
+  //for (const auto& segment : path_segments) {
+  //  if (!segment.is_valid) {
+  //    auto trajectory = generateHeadingTrajectory(segment.path, 0.2);
+  //    //Print trajectory
+  //    for (const auto& point : trajectory) {
+  //      ROS_INFO_STREAM("Trajectory point x: " << point.position.x << " y: " << point.position.y << " z: " << point.position.z << " h: " << point.heading);
+  //    }
+  //  }
+  // }
+
+  auto [result, trajectory] = getTrajectoryFromSegments(path_segments);
+  
+  /* to remove //{ */
+  
   /* Generation of trajectory */
   mrs_msgs::GetPathSrv            getPathSrv;
-  mrs_msgs::ValidateReferenceArray validateReferenceSrv;
-
   getPathSrv.request.path = msg;
   if (sc_get_path_.call(getPathSrv)) {
     if (getPathSrv.response.success) {
@@ -933,14 +955,20 @@ MissionHandler::result_t MissionHandler::validateMissionSrv(const mrs_msgs::Path
     ROS_INFO_STREAM("Failed to call the service: \"" << sc_get_path_.getService());
     return {false, "Failed to call getPath"};
   }
+  
 
+  //}
+  
   /* Validation of trajectory within safety area */
-  current_trajectory_ = getPathSrv.response.trajectory;
+  // current_trajectory_ = trajectory; 
+  current_trajectory_ = getPathSrv.response.trajectory; //to replace 
   //Saving trajectory idx
-  current_trajectory_idxs_ = getPathSrv.response.waypoint_trajectory_idxs;
+  current_trajectory_idxs_ = getPathSrv.response.waypoint_trajectory_idxs; //to replace
   mrs_msgs::ReferenceArray       waypointArray;
   waypointArray.header               = current_trajectory_.header;
   waypointArray.array                 = current_trajectory_.points;
+
+  mrs_msgs::ValidateReferenceArray validateReferenceSrv;
   validateReferenceSrv.request.array = waypointArray;
 
   ROS_DEBUG_STREAM("[MissionHandler]: Path size: " << msg.points.size()); 
@@ -1007,7 +1035,6 @@ MissionHandler::result_t MissionHandler::validateMissionSrv(const mrs_msgs::Path
 
   path_segments_t current_segment_t;
 
-  
   // Add the first point to start a segment
   current_segment_t.path.points.push_back(msg.points[0]); 
   current_segment_t.is_valid = in_valid_segment;
@@ -1060,6 +1087,114 @@ MissionHandler::result_t MissionHandler::validateMissionSrv(const mrs_msgs::Path
 
   return path_segments; 
 }
+//}
+
+/* getTrajectoryFromSegments() //{ */
+
+std::tuple<MissionHandler::result_t,mrs_msgs::TrajectoryReference>
+MissionHandler::getTrajectoryFromSegments(std::vector<path_segments_t> path_segments) {
+  mrs_msgs::TrajectoryReference    trajectory;
+  std::vector<mrs_msgs::Reference> aggregated_points;
+  bool first_point = true;
+  mrs_msgs::Reference last_invalid_point;
+  bool previous_segment_invalid = false;
+
+  for (auto& segment : path_segments) {
+    if (!segment.is_valid) {
+      //Generating heading trajectory
+      auto trajectory = generateHeadingTrajectory(segment.path, 0.2);
+      aggregated_points.insert(aggregated_points.end(), trajectory.begin(), trajectory.end());
+      last_invalid_point = trajectory.back();
+      previous_segment_invalid = true;
+    } else {
+
+      if (!first_point) {
+        //As we only want to prepend the current state once
+        segment.path.dont_prepend_current_state = true;
+      } else {
+       first_point = false; 
+      }
+
+      if (previous_segment_invalid) {
+        segment.path.points.insert(segment.path.points.begin(), last_invalid_point);
+        previous_segment_invalid = false;
+      }
+
+      //Using standard mrs_trajectory generation
+      mrs_msgs::GetPathSrv            getPathSrv;
+      mrs_msgs::ValidateReferenceArray validateReferenceSrv;
+      getPathSrv.request.path = segment.path; 
+      auto response = getPathSrv.response; 
+      //Calling getPath service
+      auto resp = callService<mrs_msgs::GetPathSrv>(sc_get_path_, getPathSrv.request , response);
+
+      if (!resp.success) {
+        ROS_INFO_STREAM("Failed to call the service: \"" << sc_get_path_.getService());
+        return std::make_tuple(result_t{false, resp.message}, trajectory);
+      }
+      
+      aggregated_points.insert(aggregated_points.end(), response.trajectory.points.begin(), response.trajectory.points.end());
+    }
+  }
+  trajectory.points = aggregated_points;
+
+  //ROS_INFO("[MissionHandler]: Trajectory points: %zu", trajectory.points.size());
+  ////Print trajectory
+  //for (const auto& point : trajectory.points) {
+  //  ROS_INFO("[MissionHandler]: Point: %f, %f, %f Heading: %f", point.position.x, point.position.y, point.position.z, point.heading);
+  //}
+
+  return std::make_tuple(result_t{true, "Successfull"}, trajectory); 
+}
+//}
+
+/* generateHeadingTrajectory() //{ */
+
+std::vector<mrs_msgs::Reference> MissionHandler::generateHeadingTrajectory(const mrs_msgs::Path& path, double T = 0.2) {
+
+  std::vector<mrs_msgs::Reference> trajectory;
+
+  if (path.points.empty()) {
+    return trajectory;
+  }
+
+  // Add the first point
+  trajectory.push_back(path.points[0]);
+
+  mrs_msgs::Reference point;
+  //Interpolation to the next points within segment
+  for (size_t i = 0; i < path.points.size() - 1; ++i) {
+    const auto& p0 = path.points[i];
+    const auto& p1 = path.points[i + 1];
+
+    // All positions are the same in invalid segments
+    double x = p0.position.x;  
+    double y = p0.position.y;
+    double z = p0.position.z;
+    double h0 = p0.heading;
+    double h1 = p1.heading;
+
+    // Only interpolate heading if it's different
+    if (std::abs(h1 - h0) > 1e-6) {
+      // Calculate number of samples for heading interpolation
+      
+      auto heading_diff = std::abs(sradians::diff(h0, h1));
+      //absolute value of heading diff
+      int num_heading_samples = static_cast<int>(std::ceil(heading_diff / T)); 
+
+      for (int j = 1; j <= num_heading_samples; ++j) {
+        double t = static_cast<double>(j) / num_heading_samples;
+        point.position.x = x;
+        point.position.y = y;
+        point.position.z = z;
+        point.heading    = h0 + t * (h1 - h0);
+        trajectory.push_back(point);
+      }
+    }
+  }
+  return trajectory;
+}
+
 //}
 
 /* processMissionInfo() //{ */
@@ -1159,7 +1294,7 @@ std::tuple<bool,mrs_msgs::ReferenceStamped> MissionHandler::transformReference(m
 }
 //}
 
-/* transformReference() //{ */
+/* transformReferenceArray() //{ */
 std::tuple<bool,mrs_msgs::ReferenceArray> MissionHandler::transformReferenceArray(mrs_msgs::TransformReferenceArraySrv TransformArraySrv){
 
   if (sc_transform_reference_array_.call(TransformArraySrv)) {
@@ -1225,6 +1360,22 @@ MissionHandler::result_t MissionHandler::callService(ros::ServiceClient& sc, typ
   }
 }
 
+template <typename Svc_T>
+MissionHandler::result_t MissionHandler::callService(ros::ServiceClient& sc, typename Svc_T::Request req, typename Svc_T::Response& res) {
+  if (sc.call(req, res)) {
+    if (res.success) {
+      ROS_INFO_STREAM_THROTTLE(1.0, "Called service \"" << sc.getService() << "\" with response \"" << res.message << "\".");
+      return {true, res.message};
+    } else {
+      ROS_WARN_STREAM_THROTTLE(1.0, "Called service \"" << sc.getService() << "\" with response \"" << res.message << "\".");
+      return {false, res.message};
+    }
+  } else {
+    const std::string msg = "Failed to call service \"" + sc.getService() + "\".";
+    ROS_WARN_STREAM_THROTTLE(1.0, msg);
+    return {false, msg};
+  }
+}
 template <typename Svc_T>
 MissionHandler::result_t MissionHandler::callService(ros::ServiceClient& sc) {
   return callService<Svc_T>(sc, {});
