@@ -613,15 +613,27 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::ControlManagerDi
 
   const bool have_goal = diagnostics->tracker_status.have_goal;
   current_trajectory_length_ = diagnostics->tracker_status.trajectory_length;
- 
+
   if (current_trajectory_length_ == 0 || !mission_info_processed_) {
-        return;
+    return;
   }
 
   //Get current trajectory ID, and the goal ID (from correspondence check)
   current_trajectory_idx_ = diagnostics->tracker_status.trajectory_idx;
   current_trajectory_goal_idx_ = current_trajectory_idxs_.at(goal_idx_); 
 
+  if (current_trajectory_idx_  >= current_trajectory_idxs_.back() || current_trajectory_length_ == 1) {
+    ROS_INFO("[MissionHandler]: Reached last point");
+    updateMissionState(mission_state_t::FINISHED);
+    distance_to_finish_ = 0.0;
+    distance_to_goal_ = 0.0;
+    mission_progress_ = 100.0;
+    goal_progress_ = 100.0;
+    goal_estimated_time_of_arrival_ = 0.0;
+    finish_estimated_time_of_arrival_ = 0.0;
+    mission_info_processed_ = false;
+    return;
+  }
   /* Restart distance, as we  will recalculate based on current trajectory idx */
   distance_to_finish_ = 0.0;
 
@@ -647,7 +659,6 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::ControlManagerDi
   /* Calculate goal progress */
   if ( total_goal_segment > 0 ) {
     const int current_progress = (current_trajectory_idx_ - goal_start_);
-    const int total_goal_segment = closest_goal_idx - goal_start_;
     const double calculated_goal_progress = (static_cast<double>(current_trajectory_idx_ - goal_start_) / total_goal_segment) * 100;
     goal_progress_ = std::min(calculated_goal_progress, 100.0);
     const double calculated_goal_time = static_cast<double>(closest_goal_idx - current_trajectory_idx_) * _trajectory_samping_period_; 
@@ -658,7 +669,7 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::ControlManagerDi
   }
 
   /* Calculate overall mission progress */
-  if ( current_trajectory_length_ > 0 ) {
+  if ( current_trajectory_length_ + total_progress_ > 0 ) {
     //using total progress to accumulate the mission progress when pausing the mission
     const double calculated_mission_progress = (static_cast<double>(current_trajectory_idx_ + total_progress_) / (current_trajectory_length_ + total_progress_)) * 100;
     mission_progress_ = std::min(calculated_mission_progress, 100.0);
@@ -672,24 +683,10 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::ControlManagerDi
   if (current_trajectory_idx_ >= current_trajectory_goal_idx_) {
     ROS_INFO("[MissionHandler]: Reached %d waypoint", goal_idx_ + 1);
     /* If last point in ID's from path points */
-    if (current_trajectory_idx_  >= current_trajectory_idxs_.back()) {
-      ROS_INFO("[MissionHandler]: Reached last point");
-      updateMissionState(mission_state_t::FINISHED);
-      distance_to_finish_ = 0.0;
-      distance_to_goal_ = 0.0;
-      mission_progress_ = 100.0;
-      goal_progress_ = 100.0;
-      goal_estimated_time_of_arrival_ = 0.0;
-      finish_estimated_time_of_arrival_ = 0.0;
-      mission_info_processed_ = false;
-    } else {
-      goal_start_ = closest_goal_idx; 
-      goal_idx_++; //Reached current goal, calculating for next goal
-
-    }
+    goal_start_ = closest_goal_idx; 
+    goal_idx_++; //Reached current goal, calculating for next goal
   }
 }
-
 //}
 
 // | ---------------------- action server callbacks --------------------- |
@@ -1161,13 +1158,18 @@ MissionHandler::getTrajectoryFromSegments(std::vector<path_segments_t> path_segm
       aggregated_points.insert(aggregated_points.end(), response.trajectory.points.begin(), response.trajectory.points.end());
       //Get trajectory idxs
       auto resp_trajectory_idxs = response.waypoint_trajectory_idxs;
-
-      //Add trajectory idxs to vector
-      for (const auto& idx : resp_trajectory_idxs) {
-        //Print original idx
-        auto idx_to_add = (idx == 0 ? current_trajectory_size + 1  : current_trajectory_size + idx);  
-        trajectory_idxs.push_back(idx_to_add);
+ 
+      if (!resp_trajectory_idxs.empty()) {
+        //Add trajectory idxs to vector
+        for (const auto& idx : resp_trajectory_idxs) {
+          //Print original idx
+          auto idx_to_add = (idx == 0 ? current_trajectory_size + 1  : current_trajectory_size + idx);  
+          trajectory_idxs.push_back(idx_to_add);
+        }
+      } else {
+        trajectory_idxs.push_back(current_trajectory_size + 1);
       }
+
       //Update trajectory size
       current_trajectory_size = aggregated_points.size(); 
     }
