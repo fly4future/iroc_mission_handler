@@ -853,14 +853,6 @@ MissionHandler::result_t MissionHandler::actionGoalValidation(const ActionServer
     }
   }
 
-  /* // Saving the heading points as with the transformation they will be replaced */
-  /* std::vector<double> heading_points; */
-  /* if (goal.height_id == ActionServerGoal::HEIGHT_ID_FCU) { */
-  /*   for (const auto& point : goal.points) { */
-  /*     heading_points.push_back(point.heading); */
-  /*   } */
-  /* } */
- 
   // Create reference array with received points to transform it into current control frame
   mrs_msgs::ReferenceArray goal_points_array;
   goal_points_array.header.frame_id = frame_id;
@@ -884,15 +876,8 @@ MissionHandler::result_t MissionHandler::actionGoalValidation(const ActionServer
     }
   }
 
-  /* if (goal.height_id == ActionServerGoal::HEIGHT_ID_FCU || goal.frame_id == ActionServerGoal::FRAME_ID_FCU) { */
-  /*   //Replacing the height points after the transformation, as when receiving LATLON points the transformation also considers the height as AMSL. */ 
-  /*   for (size_t i=0; i < transformed_array.array.size(); i++) { */
-  /*     transformed_array.array.at(i).heading = heading_points.at(i); */ 
-  /*   } */
-  /* } */
-
   for (const auto&point : transformed_array.array)  {
-    ROS_INFO("[MissionHandler]: Transformed point x: %f  y: %f z: %f h: %f", point.position.x,
+    ROS_DEBUG("[MissionHandler]: Transformed point x: %f  y: %f z: %f h: %f", point.position.x,
         point.position.y,
         point.position.z,
         point.heading
@@ -1078,8 +1063,7 @@ MissionHandler::getTrajectoryFromSegments(std::vector<path_segments_t> path_segm
   bool first_point = true;
   mrs_msgs::Reference last_invalid_point;
   mrs_msgs::Reference last_valid_point;
-  last_valid_point.position = path_segments.begin()->path.points.begin()->position;
-  last_valid_point.heading = path_segments.begin()->path.points.begin()->heading;
+  last_valid_point = path_segments.begin()->path.points.back();
 
   bool previous_segment_invalid = false;
   std::vector<long int> trajectory_idxs;
@@ -1160,15 +1144,20 @@ MissionHandler::getTrajectoryFromSegments(std::vector<path_segments_t> path_segm
 
       // Update trajectory size
       current_trajectory_size = aggregated_points.size(); 
+      last_valid_point.position = aggregated_points.back().position;  
+      last_valid_point.heading = aggregated_points.back().heading; 
     }
-
-    last_valid_point.position = segment.path.points.end()->position;
-    last_valid_point.heading = segment.path.points.end()->heading;
   }
 
   trajectory.points = aggregated_points;
   trajectory_s.trajectory = trajectory;
   trajectory_s.trajectory_idxs = trajectory_idxs;
+
+  // Print trajectory
+  ROS_DEBUG("[MissionHandler]: Trajectory points: %zu", trajectory.points.size());
+  for (const auto& point : trajectory.points) {
+    ROS_DEBUG("[MissionHandler]: Point: %f, %f, %f Heading: %f", point.position.x, point.position.y, point.position.z, point.heading);
+  }
 
   return std::make_tuple(result_t{true, "Successfull"}, trajectory_s); 
 }
@@ -1202,7 +1191,7 @@ std::tuple<std::vector<mrs_msgs::Reference>, std::vector<long int>> MissionHandl
       // Calculate number of samples for heading interpolation
       
       auto heading_diff = sradians::diff(h0, h1);
-      ROS_INFO("[MissionHandler]: h1 %f, h2 %f diff:%f",h0, h1, heading_diff );
+      ROS_DEBUG("[MissionHandler]: h1 %f, h2 %f diff:%f",h0, h1, heading_diff );
       //absolute value of heading diff
       int num_heading_samples = static_cast<int>(std::ceil(std::abs(heading_diff) / T)); 
 
@@ -1211,12 +1200,18 @@ std::tuple<std::vector<mrs_msgs::Reference>, std::vector<long int>> MissionHandl
         point.position.x = x;
         point.position.y = y;
         point.position.z = z;
-        point.heading    = h0 + t * heading_diff;
+        point.heading    = h0 + t * (std::abs(heading_diff));
         trajectory.push_back(point);
       }
     }
     trajectory_idxs.push_back(trajectory.size()-1);
     p0 = p1;
+  }
+
+  //Print trajectory
+  for (const auto& point : trajectory) {
+    ROS_DEBUG("[MissionHandler]: Trajectory point: %f, %f, %f Heading: %f", point.position.x, point.position.y, point.position.z, point.heading);
+    
   }
   return {trajectory, trajectory_idxs};
 }
