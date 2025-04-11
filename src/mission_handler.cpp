@@ -166,7 +166,7 @@ private:
   result_t                                                            actionGoalValidation(const ActionServerGoal& goal);
   result_t                                                            validateMissionSrv(const mrs_msgs::Path msg) ;
   std::vector<path_segments_t>                                        pathValidation(const mrs_msgs::Path msg) ;
-  std::tuple<std::vector<mrs_msgs::Reference>, std::vector<long int>> generateHeadingTrajectory(const mrs_msgs::Path& path, double T);
+  std::tuple<std::vector<mrs_msgs::Reference>, std::vector<long int>> generateHeadingTrajectory(const mrs_msgs::Reference& last_valid_point, const mrs_msgs::Path& path, double T);
   std::tuple<result_t,trajectory_t>                                   getTrajectoryFromSegments(std::vector<path_segments_t> path_segments);
   void                                                                processMissionInfo(const mrs_msgs::ReferenceArray reference_ist);
   bool                                                                replanMission(void);
@@ -853,14 +853,6 @@ MissionHandler::result_t MissionHandler::actionGoalValidation(const ActionServer
     }
   }
 
-  // Saving the heading points as with the transformation they will be replaced
-  std::vector<double> heading_points;
-  if (goal.height_id == ActionServerGoal::HEIGHT_ID_FCU) {
-    for (const auto& point : goal.points) {
-      heading_points.push_back(point.heading);
-    }
-  }
- 
   // Create reference array with received points to transform it into current control frame
   mrs_msgs::ReferenceArray goal_points_array;
   goal_points_array.header.frame_id = frame_id;
@@ -881,13 +873,6 @@ MissionHandler::result_t MissionHandler::actionGoalValidation(const ActionServer
     //Replacing the height points after the transformation, as when receiving LATLON points the transformation also considers the height as AMSL. 
     for (size_t i=0; i < transformed_array.array.size(); i++) {
       transformed_array.array.at(i).position.z = height_points.at(i);
-    }
-  }
-
-  if (goal.height_id == ActionServerGoal::HEIGHT_ID_FCU || goal.frame_id == ActionServerGoal::FRAME_ID_FCU) {
-    //Replacing the height points after the transformation, as when receiving LATLON points the transformation also considers the height as AMSL. 
-    for (size_t i=0; i < transformed_array.array.size(); i++) {
-      transformed_array.array.at(i).heading = heading_points.at(i); 
     }
   }
 
@@ -1077,6 +1062,9 @@ MissionHandler::getTrajectoryFromSegments(std::vector<path_segments_t> path_segm
   std::vector<mrs_msgs::Reference> aggregated_points;
   bool first_point = true;
   mrs_msgs::Reference last_invalid_point;
+  mrs_msgs::Reference last_valid_point;
+  last_valid_point = path_segments.begin()->path.points.back();
+
   bool previous_segment_invalid = false;
   std::vector<long int> trajectory_idxs;
   long int current_trajectory_size = 0;
@@ -1087,9 +1075,9 @@ MissionHandler::getTrajectoryFromSegments(std::vector<path_segments_t> path_segm
     // Invalid segment
     if (!segment.is_valid) {
       // Generating heading trajectory
-      auto [headign_trajectory, heading_trajectory_idxs] = generateHeadingTrajectory(segment.path, 0.2);
-      aggregated_points.insert(aggregated_points.end(), headign_trajectory.begin(), headign_trajectory.end());
-      last_invalid_point = headign_trajectory.back();
+      auto [heading_trajectory, heading_trajectory_idxs] = generateHeadingTrajectory(last_valid_point, segment.path, 0.2);
+      aggregated_points.insert(aggregated_points.end(), heading_trajectory.begin(), heading_trajectory.end());
+      last_invalid_point = heading_trajectory.back();
 
       // Add trajectory idxs to vector
       for (const auto& idx : heading_trajectory_idxs) {
@@ -1156,6 +1144,8 @@ MissionHandler::getTrajectoryFromSegments(std::vector<path_segments_t> path_segm
 
       // Update trajectory size
       current_trajectory_size = aggregated_points.size(); 
+      last_valid_point.position = aggregated_points.back().position;  
+      last_valid_point.heading = aggregated_points.back().heading; 
     }
   }
 
@@ -1163,13 +1153,19 @@ MissionHandler::getTrajectoryFromSegments(std::vector<path_segments_t> path_segm
   trajectory_s.trajectory = trajectory;
   trajectory_s.trajectory_idxs = trajectory_idxs;
 
+  // Print trajectory
+  ROS_DEBUG("[MissionHandler]: Trajectory points: %zu", trajectory.points.size());
+  for (const auto& point : trajectory.points) {
+    ROS_DEBUG("[MissionHandler]: Point: %f, %f, %f Heading: %f", point.position.x, point.position.y, point.position.z, point.heading);
+  }
+
   return std::make_tuple(result_t{true, "Successfull"}, trajectory_s); 
 }
 //}
 
 /* generateHeadingTrajectory() //{ */
 
-std::tuple<std::vector<mrs_msgs::Reference>, std::vector<long int>> MissionHandler::generateHeadingTrajectory(const mrs_msgs::Path& path, double T = 0.2) {
+std::tuple<std::vector<mrs_msgs::Reference>, std::vector<long int>> MissionHandler::generateHeadingTrajectory(const mrs_msgs::Reference& last_valid_point, const mrs_msgs::Path& path, double T = 0.2) {
   std::vector<mrs_msgs::Reference> trajectory;
   std::vector<long int> trajectory_idxs;
 
@@ -1177,18 +1173,11 @@ std::tuple<std::vector<mrs_msgs::Reference>, std::vector<long int>> MissionHandl
     return {trajectory, trajectory_idxs};
   }
 
-  // Add the first point
-  trajectory.push_back(path.points[0]);
-  // trajectory_idxs.push_back(0);
-  // Add first waypoint idx
-  size_t trajectory_idx = 0;
-  trajectory_idxs.push_back(trajectory_idx);
-
+  auto p0 = last_valid_point;
   mrs_msgs::Reference point;
   // Interpolation to the next points within segment
-  for (size_t i = 0; i < path.points.size() - 1; ++i) {
-    const auto& p0 = path.points[i];
-    const auto& p1 = path.points[i + 1];
+  for (size_t i = 0; i < path.points.size(); ++i) {
+    const auto& p1 = path.points[i];
 
     // All positions are the same in invalid segments
     double x = p0.position.x;  
@@ -1198,27 +1187,31 @@ std::tuple<std::vector<mrs_msgs::Reference>, std::vector<long int>> MissionHandl
     double h1 = p1.heading;
 
     // Only interpolate heading if it's different
-    if (std::abs(h1 - h0) > 1e-6) {
+    if (std::abs(sradians::diff(h0, h1)) > 1e-6) {
       // Calculate number of samples for heading interpolation
       
-      auto heading_diff = std::abs(sradians::diff(h0, h1));
+      auto heading_diff = sradians::diff(h0, h1);
+      ROS_DEBUG("[MissionHandler]: h1 %f, h2 %f diff:%f",h0, h1, heading_diff );
       //absolute value of heading diff
-      int num_heading_samples = static_cast<int>(std::ceil(heading_diff / T)); 
+      int num_heading_samples = static_cast<int>(std::ceil(std::abs(heading_diff) / T)); 
 
       for (int j = 1; j <= num_heading_samples; ++j) {
         double t = static_cast<double>(j) / num_heading_samples;
         point.position.x = x;
         point.position.y = y;
         point.position.z = z;
-        point.heading    = h0 + t * (h1 - h0);
+        point.heading    = h0 + t * (std::abs(heading_diff));
         trajectory.push_back(point);
-        trajectory_idx++;
       }
     }
-    // Record the index of the next waypoint
-    if (i+1 < path.points.size()) {
-      trajectory_idxs.push_back(trajectory_idx);
-    }
+    trajectory_idxs.push_back(trajectory.size()-1);
+    p0 = p1;
+  }
+
+  //Print trajectory
+  for (const auto& point : trajectory) {
+    ROS_DEBUG("[MissionHandler]: Trajectory point: %f, %f, %f Heading: %f", point.position.x, point.position.y, point.position.z, point.heading);
+    
   }
   return {trajectory, trajectory_idxs};
 }
