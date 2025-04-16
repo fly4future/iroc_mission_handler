@@ -158,8 +158,9 @@ private:
   int                               goal_start_ = 0;
   double                            distance_to_goal_;
 
-  double tolerance_;
-  const double _trajectory_samping_period_ = 0.2;
+  double                            tolerance_;
+  const double                      _trajectory_samping_period_ = 0.2;
+  ros::Time                         trajectory_start_time_;
 
   // | ------------------ Additional functions ------------------ |
 
@@ -990,6 +991,7 @@ MissionHandler::result_t MissionHandler::validateMissionSrv(const mrs_msgs::Path
 
 /* pathValidation() //{ */
  std::vector<MissionHandler::path_segments_t> MissionHandler::pathValidation(const mrs_msgs::Path msg) {
+  trajectory_start_time_ = msg.header.stamp;
   //Validate the path and create segments
   std::map<bool,std::vector<mrs_msgs::Path>> path_segments_map;
   std::vector<path_segments_t> path_segments;
@@ -1152,6 +1154,11 @@ MissionHandler::getTrajectoryFromSegments(std::vector<path_segments_t> path_segm
   trajectory.points = aggregated_points;
   trajectory_s.trajectory = trajectory;
   trajectory_s.trajectory_idxs = trajectory_idxs;
+  trajectory.header.stamp = ros::Time::now();
+
+  // Change the stamp based on the time it took to generate the trajectory
+  double path_time_offset = (ros::Time::now() - trajectory_start_time_).toSec();
+  ROS_INFO("[MissionHandler]: Trajectory generated took: %f seconds", path_time_offset);
 
   // Print trajectory
   ROS_DEBUG("[MissionHandler]: Trajectory points: %zu", trajectory.points.size());
