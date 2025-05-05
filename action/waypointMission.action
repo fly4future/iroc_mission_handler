@@ -14,7 +14,11 @@ uint8 HEIGHT_ID_FCU=2
 # Define the goal
 uint8 frame_id
 uint8 height_id
-mrs_msgs/Reference[] points
+iroc_mission_handler/MissionPoint[] mission_points
+  mrs_msgs/Reference point
+  iroc_mission_handler/Subtask[] subtasks
+  bool wait_for_completion
+  bool parallel
 uint8 terminal_action
 ---
 # Define the result
