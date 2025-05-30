@@ -346,13 +346,16 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
       if (mission_handler_server_ptr_->isActive()) {
         iroc_mission_handler::MissionResult action_server_result;
         if (action_finished_) {
-          action_server_result.success = true;
-          action_server_result.message = "Mission finished";
+          action_server_result.result.name = robot_name_; 
+          action_server_result.result.success = true;
+          action_server_result.result.message = "Mission finished";
           ROS_INFO("[MissionHandler]: Mission finished.");
           mission_handler_server_ptr_->setSucceeded(action_server_result);
         } else {
-          action_server_result.success = false;
-          action_server_result.message = "Mission stopped due to landing.";
+
+          action_server_result.result.name = robot_name_; 
+          action_server_result.result.success = false;
+          action_server_result.result.message = "Mission stopped due to landing.";
           ROS_WARN("[MissionHandler]: Mission stopped due to landing.");
           mission_handler_server_ptr_->setAborted(action_server_result);
         }
@@ -367,9 +370,10 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
     // switch mission to idle if we are in Manual
     if (uav_state_.value() == uav_state_t::MANUAL) {
       iroc_mission_handler::MissionResult action_server_result;
-      action_server_result.success = false;
-      action_server_result.message = "Mission cancelled because drone is under manual control.";
-      ROS_INFO("[MissionHandler]: %s", action_server_result.message.c_str());
+      action_server_result.result.name = robot_name_; 
+      action_server_result.result.success = false;
+      action_server_result.result.message = "Mission cancelled because drone is under manual control.";
+      ROS_INFO("[MissionHandler]: %s", action_server_result.result.message.c_str());
       mission_handler_server_ptr_->setAborted(action_server_result);
       updateMissionState(mission_state_t::IDLE);
       return;
@@ -428,8 +432,9 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
           default: {  
             iroc_mission_handler::MissionResult action_server_result;
-            action_server_result.success = true;
-            action_server_result.message = "Mission finished";
+            action_server_result.result.name = robot_name_; 
+            action_server_result.result.success = true;
+            action_server_result.result.message = "Mission finished";
             ROS_INFO("[MissionHandler]: Mission finished.");
             mission_handler_server_ptr_->setSucceeded(action_server_result);
 
@@ -694,8 +699,9 @@ void MissionHandler::actionCallbackGoal() {
 
   if (!is_initialized_) {
     iroc_mission_handler::MissionResult action_server_result;
-    action_server_result.success = false;
-    action_server_result.message = "Not initialized yet";
+    action_server_result.result.name = robot_name_;
+    action_server_result.result.success = false;
+    action_server_result.result.message = "Not initialized yet";
     ROS_WARN("[MissionHandler]: not initialized yet");
     mission_handler_server_ptr_->setAborted(action_server_result);
     return;
@@ -705,8 +711,9 @@ void MissionHandler::actionCallbackGoal() {
 
   if (!result.success) {
     iroc_mission_handler::MissionResult action_server_result;
-    action_server_result.success = false;
-    action_server_result.message = result.message;
+    action_server_result.result.name = robot_name_;
+    action_server_result.result.success = false;
+    action_server_result.result.message = result.message;
     ROS_WARN("[MissionHandler]: mission aborted");
     mission_handler_server_ptr_->setAborted(action_server_result);
     return;
@@ -724,9 +731,10 @@ void MissionHandler::actionCallbackPreempt() {
     if (mission_handler_server_ptr_->isNewGoalAvailable()) {
       ROS_INFO("[MissionHandler]: Preemption toggled for ActionServer.");
       iroc_mission_handler::MissionResult action_server_result;
-      action_server_result.success = false;
-      action_server_result.message = "Preempted by client";
-      ROS_WARN_STREAM("[MissionHandler]: " << action_server_result.message);
+      action_server_result.result.name = robot_name_; 
+      action_server_result.result.success = false;
+      action_server_result.result.message = "Preempted by client";
+      ROS_WARN_STREAM("[MissionHandler]: " << action_server_result.result.message);
       mission_handler_server_ptr_->setPreempted(action_server_result);
       updateMissionState(mission_state_t::IDLE);
     } else {
@@ -744,8 +752,9 @@ void MissionHandler::actionCallbackPreempt() {
           ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call hover service.");
           }
           iroc_mission_handler::MissionResult action_server_result;
-          action_server_result.success = false;
-          action_server_result.message = "Mission stopped.";
+          action_server_result.result.name = robot_name_;
+          action_server_result.result.success = false;
+          action_server_result.result.message = "Mission stopped.";
           mission_handler_server_ptr_->setAborted(action_server_result);
           ROS_INFO("[MissionHandler]: Mission stopped.");
           updateMissionState(mission_state_t::IDLE);
@@ -754,8 +763,9 @@ void MissionHandler::actionCallbackPreempt() {
 
         default:
           iroc_mission_handler::MissionResult action_server_result;
-          action_server_result.success = false;
-          action_server_result.message = "Mission stopped.";
+          action_server_result.result.name = robot_name_;
+          action_server_result.result.success = false;
+          action_server_result.result.message = "Mission stopped.";
           mission_handler_server_ptr_->setAborted(action_server_result);
           ROS_INFO("[MissionHandler]: Mission stopped.");
           updateMissionState(mission_state_t::IDLE);

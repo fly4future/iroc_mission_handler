@@ -15,8 +15,6 @@ uint8 HEIGHT_ID_FCU=2
 iroc_mission_handler/MissionRobotGoal goal
 ---
 # Define the result
-bool success
-string message
 iroc_mission_handler/MissionRobotResult result
 ---
 # Define a feedback message
