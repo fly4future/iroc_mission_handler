@@ -25,8 +25,14 @@ find_package(catkin REQUIRED COMPONENTS
   )
 
 add_action_files(
-  DIRECTORY action 
-  FILES waypointMission.action
+  DIRECTORY action FILES 
+  Mission.action
+  )
+# messages
+add_message_files(DIRECTORY msg FILES
+  MissionRobotGoal.msg
+  MissionRobotResult.msg
+  MissionRobotFeedback.msg
   )
 
 generate_messages(
@@ -59,21 +65,6 @@ add_dependencies(IROCMissionHandler
 
 target_link_libraries(IROCMissionHandler
   ${catkin_LIBRARIES}
-  )
-
-## | ---------------------- test example ---------------------- |
-
-add_executable(mission_handler_test_client 
-  src/mission_handler_test_client.cpp
-  )
-
-add_dependencies(mission_handler_test_client 
-  ${catkin_EXPORTED_TARGETS}
-  ${${PROJECT_NAME}_EXPORTED_TARGETS} 
-  )
-
-target_link_libraries(mission_handler_test_client 
-  ${catkin_LIBRARIES} 
   )
 
 ## --------------------------------------------------------------

@@ -12,21 +12,12 @@ uint8 HEIGHT_ID_AMSL=1
 uint8 HEIGHT_ID_FCU=2
 
 # Define the goal
-uint8 frame_id
-uint8 height_id
-mrs_msgs/Reference[] points
-uint8 terminal_action
+iroc_mission_handler/MissionRobotGoal goal
 ---
 # Define the result
 bool success
 string message
+iroc_mission_handler/MissionRobotResult result
 ---
 # Define a feedback message
-string  message
-uint16  goal_idx
-float64 distance_to_finish
-float64 goal_estimated_arrival_time
-float64 mission_progress
-float64 distance_to_closest_goal
-float64 finish_estimated_arrival_time
-float64 goal_progress
+iroc_mission_handler/MissionRobotFeedback feedback
