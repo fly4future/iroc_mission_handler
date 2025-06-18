@@ -22,6 +22,7 @@
   <depend>mrs_lib</depend>
   <depend>genmsg</depend>
   <depend>actionlib_msgs</depend>
+  <depend>message_generation</depend>
   <depend>mrs_robot_diagnostics</depend>
 
   <export>

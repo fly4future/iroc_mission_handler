@@ -788,7 +788,8 @@ MissionHandler::result_t MissionHandler::actionGoalValidation(const ActionServer
   }
 
   for (const auto& point : goal.points) {
-    ROS_DEBUG("[MissionHandler]: Point: x:%f y:%f z:%f h:%f ", point.position.x, point.position.y, point.position.z, point.heading);
+    ROS_DEBUG("[MissionHandler]: Point: x:%f y:%f z:%f h:%f ", point.reference_point.position.x, point.reference_point.position.y,
+              point.reference_point.position.z, point.reference_point.heading);
   }
 
   std::string frame_id;
@@ -830,14 +831,18 @@ MissionHandler::result_t MissionHandler::actionGoalValidation(const ActionServer
   std::vector<double> height_points;
   if (goal.height_id == ActionServerGoal::HEIGHT_ID_AGL) {
     for (const auto& point : goal.points) {
-      height_points.push_back(point.position.z);
+      height_points.push_back(point.reference_point.position.z);
     }
   }
 
   // Create reference array with received points to transform it into current control frame
   mrs_msgs::ReferenceArray goal_points_array;
   goal_points_array.header.frame_id = frame_id;
-  goal_points_array.array           = goal.points;
+  goal_points_array.array.clear();
+  goal_points_array.array.reserve(goal.points.size());
+  for (const auto& point : goal.points) {
+    goal_points_array.array.push_back(point.reference_point);
+  }
 
   /* This could be replaced with TBD ControlManager Service "transformReferenceArray" */
   mrs_msgs::TransformReferenceArraySrv transformSrv_reference_array;

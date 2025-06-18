@@ -14,6 +14,7 @@ set(CATKIN_DEPENDENCIES
   actionlib_msgs
   genmsg
   mrs_robot_diagnostics
+  message_generation
   )
 
 set(LIBRARIES
@@ -27,6 +28,13 @@ find_package(catkin REQUIRED COMPONENTS
 add_action_files(
   DIRECTORY action 
   FILES waypointMission.action
+  )
+
+add_message_files(
+  DIRECTORY msg
+  FILES
+  Subtask.msg
+  Waypoint.msg
   )
 
 generate_messages(
