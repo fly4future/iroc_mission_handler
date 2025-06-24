@@ -780,6 +780,7 @@ void MissionHandler::actionPublishFeedback() {
 
   if (mission_handler_server_ptr_->isActive()) {
     iroc_mission_handler::MissionFeedback action_server_feedback;
+    action_server_feedback.name = robot_name_;
     action_server_feedback.message = to_string(mission_state_.value());
     action_server_feedback.goal_idx = global_goal_idx_ + goal_idx_; // Global goal idx saves previous reached goals for every pausing
     action_server_feedback.distance_to_closest_goal = distance_to_goal_;
