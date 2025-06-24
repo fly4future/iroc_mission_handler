@@ -6,9 +6,6 @@
 
 #include <actionlib/server/simple_action_server.h>
 #include <iroc_mission_handler/MissionAction.h>
-#include <iroc_mission_handler/MissionRobotGoal.h>
-#include <iroc_mission_handler/MissionRobotResult.h>
-#include <iroc_mission_handler/MissionRobotFeedback.h>
 
 #include <mrs_lib/param_loader.h>
 #include <mrs_lib/mutex.h>
@@ -346,16 +343,16 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
       if (mission_handler_server_ptr_->isActive()) {
         iroc_mission_handler::MissionResult action_server_result;
         if (action_finished_) {
-          action_server_result.result.name = robot_name_; 
-          action_server_result.result.success = true;
-          action_server_result.result.message = "Mission finished";
+          action_server_result.name = robot_name_; 
+          action_server_result.success = true;
+          action_server_result.message = "Mission finished";
           ROS_INFO("[MissionHandler]: Mission finished.");
           mission_handler_server_ptr_->setSucceeded(action_server_result);
         } else {
 
-          action_server_result.result.name = robot_name_; 
-          action_server_result.result.success = false;
-          action_server_result.result.message = "Mission stopped due to landing.";
+          action_server_result.name = robot_name_; 
+          action_server_result.success = false;
+          action_server_result.message = "Mission stopped due to landing.";
           ROS_WARN("[MissionHandler]: Mission stopped due to landing.");
           mission_handler_server_ptr_->setAborted(action_server_result);
         }
@@ -370,10 +367,10 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
     // switch mission to idle if we are in Manual
     if (uav_state_.value() == uav_state_t::MANUAL) {
       iroc_mission_handler::MissionResult action_server_result;
-      action_server_result.result.name = robot_name_; 
-      action_server_result.result.success = false;
-      action_server_result.result.message = "Mission cancelled because drone is under manual control.";
-      ROS_INFO("[MissionHandler]: %s", action_server_result.result.message.c_str());
+      action_server_result.name = robot_name_; 
+      action_server_result.success = false;
+      action_server_result.message = "Mission cancelled because drone is under manual control.";
+      ROS_INFO("[MissionHandler]: %s", action_server_result.message.c_str());
       mission_handler_server_ptr_->setAborted(action_server_result);
       updateMissionState(mission_state_t::IDLE);
       return;
@@ -404,7 +401,7 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
       };
 
       case mission_state_t::FINISHED: {
-        switch (action_server_goal_.goal.terminal_action) {
+        switch (action_server_goal_.terminal_action) {
 
           case ActionServerGoal::TERMINAL_ACTION_LAND: {
             ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Executing terminal action. Calling land");
@@ -432,9 +429,9 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
           default: {  
             iroc_mission_handler::MissionResult action_server_result;
-            action_server_result.result.name = robot_name_; 
-            action_server_result.result.success = true;
-            action_server_result.result.message = "Mission finished";
+            action_server_result.name = robot_name_; 
+            action_server_result.success = true;
+            action_server_result.message = "Mission finished";
             ROS_INFO("[MissionHandler]: Mission finished.");
             mission_handler_server_ptr_->setSucceeded(action_server_result);
 
@@ -699,9 +696,9 @@ void MissionHandler::actionCallbackGoal() {
 
   if (!is_initialized_) {
     iroc_mission_handler::MissionResult action_server_result;
-    action_server_result.result.name = robot_name_;
-    action_server_result.result.success = false;
-    action_server_result.result.message = "Not initialized yet";
+    action_server_result.name = robot_name_;
+    action_server_result.success = false;
+    action_server_result.message = "Not initialized yet";
     ROS_WARN("[MissionHandler]: not initialized yet");
     mission_handler_server_ptr_->setAborted(action_server_result);
     return;
@@ -711,9 +708,9 @@ void MissionHandler::actionCallbackGoal() {
 
   if (!result.success) {
     iroc_mission_handler::MissionResult action_server_result;
-    action_server_result.result.name = robot_name_;
-    action_server_result.result.success = false;
-    action_server_result.result.message = result.message;
+    action_server_result.name = robot_name_;
+    action_server_result.success = false;
+    action_server_result.message = result.message;
     ROS_WARN("[MissionHandler]: mission aborted");
     mission_handler_server_ptr_->setAborted(action_server_result);
     return;
@@ -731,10 +728,10 @@ void MissionHandler::actionCallbackPreempt() {
     if (mission_handler_server_ptr_->isNewGoalAvailable()) {
       ROS_INFO("[MissionHandler]: Preemption toggled for ActionServer.");
       iroc_mission_handler::MissionResult action_server_result;
-      action_server_result.result.name = robot_name_; 
-      action_server_result.result.success = false;
-      action_server_result.result.message = "Preempted by client";
-      ROS_WARN_STREAM("[MissionHandler]: " << action_server_result.result.message);
+      action_server_result.name = robot_name_; 
+      action_server_result.success = false;
+      action_server_result.message = "Preempted by client";
+      ROS_WARN_STREAM("[MissionHandler]: " << action_server_result.message);
       mission_handler_server_ptr_->setPreempted(action_server_result);
       updateMissionState(mission_state_t::IDLE);
     } else {
@@ -752,9 +749,9 @@ void MissionHandler::actionCallbackPreempt() {
           ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call hover service.");
           }
           iroc_mission_handler::MissionResult action_server_result;
-          action_server_result.result.name = robot_name_;
-          action_server_result.result.success = false;
-          action_server_result.result.message = "Mission stopped.";
+          action_server_result.name = robot_name_;
+          action_server_result.success = false;
+          action_server_result.message = "Mission stopped.";
           mission_handler_server_ptr_->setAborted(action_server_result);
           ROS_INFO("[MissionHandler]: Mission stopped.");
           updateMissionState(mission_state_t::IDLE);
@@ -763,9 +760,9 @@ void MissionHandler::actionCallbackPreempt() {
 
         default:
           iroc_mission_handler::MissionResult action_server_result;
-          action_server_result.result.name = robot_name_;
-          action_server_result.result.success = false;
-          action_server_result.result.message = "Mission stopped.";
+          action_server_result.name = robot_name_;
+          action_server_result.success = false;
+          action_server_result.message = "Mission stopped.";
           mission_handler_server_ptr_->setAborted(action_server_result);
           ROS_INFO("[MissionHandler]: Mission stopped.");
           updateMissionState(mission_state_t::IDLE);
@@ -783,14 +780,14 @@ void MissionHandler::actionPublishFeedback() {
 
   if (mission_handler_server_ptr_->isActive()) {
     iroc_mission_handler::MissionFeedback action_server_feedback;
-    action_server_feedback.feedback.message = to_string(mission_state_.value());
-    action_server_feedback.feedback.goal_idx = global_goal_idx_ + goal_idx_; // Global goal idx saves previous reached goals for every pausing
-    action_server_feedback.feedback.distance_to_closest_goal = distance_to_goal_;
-    action_server_feedback.feedback.goal_estimated_arrival_time = goal_estimated_time_of_arrival_;
-    action_server_feedback.feedback.goal_progress = goal_progress_;
-    action_server_feedback.feedback.distance_to_finish = distance_to_finish_;
-    action_server_feedback.feedback.finish_estimated_arrival_time = finish_estimated_time_of_arrival_;
-    action_server_feedback.feedback.mission_progress = mission_progress_;
+    action_server_feedback.message = to_string(mission_state_.value());
+    action_server_feedback.goal_idx = global_goal_idx_ + goal_idx_; // Global goal idx saves previous reached goals for every pausing
+    action_server_feedback.distance_to_closest_goal = distance_to_goal_;
+    action_server_feedback.goal_estimated_arrival_time = goal_estimated_time_of_arrival_;
+    action_server_feedback.goal_progress = goal_progress_;
+    action_server_feedback.distance_to_finish = distance_to_finish_;
+    action_server_feedback.finish_estimated_arrival_time = finish_estimated_time_of_arrival_;
+    action_server_feedback.mission_progress = mission_progress_;
     mission_handler_server_ptr_->publishFeedback(action_server_feedback);
   }
 }
@@ -801,30 +798,30 @@ void MissionHandler::actionPublishFeedback() {
 /* actionGoalValidation() //{ */
 MissionHandler::result_t MissionHandler::actionGoalValidation(const ActionServerGoal& action_server_goal) {
   std::stringstream ss;
-  if (!(action_server_goal.goal.frame_id == ActionServerGoal::FRAME_ID_LOCAL || action_server_goal.goal.frame_id == ActionServerGoal::FRAME_ID_LATLON || action_server_goal.goal.frame_id == ActionServerGoal::FRAME_ID_FCU)) {
-    ss << "Unknown frame_id = \'" << int(action_server_goal.goal.frame_id) << "\', use the predefined ones.";
+  if (!(action_server_goal.frame_id == ActionServerGoal::FRAME_ID_LOCAL || action_server_goal.frame_id == ActionServerGoal::FRAME_ID_LATLON || action_server_goal.frame_id == ActionServerGoal::FRAME_ID_FCU)) {
+    ss << "Unknown frame_id = \'" << int(action_server_goal.frame_id) << "\', use the predefined ones.";
     ROS_WARN_STREAM_THROTTLE(1.0, ss.str());
     return {false, ss.str()};
   }
-  if (!(action_server_goal.goal.height_id == ActionServerGoal::HEIGHT_ID_AGL || action_server_goal.goal.height_id == ActionServerGoal::HEIGHT_ID_AMSL || action_server_goal.goal.height_id == ActionServerGoal::HEIGHT_ID_FCU)) {
-    ss << "Unknown height_id = \'" << int(action_server_goal.goal.height_id) << "\', use the predefined ones.";
+  if (!(action_server_goal.height_id == ActionServerGoal::HEIGHT_ID_AGL || action_server_goal.height_id == ActionServerGoal::HEIGHT_ID_AMSL || action_server_goal.height_id == ActionServerGoal::HEIGHT_ID_FCU)) {
+    ss << "Unknown height_id = \'" << int(action_server_goal.height_id) << "\', use the predefined ones.";
     ROS_WARN_STREAM_THROTTLE(1.0, ss.str());
     return {false, ss.str()};
   }
-  if (!(action_server_goal.goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_NONE || action_server_goal.goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_LAND ||
-        action_server_goal.goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_RTH)) {
-    ss << "Unknown terminal_action = \'" << int(action_server_goal.goal.terminal_action) << "\', use the predefined ones.";
+  if (!(action_server_goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_NONE || action_server_goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_LAND ||
+        action_server_goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_RTH)) {
+    ss << "Unknown terminal_action = \'" << int(action_server_goal.terminal_action) << "\', use the predefined ones.";
     ROS_WARN_STREAM_THROTTLE(1.0, ss.str());
     return {false, ss.str()};
   }
 
-  for (const auto& point : action_server_goal.goal.points) {
+  for (const auto& point : action_server_goal.points) {
     ROS_DEBUG("[MissionHandler]: Point: x:%f y:%f z:%f h:%f ", point.position.x,
                point.position.y,point.position.z,point.heading);
   }
  
   std::string frame_id;
-  switch (action_server_goal.goal.frame_id) {
+  switch (action_server_goal.frame_id) {
 
     case ActionServerGoal::FRAME_ID_LOCAL: {
       frame_id = "local_origin";
@@ -850,7 +847,7 @@ MissionHandler::result_t MissionHandler::actionGoalValidation(const ActionServer
   }
 
   // Reject mission if fcu_frame is set and uav not flying
-  if (action_server_goal.goal.frame_id == ActionServerGoal::FRAME_ID_FCU) {
+  if (action_server_goal.frame_id == ActionServerGoal::FRAME_ID_FCU) {
     if (uav_state_.value() != uav_state_t::HOVER) {
       ss << "FCU frame is set but uav is not in the air ";
       ROS_WARN_STREAM( ss.str());
@@ -861,8 +858,8 @@ MissionHandler::result_t MissionHandler::actionGoalValidation(const ActionServer
   // Saving the AGL height points specified in the goal, this is needed as they will be
   // replaced after doing a transformation with latlon points
   std::vector<double> height_points;
-  if (action_server_goal.goal.height_id == ActionServerGoal::HEIGHT_ID_AGL) {
-    for (const auto& point : action_server_goal.goal.points) {
+  if (action_server_goal.height_id == ActionServerGoal::HEIGHT_ID_AGL) {
+    for (const auto& point : action_server_goal.points) {
       height_points.push_back(point.position.z);
     }
   }
@@ -870,7 +867,7 @@ MissionHandler::result_t MissionHandler::actionGoalValidation(const ActionServer
   // Create reference array with received points to transform it into current control frame
   mrs_msgs::ReferenceArray goal_points_array;
   goal_points_array.header.frame_id = frame_id;
-  goal_points_array.array = action_server_goal.goal.points;
+  goal_points_array.array = action_server_goal.points;
 
   /* This could be replaced with TBD ControlManager Service "transformReferenceArray" */
   mrs_msgs::TransformReferenceArraySrv transformSrv_reference_array;
@@ -883,7 +880,7 @@ MissionHandler::result_t MissionHandler::actionGoalValidation(const ActionServer
     return {false, "Reference array transformation failed"};
   }
 
-  if (action_server_goal.goal.height_id == ActionServerGoal::HEIGHT_ID_AGL && action_server_goal.goal.frame_id != ActionServerGoal::FRAME_ID_FCU) {
+  if (action_server_goal.height_id == ActionServerGoal::HEIGHT_ID_AGL && action_server_goal.frame_id != ActionServerGoal::FRAME_ID_FCU) {
     //Replacing the height points after the transformation, as when receiving LATLON points the transformation also considers the height as AMSL. 
     for (size_t i=0; i < transformed_array.array.size(); i++) {
       transformed_array.array.at(i).position.z = height_points.at(i);
