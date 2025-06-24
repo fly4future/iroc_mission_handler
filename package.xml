@@ -20,7 +20,6 @@
   <depend>mrs_msgs</depend>
   <depend>std_srvs</depend>
   <depend>mrs_lib</depend>
-  <depend>genmsg</depend>
   <depend>actionlib_msgs</depend>
   <depend>mrs_robot_diagnostics</depend>
 
