@@ -2,7 +2,7 @@
 
 /* each ros package must have these */
 #include <actionlib/server/simple_action_server.h>
-#include <iroc_mission_handler/waypointMissionAction.h>
+#include <iroc_mission_handler/MissionAction.h>
 #include <mrs_lib/geometry/cyclic.h>
 #include <mrs_lib/geometry/misc.h>
 #include <mrs_lib/mutex.h>
@@ -116,15 +116,15 @@ class MissionHandler : public nodelet::Nodelet {
   // | --------------------- actionlib stuff -------------------- |
   //
 
-  typedef actionlib::SimpleActionServer<iroc_mission_handler::waypointMissionAction> MissionHandlerServer;
-  void                                                                               actionCallbackGoal();
-  void                                                                               actionCallbackPreempt();
-  std::unique_ptr<MissionHandlerServer>                                              mission_handler_server_ptr_;
+  typedef actionlib::SimpleActionServer<iroc_mission_handler::MissionAction> MissionHandlerServer;
+  void                                                                              actionCallbackGoal();
+  void                                                                              actionCallbackPreempt();
+  std::unique_ptr<MissionHandlerServer>                                             mission_handler_server_ptr_;
 
-  typedef iroc_mission_handler::waypointMissionGoal ActionServerGoal;
-  ActionServerGoal                                  action_server_goal_;
-  std::recursive_mutex                              action_server_mutex_;
-  std::recursive_mutex                              mission_informaton_mutex;
+  typedef iroc_mission_handler::MissionGoal ActionServerGoal;
+  ActionServerGoal                                 action_server_goal_;
+  std::recursive_mutex                             action_server_mutex_;
+  std::recursive_mutex                             mission_informaton_mutex;
 
   // | --------------------- mission feedback -------------------- |
   int                           goal_idx_        = 0;
@@ -151,11 +151,10 @@ class MissionHandler : public nodelet::Nodelet {
 
   // | ------------------ Additional functions ------------------ |
 
-  result_t                                                            actionGoalValidation(const ActionServerGoal& goal);
+  result_t                                                            actionGoalValidation(const ActionServerGoal& action_server_goal);
   result_t                                                            validateMissionSrv(const mrs_msgs::Path msg);
   std::vector<path_segments_t>                                        pathValidation(const mrs_msgs::Path msg);
-  std::tuple<std::vector<mrs_msgs::Reference>, std::vector<long int>> generateHeadingTrajectory(const mrs_msgs::Reference& last_valid_point,
-                                                                                                const mrs_msgs::Path& path, double T);
+  std::tuple<std::vector<mrs_msgs::Reference>, std::vector<long int>> generateHeadingTrajectory(const mrs_msgs::Reference& last_valid_point, const mrs_msgs::Path& path, double T);
   std::tuple<result_t, trajectory_t>                                  getTrajectoryFromSegments(std::vector<path_segments_t> path_segments);
   void                                                                processMissionInfo(const mrs_msgs::ReferenceArray reference_ist);
   bool                                                                replanMission(void);
@@ -327,13 +326,15 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
     if (uav_state_.value() == uav_state_t::ARMED || uav_state_.value() == uav_state_t::DISARMED || uav_state_.value() == uav_state_t::OFFBOARD) {
       ROS_INFO_STREAM("[MissionHandler]: Landing finished.");
       if (mission_handler_server_ptr_->isActive()) {
-        iroc_mission_handler::waypointMissionResult action_server_result;
+        iroc_mission_handler::MissionResult action_server_result;
         if (action_finished_) {
+          action_server_result.name = robot_name_; 
           action_server_result.success = true;
           action_server_result.message = "Mission finished";
           ROS_INFO("[MissionHandler]: Mission finished.");
           mission_handler_server_ptr_->setSucceeded(action_server_result);
         } else {
+          action_server_result.name = robot_name_; 
           action_server_result.success = false;
           action_server_result.message = "Mission stopped due to landing.";
           ROS_WARN("[MissionHandler]: Mission stopped due to landing.");
@@ -348,7 +349,8 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
   if (mission_handler_server_ptr_->isActive()) {
     // switch mission to idle if we are in Manual
     if (uav_state_.value() == uav_state_t::MANUAL) {
-      iroc_mission_handler::waypointMissionResult action_server_result;
+      iroc_mission_handler::MissionResult action_server_result;
+      action_server_result.name = robot_name_; 
       action_server_result.success = false;
       action_server_result.message = "Mission cancelled because drone is under manual control.";
       ROS_INFO("[MissionHandler]: %s", action_server_result.message.c_str());
@@ -406,8 +408,9 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
             break;
           };
 
-          default: {
-            iroc_mission_handler::waypointMissionResult action_server_result;
+          default: {  
+            iroc_mission_handler::MissionResult action_server_result;
+            action_server_result.name = robot_name_; 
             action_server_result.success = true;
             action_server_result.message = "Mission finished";
             ROS_INFO("[MissionHandler]: Mission finished.");
@@ -667,12 +670,13 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::ControlManagerDi
 
 /*  actionCallbackGoal()//{ */
 void MissionHandler::actionCallbackGoal() {
-  std::scoped_lock                                                   lock(action_server_mutex_);
-  boost::shared_ptr<const iroc_mission_handler::waypointMissionGoal> new_action_server_goal = mission_handler_server_ptr_->acceptNewGoal();
+  std::scoped_lock                                                  lock(action_server_mutex_);
+  boost::shared_ptr<const iroc_mission_handler::MissionGoal> new_action_server_goal = mission_handler_server_ptr_->acceptNewGoal();
   ROS_INFO_STREAM("[MissionHandler]: Action server received a new goal: \n" << *new_action_server_goal);
 
   if (!is_initialized_) {
-    iroc_mission_handler::waypointMissionResult action_server_result;
+    iroc_mission_handler::MissionResult action_server_result;
+    action_server_result.name = robot_name_;
     action_server_result.success = false;
     action_server_result.message = "Not initialized yet";
     ROS_WARN("[MissionHandler]: not initialized yet");
@@ -683,7 +687,8 @@ void MissionHandler::actionCallbackGoal() {
   const auto result = actionGoalValidation(*new_action_server_goal);
 
   if (!result.success) {
-    iroc_mission_handler::waypointMissionResult action_server_result;
+    iroc_mission_handler::MissionResult action_server_result;
+    action_server_result.name = robot_name_;
     action_server_result.success = false;
     action_server_result.message = result.message;
     ROS_WARN("[MissionHandler]: mission aborted");
@@ -702,7 +707,8 @@ void MissionHandler::actionCallbackPreempt() {
   if (mission_handler_server_ptr_->isActive()) {
     if (mission_handler_server_ptr_->isNewGoalAvailable()) {
       ROS_INFO("[MissionHandler]: Preemption toggled for ActionServer.");
-      iroc_mission_handler::waypointMissionResult action_server_result;
+      iroc_mission_handler::MissionResult action_server_result;
+      action_server_result.name = robot_name_; 
       action_server_result.success = false;
       action_server_result.message = "Preempted by client";
       ROS_WARN_STREAM("[MissionHandler]: " << action_server_result.message);
@@ -720,7 +726,8 @@ void MissionHandler::actionCallbackPreempt() {
           if (!resp.success) {
             ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call hover service.");
           }
-          iroc_mission_handler::waypointMissionResult action_server_result;
+          iroc_mission_handler::MissionResult action_server_result;
+          action_server_result.name = robot_name_;
           action_server_result.success = false;
           action_server_result.message = "Mission stopped.";
           mission_handler_server_ptr_->setAborted(action_server_result);
@@ -730,7 +737,8 @@ void MissionHandler::actionCallbackPreempt() {
         };
 
         default:
-          iroc_mission_handler::waypointMissionResult action_server_result;
+          iroc_mission_handler::MissionResult action_server_result;
+          action_server_result.name = robot_name_;
           action_server_result.success = false;
           action_server_result.message = "Mission stopped.";
           mission_handler_server_ptr_->setAborted(action_server_result);
@@ -749,13 +757,14 @@ void MissionHandler::actionPublishFeedback() {
   std::scoped_lock mission_lock(mission_informaton_mutex);  // Is this right?
 
   if (mission_handler_server_ptr_->isActive()) {
-    iroc_mission_handler::waypointMissionFeedback action_server_feedback;
-    action_server_feedback.message                       = to_string(mission_state_.value());
-    action_server_feedback.goal_idx                      = global_goal_idx_ + goal_idx_;  // Global goal idx saves previous reached goals for every pausing
-    action_server_feedback.distance_to_closest_goal      = distance_to_goal_;
-    action_server_feedback.goal_estimated_arrival_time   = goal_estimated_time_of_arrival_;
-    action_server_feedback.goal_progress                 = goal_progress_;
-    action_server_feedback.distance_to_finish            = distance_to_finish_;
+    iroc_mission_handler::MissionFeedback action_server_feedback;
+    action_server_feedback.name = robot_name_;
+    action_server_feedback.message = to_string(mission_state_.value());
+    action_server_feedback.goal_idx = global_goal_idx_ + goal_idx_; // Global goal idx saves previous reached goals for every pausing
+    action_server_feedback.distance_to_closest_goal = distance_to_goal_;
+    action_server_feedback.goal_estimated_arrival_time = goal_estimated_time_of_arrival_;
+    action_server_feedback.goal_progress = goal_progress_;
+    action_server_feedback.distance_to_finish = distance_to_finish_;
     action_server_feedback.finish_estimated_arrival_time = finish_estimated_time_of_arrival_;
     action_server_feedback.mission_progress              = mission_progress_;
     mission_handler_server_ptr_->publishFeedback(action_server_feedback);
@@ -766,34 +775,32 @@ void MissionHandler::actionPublishFeedback() {
 // | -------------------- support functions ------------------- |
 
 /* actionGoalValidation() //{ */
-MissionHandler::result_t MissionHandler::actionGoalValidation(const ActionServerGoal& goal) {
+MissionHandler::result_t MissionHandler::actionGoalValidation(const ActionServerGoal& action_server_goal) {
   std::stringstream ss;
-  if (!(goal.frame_id == ActionServerGoal::FRAME_ID_LOCAL || goal.frame_id == ActionServerGoal::FRAME_ID_LATLON ||
-        goal.frame_id == ActionServerGoal::FRAME_ID_FCU)) {
-    ss << "Unknown frame_id = \'" << int(goal.frame_id) << "\', use the predefined ones.";
+  if (!(action_server_goal.frame_id == ActionServerGoal::FRAME_ID_LOCAL || action_server_goal.frame_id == ActionServerGoal::FRAME_ID_LATLON || action_server_goal.frame_id == ActionServerGoal::FRAME_ID_FCU)) {
+    ss << "Unknown frame_id = \'" << int(action_server_goal.frame_id) << "\', use the predefined ones.";
     ROS_WARN_STREAM_THROTTLE(1.0, ss.str());
     return {false, ss.str()};
   }
-  if (!(goal.height_id == ActionServerGoal::HEIGHT_ID_AGL || goal.height_id == ActionServerGoal::HEIGHT_ID_AMSL ||
-        goal.height_id == ActionServerGoal::HEIGHT_ID_FCU)) {
-    ss << "Unknown height_id = \'" << int(goal.height_id) << "\', use the predefined ones.";
+  if (!(action_server_goal.height_id == ActionServerGoal::HEIGHT_ID_AGL || action_server_goal.height_id == ActionServerGoal::HEIGHT_ID_AMSL || action_server_goal.height_id == ActionServerGoal::HEIGHT_ID_FCU)) {
+    ss << "Unknown height_id = \'" << int(action_server_goal.height_id) << "\', use the predefined ones.";
     ROS_WARN_STREAM_THROTTLE(1.0, ss.str());
     return {false, ss.str()};
   }
-  if (!(goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_NONE || goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_LAND ||
-        goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_RTH)) {
-    ss << "Unknown terminal_action = \'" << int(goal.terminal_action) << "\', use the predefined ones.";
+  if (!(action_server_goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_NONE || action_server_goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_LAND ||
+        action_server_goal.terminal_action == ActionServerGoal::TERMINAL_ACTION_RTH)) {
+    ss << "Unknown terminal_action = \'" << int(action_server_goal.terminal_action) << "\', use the predefined ones.";
     ROS_WARN_STREAM_THROTTLE(1.0, ss.str());
     return {false, ss.str()};
   }
 
-  for (const auto& point : goal.points) {
+  for (const auto& point : action_server_goal.points) {
     ROS_DEBUG("[MissionHandler]: Point: x:%f y:%f z:%f h:%f ", point.reference_point.position.x, point.reference_point.position.y,
               point.reference_point.position.z, point.reference_point.heading);
   }
 
   std::string frame_id;
-  switch (goal.frame_id) {
+  switch (action_server_goal.frame_id) {
     case ActionServerGoal::FRAME_ID_LOCAL: {
       frame_id = "local_origin";
       break;
@@ -818,7 +825,7 @@ MissionHandler::result_t MissionHandler::actionGoalValidation(const ActionServer
   }
 
   // Reject mission if fcu_frame is set and uav not flying
-  if (goal.frame_id == ActionServerGoal::FRAME_ID_FCU) {
+  if (action_server_goal.frame_id == ActionServerGoal::FRAME_ID_FCU) {
     if (uav_state_.value() != uav_state_t::HOVER) {
       ss << "FCU frame is set but uav is not in the air ";
       ROS_WARN_STREAM(ss.str());
@@ -829,8 +836,8 @@ MissionHandler::result_t MissionHandler::actionGoalValidation(const ActionServer
   // Saving the AGL height points specified in the goal, this is needed as they will be
   // replaced after doing a transformation with latlon points
   std::vector<double> height_points;
-  if (goal.height_id == ActionServerGoal::HEIGHT_ID_AGL) {
-    for (const auto& point : goal.points) {
+  if (action_server_goal.height_id == ActionServerGoal::HEIGHT_ID_AGL) {
+    for (const auto& point : action_server_goal.points) {
       height_points.push_back(point.reference_point.position.z);
     }
   }
@@ -839,8 +846,8 @@ MissionHandler::result_t MissionHandler::actionGoalValidation(const ActionServer
   mrs_msgs::ReferenceArray goal_points_array;
   goal_points_array.header.frame_id = frame_id;
   goal_points_array.array.clear();
-  goal_points_array.array.reserve(goal.points.size());
-  for (const auto& point : goal.points) {
+  goal_points_array.array.reserve(action_server_goal.points.size());
+  for (const auto& point : action_server_goal.points) {
     goal_points_array.array.push_back(point.reference_point);
   }
 
@@ -855,7 +862,7 @@ MissionHandler::result_t MissionHandler::actionGoalValidation(const ActionServer
     return {false, "Reference array transformation failed"};
   }
 
-  if (goal.height_id == ActionServerGoal::HEIGHT_ID_AGL && goal.frame_id != ActionServerGoal::FRAME_ID_FCU) {
+  if (action_server_goal.height_id == ActionServerGoal::HEIGHT_ID_AGL && action_server_goal.frame_id != ActionServerGoal::FRAME_ID_FCU) {
     // Replacing the height points after the transformation, as when receiving LATLON points the transformation also considers the height as AMSL.
     for (size_t i = 0; i < transformed_array.array.size(); i++) {
       transformed_array.array.at(i).position.z = height_points.at(i);

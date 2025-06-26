@@ -12,16 +12,19 @@ uint8 HEIGHT_ID_AMSL=1
 uint8 HEIGHT_ID_FCU=2
 
 # Define the goal
+string name 
 uint8 frame_id
 uint8 height_id
 iroc_mission_handler/Waypoint[] points
 uint8 terminal_action
 ---
 # Define the result
+string name
 bool success
 string message
 ---
 # Define a feedback message
+string  name
 string  message
 uint16  goal_idx
 float64 distance_to_finish
