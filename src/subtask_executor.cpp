@@ -14,7 +14,6 @@
 #include "iroc_mission_handler/Subtask.h"
 
 namespace iroc_mission_handler {
-
 /**
  * @brief Abstract base class for all subtask executors
  */
@@ -146,7 +145,7 @@ WaitSubtaskExecutor::WaitSubtaskExecutor(ros::NodeHandle& nh) : nh_(nh) {}
 bool WaitSubtaskExecutor::execute(const std::string& parameters) {
   try {
     auto params = nlohmann::json::parse(parameters);
-    duration_   = params.value("duration", 5.0);  // Default 5 seconds if not specified
+    duration_   = params.value("duration", 5.0); // Default 5 seconds if not specified
 
     start_time_ = ros::Time::now();
     running_    = true;
@@ -212,7 +211,7 @@ bool GimbalSubtaskExecutor::execute(const std::string& parameters) {
     }
 
     // Optional duration parameter for movement time
-    duration_ = params.value("duration", 2.0);  // Default 2 seconds for movement
+    duration_ = params.value("duration", 2.0); // Default 2 seconds for movement
 
     // Publish the command
     gimbal_pub_.publish(gimbal_msg);
@@ -304,7 +303,7 @@ bool SensorSubtaskExecutor::execute(const std::string& parameters) {
       sensor_publishers_[sensor_type].publish(generic_msg);
     }
 
-    duration_   = params.value("duration", 0.0);  // 0 = instantaneous unless specified
+    duration_   = params.value("duration", 0.0); // 0 = instantaneous unless specified
     start_time_ = ros::Time::now();
     running_    = (duration_ > 0.0);
 
@@ -399,7 +398,7 @@ bool SubtaskManager::isSubtaskCompleted(const std::string& id, double& progress)
   auto it = active_subtasks_.find(id);
   if (it == active_subtasks_.end()) {
     ROS_WARN("No active subtask with ID %s", id.c_str());
-    progress = 1.0;  // Assume completed if not found
+    progress = 1.0; // Assume completed if not found
     return true;
   }
 
@@ -429,5 +428,4 @@ void SubtaskManager::stopAllSubtasks() {
   }
   active_subtasks_.clear();
 }
-
-}  // namespace iroc_mission_handler
+} // namespace iroc_mission_handler
