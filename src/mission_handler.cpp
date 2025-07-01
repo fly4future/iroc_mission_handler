@@ -1,34 +1,40 @@
 /* includes //{ */
 
 /* each ros package must have these */
+#include <ros/ros.h>
+#include <nodelet/nodelet.h>
+
 #include <actionlib/server/simple_action_server.h>
 #include <iroc_mission_handler/MissionAction.h>
-#include <mrs_lib/geometry/cyclic.h>
-#include <mrs_lib/geometry/misc.h>
-#include <mrs_lib/mutex.h>
+
 #include <mrs_lib/param_loader.h>
+#include <mrs_lib/mutex.h>
 #include <mrs_lib/subscribe_handler.h>
-#include <mrs_msgs/ControlManagerDiagnostics.h>
-#include <mrs_msgs/GetPathSrv.h>
+
+#include <std_srvs/SetBool.h>
+#include <std_srvs/Trigger.h>
 #include <mrs_msgs/PathSrv.h>
+#include <mrs_msgs/GetPathSrv.h>
+#include <mrs_msgs/ValidateReferenceArray.h>
 #include <mrs_msgs/Reference.h>
 #include <mrs_msgs/TrajectoryReference.h>
 #include <mrs_msgs/TrajectoryReferenceSrv.h>
-#include <mrs_msgs/TransformReferenceArraySrv.h>
 #include <mrs_msgs/TransformReferenceSrv.h>
-#include <mrs_msgs/ValidateReferenceArray.h>
-#include <mrs_robot_diagnostics/UavState.h>
-#include <mrs_robot_diagnostics/enums/enum_helpers.h>
-#include <mrs_robot_diagnostics/enums/tracker_state.h>
+#include <mrs_msgs/TransformReferenceArraySrv.h>
+#include <mrs_msgs/ControlManagerDiagnostics.h>
+
 #include <mrs_robot_diagnostics/enums/uav_state.h>
-#include <nodelet/nodelet.h>
-#include <ros/ros.h>
-#include <std_srvs/SetBool.h>
-#include <std_srvs/Trigger.h>
+#include <mrs_robot_diagnostics/enums/tracker_state.h>
+#include <mrs_robot_diagnostics/enums/enum_helpers.h>
+
+#include <mrs_robot_diagnostics/UavState.h>
+
+#include <mrs_lib/geometry/misc.h>
+#include <mrs_lib/geometry/cyclic.h>
 
 #include <atomic>
-#include <mutex>
 #include <tuple>
+#include <mutex>
 
 #include "iroc_mission_handler/enums/mission_state.h"
 
