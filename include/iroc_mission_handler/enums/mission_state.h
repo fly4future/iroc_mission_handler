@@ -12,10 +12,10 @@
                           (TAKEOFF)               \
                           (MISSION_LOADED)        \
                           (EXECUTING)             \
+                          (EXECUTING_SUBTASK)     \
                           (FINISHED)              \
                           (PAUSED)                \
                           (PAUSED_DUE_TO_RC_MODE) \
-                          (PAUSED_DUE_TO_SUBTASK) \
                           (RTH)                   \
                           (LAND)                  \
 
