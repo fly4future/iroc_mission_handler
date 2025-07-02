@@ -1373,19 +1373,7 @@ void MissionHandler::updateMissionState(const mission_state_t& new_state) {
 template <typename Svc_T>
 MissionHandler::result_t MissionHandler::callService(ros::ServiceClient& sc, typename Svc_T::Request req) {
   typename Svc_T::Response res;
-  if (sc.call(req, res)) {
-    if (res.success) {
-      ROS_INFO_STREAM_THROTTLE(1.0, "Called service \"" << sc.getService() << "\" with response \"" << res.message << "\".");
-      return {true, res.message};
-    } else {
-      ROS_WARN_STREAM_THROTTLE(1.0, "Called service \"" << sc.getService() << "\" with response \"" << res.message << "\".");
-      return {false, res.message};
-    }
-  } else {
-    const std::string msg = "Failed to call service \"" + sc.getService() + "\".";
-    ROS_WARN_STREAM_THROTTLE(1.0, msg);
-    return {false, msg};
-  }
+  return callService<Svc_T>(sc, req, res);
 }
 
 template <typename Svc_T>
