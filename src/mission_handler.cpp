@@ -56,23 +56,25 @@ class MissionHandler : public nodelet::Nodelet {
  private:
   ros::NodeHandle nh_;
 
+  // | --------------------- types and structs --------------------- |
   struct result_t {
     bool        success;
     std::string message;
   };
 
-  struct path_segments_t {
-    mrs_msgs::Path path;
-    bool           is_valid;
+  struct path_segment_t {
+    mrs_msgs::Path                             path;
+    bool                                       is_valid;
+    std::vector<iroc_mission_handler::Subtask> subtasks; // Subtasks at the end of the path segment
   };
 
   struct trajectory_t {
-    mrs_msgs::TrajectoryReference trajectory;
-    std::vector<long int>         trajectory_idxs;
+    mrs_msgs::TrajectoryReference              trajectory;
+    std::vector<long int>                      trajectory_idxs;
+    std::vector<iroc_mission_handler::Subtask> subtasks_;
   };
 
-  typedef mrs_robot_diagnostics::tracker_state_t tracker_state_t;
-  typedef mrs_robot_diagnostics::uav_state_t     uav_state_t;
+  typedef mrs_robot_diagnostics::uav_state_t uav_state_t;
 
   enum_helpers::enum_updater<uav_state_t>     uav_state_              = {"UAV STATE", uav_state_t::UNKNOWN};
   enum_helpers::enum_updater<mission_state_t> mission_state_          = {"MISSION STATE", mission_state_t::IDLE};
@@ -113,26 +115,28 @@ class MissionHandler : public nodelet::Nodelet {
   bool missionPausingServiceCallback(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
 
   // | ----------------------- main timer ----------------------- |
-
   ros::Timer timer_main_;
   ros::Timer timer_feedback_;
   void       timerMain(const ros::TimerEvent& event);
   void       timerFeedback(const ros::TimerEvent& event);
 
   // | --------------------- actionlib stuff -------------------- |
-  //
-
   typedef actionlib::SimpleActionServer<iroc_mission_handler::MissionAction> MissionHandlerServer;
-  void                                                                       actionCallbackGoal();
-  void                                                                       actionCallbackPreempt();
-  std::unique_ptr<MissionHandlerServer>                                      mission_handler_server_ptr_;
+
+  void                                  actionCallbackGoal();
+  void                                  actionCallbackPreempt();
+  std::unique_ptr<MissionHandlerServer> mission_handler_server_ptr_;
 
   typedef iroc_mission_handler::MissionGoal ActionServerGoal;
   ActionServerGoal                          action_server_goal_;
   std::recursive_mutex                      action_server_mutex_;
-  std::recursive_mutex                      mission_informaton_mutex;
+  std::recursive_mutex                      mission_information_mutex;
 
   // | --------------------- mission feedback -------------------- |
+  std::vector<trajectory_t> trajectories_;
+  int                       waypoint_idx_   = 0;
+  int                       trajectory_idx_ = 0;
+
   int                                                     goal_idx_        = 0;
   int                                                     global_goal_idx_ = 0;
   int                                                     current_trajectory_idx_;
@@ -153,17 +157,16 @@ class MissionHandler : public nodelet::Nodelet {
   double distance_to_goal_;
 
   double       tolerance_;
-  const double _trajectory_samping_period_ = 0.2;
+  const double _trajectory_sampling_period_ = 0.2;
   ros::Time    trajectory_start_time_;
 
   // | ------------------ Additional functions ------------------ |
-
-  result_t                     actionGoalValidation(const ActionServerGoal& action_server_goal);
-  result_t                     validateMissionSrv(const std::vector<path_segments_t>& path_segments);
-  std::vector<path_segments_t> pathValidation(const mrs_msgs::Path msg, const std::vector<std::vector<iroc_mission_handler::Subtask>>& subtasks = {});
+  result_t                    createMission(const ActionServerGoal& action_server_goal);
+  result_t                    validateSegments(const std::vector<path_segment_t>& path_segments);
+  std::vector<path_segment_t> segmentPath(const mrs_msgs::Path& msg, const std::vector<std::vector<Subtask>>& waypoint_subtasks = {});
   std::tuple<std::vector<mrs_msgs::Reference>, std::vector<long int>> generateHeadingTrajectory(const mrs_msgs::Reference& last_valid_point,
                                                                                                 const mrs_msgs::Path& path, double T);
-  std::tuple<result_t, trajectory_t>                                  getTrajectoryFromSegments(std::vector<path_segments_t> path_segments);
+  std::tuple<result_t, trajectory_t>                                  getTrajectoryFromSegments(std::vector<path_segment_t> path_segments);
   void                                                                processMissionInfo(const mrs_msgs::ReferenceArray reference_ist);
   bool                                                                replanMission(void);
   void                                                                updateMissionState(const mission_state_t& new_state);
@@ -173,7 +176,7 @@ class MissionHandler : public nodelet::Nodelet {
   void                                                                controlManagerDiagCallback(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg);
   void                                                                actionPublishFeedback(void);
 
-  // some helper method overloads
+  // Call service methods overloads
   template <typename Svc_T>
   result_t callService(ros::ServiceClient& sc, typename Svc_T::Request req);
 
@@ -220,7 +223,6 @@ void MissionHandler::onInit() {
   }
 
   // | ----------------------- subscribers ---------------------- |
-
   tim_mgr_ = std::make_shared<mrs_lib::TimeoutManager>(nh_, ros::Rate(1.0));
   mrs_lib::SubscribeHandlerOptions shopts;
   shopts.nh                 = nh_;
@@ -237,7 +239,6 @@ void MissionHandler::onInit() {
                                                                                             &MissionHandler::controlManagerDiagCallback, this);
 
   // | --------------------- service clients -------------------- |
-
   sc_takeoff_ = nh_.serviceClient<std_srvs::Trigger>("svc/takeoff");
   ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/offboard\' -> \'%s\'", sc_takeoff_.getService().c_str());
 
@@ -278,7 +279,6 @@ void MissionHandler::onInit() {
   ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/transform_reference_array\' -> \'%s\'", sc_transform_reference_.getService().c_str());
 
   // | --------------------- service servers -------------------- |
-
   ss_activation_ = nh_.advertiseService("svc_server/mission_activation", &MissionHandler::missionActivationServiceCallback, this);
   ROS_INFO("[IROCBridge]: Created ServiceServer on service \'svc_server/mission_activation\' -> \'%s\'", ss_activation_.getService().c_str());
 
@@ -286,19 +286,16 @@ void MissionHandler::onInit() {
   ROS_INFO("[IROCBridge]: Created ServiceServer on service \'svc_server/mission_pausing\' -> \'%s\'", ss_pausing_.getService().c_str());
 
   // | ------------------------- timers ------------------------- |
-
   timer_main_     = nh_.createTimer(ros::Rate(main_timer_rate), &MissionHandler::timerMain, this);
   timer_feedback_ = nh_.createTimer(ros::Rate(feedback_timer_rate), &MissionHandler::timerFeedback, this);
 
   // | ------------------ action server methods ----------------- |
-  //
   mission_handler_server_ptr_ = std::make_unique<MissionHandlerServer>(nh_, ros::this_node::getName(), false);
   mission_handler_server_ptr_->registerGoalCallback(boost::bind(&MissionHandler::actionCallbackGoal, this));
   mission_handler_server_ptr_->registerPreemptCallback(boost::bind(&MissionHandler::actionCallbackPreempt, this));
   mission_handler_server_ptr_->start();
 
   // | --------------------- finish the init -------------------- |
-
   ROS_INFO("[MissionHandler]: initialized");
   ROS_INFO("[MissionHandler]: --------------------");
   is_initialized_ = true;
@@ -309,6 +306,14 @@ void MissionHandler::onInit() {
 // | ------------------------- timers  ------------------------ |
 
 /* timerMain() //{ */
+/**
+ * \brief Main timer callback function, which is called periodically to handle the mission state and UAV state.
+ *
+ * This function checks the UAV state, updates the mission state accordingly, and handles the action server goals.
+ * It also manages the transition between different mission states based on the UAV's current state.
+ *
+ * \param event The timer event containing information about the timer.
+ */
 void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
   std::scoped_lock lock(action_server_mutex_);
   if (!is_initialized_) {
@@ -464,6 +469,7 @@ void MissionHandler::timerFeedback([[maybe_unused]] const ros::TimerEvent& event
 bool MissionHandler::missionActivationServiceCallback(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res) {
   std::scoped_lock lock(action_server_mutex_);
   ROS_INFO_STREAM("[MissionHandler]: Received mission activation request.");
+
   if (mission_handler_server_ptr_->isActive()) {
     switch (mission_state_.value()) {
       case mission_state_t::MISSION_LOADED: {
@@ -588,8 +594,7 @@ bool MissionHandler::missionPausingServiceCallback(std_srvs::Trigger::Request& r
 /* controlManagerDiagCallback() //{ */
 
 void MissionHandler::controlManagerDiagCallback(const mrs_msgs::ControlManagerDiagnostics::ConstPtr diagnostics) {
-  std::scoped_lock lock(mission_informaton_mutex);
-
+  std::scoped_lock lock(mission_information_mutex);
   /* do not continue if the nodelet is not initialized */
   if (!is_initialized_) {
     return;
@@ -605,6 +610,10 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::ControlManagerDi
   // Get current trajectory ID, and the goal ID (from correspondence check)
   current_trajectory_idx_      = diagnostics->tracker_status.trajectory_idx;
   current_trajectory_goal_idx_ = current_trajectory_idxs_.at(goal_idx_);
+
+  ROS_ERROR(
+      "[MissionHandler]: current_trajectory_idx_ = %d, current_trajectory_goal_idx_ = %d, goal_idx_ = %d, have_goal = %d, current_trajectory_length_ = %d",
+      current_trajectory_idx_, current_trajectory_goal_idx_, goal_idx_, have_goal, current_trajectory_length_);
 
   if (!subtasks_.at(goal_idx_).empty()) {
     auto resp = callService<std_srvs::Trigger>(sc_mission_pause_);
@@ -672,7 +681,7 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::ControlManagerDi
     const int    current_progress         = (current_trajectory_idx_ - goal_start_);
     const double calculated_goal_progress = (static_cast<double>(current_trajectory_idx_ - goal_start_) / total_goal_segment) * 100;
     goal_progress_                        = std::min(calculated_goal_progress, 100.0);
-    const double calculated_goal_time     = static_cast<double>(closest_goal_idx - current_trajectory_idx_) * _trajectory_samping_period_;
+    const double calculated_goal_time     = static_cast<double>(closest_goal_idx - current_trajectory_idx_) * _trajectory_sampling_period_;
     goal_estimated_time_of_arrival_       = std::max(calculated_goal_time, 0.0);
 
   } else {
@@ -685,10 +694,10 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::ControlManagerDi
     const double calculated_mission_progress =
         (static_cast<double>(current_trajectory_idx_ + total_progress_) / (current_trajectory_length_ + total_progress_)) * 100;
     mission_progress_                    = std::min(calculated_mission_progress, 100.0);
-    const double calculated_mission_time = static_cast<double>(current_trajectory_length_ - current_trajectory_idx_) * _trajectory_samping_period_;
+    const double calculated_mission_time = static_cast<double>(current_trajectory_length_ - current_trajectory_idx_) * _trajectory_sampling_period_;
     finish_estimated_time_of_arrival_    = std::max(calculated_mission_time, 0.0);
   } else {
-    ROS_WARN("[MissionHandler]: Trajectory length is 0, validate if the trajectory was succesfully generated.");
+    ROS_WARN("[MissionHandler]: Trajectory length is 0, validate if the trajectory was successfully generated.");
     mission_progress_ = 0;
   }
 
@@ -719,7 +728,7 @@ void MissionHandler::actionCallbackGoal() {
     return;
   }
 
-  const auto result = actionGoalValidation(*new_action_server_goal);
+  const auto result = createMission(*new_action_server_goal);
 
   if (!result.success) {
     iroc_mission_handler::MissionResult action_server_result;
@@ -789,7 +798,7 @@ void MissionHandler::actionCallbackPreempt() {
 /* actionPublishFeedback()//{ */
 void MissionHandler::actionPublishFeedback() {
   std::scoped_lock lock(action_server_mutex_);
-  std::scoped_lock mission_lock(mission_informaton_mutex); // Is this right?
+  std::scoped_lock mission_lock(mission_information_mutex); // Is this right?
 
   if (mission_handler_server_ptr_->isActive()) {
     iroc_mission_handler::MissionFeedback action_server_feedback;
@@ -809,9 +818,10 @@ void MissionHandler::actionPublishFeedback() {
 
 // | -------------------- support functions ------------------- |
 
-/* actionGoalValidation() //{ */
-MissionHandler::result_t MissionHandler::actionGoalValidation(const ActionServerGoal& action_server_goal) {
+/* createMission() //{ */
+MissionHandler::result_t MissionHandler::createMission(const ActionServerGoal& action_server_goal) {
   std::stringstream ss;
+  // Parameter validation
   if (!(action_server_goal.frame_id == ActionServerGoal::FRAME_ID_LOCAL || action_server_goal.frame_id == ActionServerGoal::FRAME_ID_LATLON ||
         action_server_goal.frame_id == ActionServerGoal::FRAME_ID_FCU)) {
     ss << "Unknown frame_id = \'" << int(action_server_goal.frame_id) << "\', use the predefined ones.";
@@ -911,23 +921,18 @@ MissionHandler::result_t MissionHandler::actionGoalValidation(const ActionServer
     ROS_DEBUG("[MissionHandler]: Transformed point x: %f  y: %f z: %f h: %f", point.position.x, point.position.y, point.position.z, point.heading);
   }
 
-  goal_points_array   = transformed_array;
-  current_path_array_ = goal_points_array;
   mrs_msgs::Path msg_path;
-  msg_path.points       = goal_points_array.array;
-  msg_path.header.stamp = ros::Time::now();
-  msg_path.fly_now      = false;
-  msg_path.use_heading  = true;
-  // do not use the current position for planning of the path
-  msg_path.dont_prepend_current_state = false;
-  msg_path.header.frame_id            = goal_points_array.header.frame_id;
+  msg_path.points                     = transformed_array.array;
+  msg_path.header.stamp               = ros::Time::now();
+  msg_path.fly_now                    = false;
+  msg_path.use_heading                = true;
+  msg_path.dont_prepend_current_state = false; // do not use the current position for planning of the path
+  msg_path.header.frame_id            = transformed_array.header.frame_id;
 
-  /* Validate if path is within safety area */
-  for (const auto& point : action_server_goal.points) {
-    subtasks_.push_back(point.subtasks);
-  }
-  auto       path_segments = pathValidation(msg_path, subtasks_);
-  const auto result        = validateMissionSrv(path_segments);
+  // Segmenting the path into segments based on subtasks and heading trajectories
+  std::vector<path_segment_t> path_segments = segmentPath(msg_path, subtasks_);
+
+  const auto result = validateSegments(path_segments);
 
   if (!result.success) {
     ROS_WARN_STREAM("Trajectory points outside of safety area!");
@@ -935,15 +940,93 @@ MissionHandler::result_t MissionHandler::actionGoalValidation(const ActionServer
   } else {
     ROS_INFO_STREAM("Valid trajectory");
     /* Trajectory is valid, processing information for feedback */
+    current_path_array_ = transformed_array;
     processMissionInfo(goal_points_array);
     return {result.success, result.message};
   }
 }
 //}
 
-/* validateMissionSrv() //{ */
+/* segmentPath() //{ */
 
-MissionHandler::result_t MissionHandler::validateMissionSrv(const std::vector<path_segments_t>& path_segments) {
+/**
+ * \brief Segments the path into smaller segments based on the distance between points and subtasks.
+ *
+ * This function processes the input path message and segments it into smaller paths based on the distance between consecutive points. If the distance is less
+ * than a threshold (0.05), it marks the segment as invalid to be processed as a heading trajectory later. It also checks for subtasks at each waypoint to
+ * determine if a new segment should be started.
+ *
+ * \param msg The input path message containing reference points.
+ * \param waypoint_subtasks A vector of subtasks associated with each waypoint (it must match the size of the path points).
+ *
+ * \return A vector of segmented paths.
+ */
+std::vector<MissionHandler::path_segment_t> MissionHandler::segmentPath(const mrs_msgs::Path& msg, const std::vector<std::vector<Subtask>>& waypoint_subtasks) {
+  if (msg.points.size() != waypoint_subtasks.size()) {
+    ROS_WARN("[MissionHandler]: Number of subtasks does not match number of points in the path.");
+    return {};
+  }
+
+  std::vector<path_segment_t> path_segments;
+
+  path_segment_t current_segment;
+  current_segment.path.header      = msg.header;
+  current_segment.path.fly_now     = msg.fly_now;
+  current_segment.path.use_heading = msg.use_heading;
+
+  // Add the first point to start a segment
+  current_segment.path.points.push_back(msg.points[0]);
+  current_segment.is_valid = true; // Start with the first point as valid
+
+  // Process points from index 1 to end
+  for (size_t i = 1; i < msg.points.size(); i++) {
+    const double dist = distance(msg.points[i - 1], msg.points[i]);
+
+    if (!current_segment.path.points.empty()) {
+      if (dist < 0.05) { // If the distance between points is too small, mark it as invalid
+        current_segment.is_valid = false;
+        path_segments.push_back(current_segment);
+
+        // Start a new segment
+        current_segment.path.points.clear();
+        current_segment.is_valid = true;
+      }
+    }
+
+    // Add the current point to the segment
+    current_segment.path.points.push_back(msg.points[i]);
+
+    // Check if there are subtasks for the current point that need to be waited for
+    if (!waypoint_subtasks.at(i).empty()) {
+      path_segments.push_back(current_segment);
+      current_segment.path.points.clear();
+      current_segment.is_valid = true; // Reset validity for the next segment
+    }
+  }
+
+  // Add the last segment if it's not empty
+  if (!current_segment.path.points.empty()) {
+    path_segments.push_back(current_segment);
+  }
+
+  // Debugging information
+  ROS_DEBUG_STREAM("[MissionHandler]: Path size: " << msg.points.size());
+  ROS_DEBUG("[MissionHandler]: Path segments: %zu", path_segments.size());
+
+  for (size_t segment_idx = 0; segment_idx < path_segments.size(); ++segment_idx) {
+    ROS_DEBUG("[MissionHandler]: Segment %ld: %s", segment_idx + 1, path_segments[segment_idx].is_valid ? "Valid" : "Invalid");
+    for (const auto& point : path_segments[segment_idx].path.points) {
+      ROS_DEBUG("[MissionHandler]: Point: %f, %f, %f Heading: %f", point.position.x, point.position.y, point.position.z, point.heading);
+    }
+  }
+
+  return path_segments;
+}
+//}
+
+/* validateSegments() //{ */
+
+MissionHandler::result_t MissionHandler::validateSegments(const std::vector<path_segment_t>& path_segments) {
   auto [result, trajectory_t] = getTrajectoryFromSegments(path_segments);
 
   if (!result.success) {
@@ -1013,83 +1096,8 @@ MissionHandler::result_t MissionHandler::validateMissionSrv(const std::vector<pa
 }
 //}
 
-/* pathValidation() //{ */
-std::vector<MissionHandler::path_segments_t> MissionHandler::pathValidation(const mrs_msgs::Path                                           msg,
-                                                                            const std::vector<std::vector<iroc_mission_handler::Subtask>>& subtasks) {
-  trajectory_start_time_ = msg.header.stamp;
-  // Validate the path and create segments
-  std::map<bool, std::vector<mrs_msgs::Path>> path_segments_map;
-  std::vector<path_segments_t>                path_segments;
-  bool                                        in_valid_segment = true;
-
-  path_segments_t current_segment_t;
-
-  current_segment_t.path.header      = msg.header;
-  current_segment_t.path.fly_now     = msg.fly_now;
-  current_segment_t.path.use_heading = msg.use_heading;
-
-  // Add the first point to start a segment
-  current_segment_t.path.points.push_back(msg.points[0]);
-  current_segment_t.is_valid = in_valid_segment;
-
-  // Process points from index 1 to end
-  for (size_t i = 1; i < msg.points.size(); i++) {
-    double dist = distance(msg.points[i - 1], msg.points[i]);
-
-    if (dist > 0.05) {
-      // Valid distance between points
-      if (!in_valid_segment && !current_segment_t.path.points.empty()) {
-        // We were in an invalid segment, save it and start a new valid one
-        current_segment_t.is_valid = in_valid_segment;
-        path_segments.push_back(current_segment_t);
-        current_segment_t.path.points.clear();
-        in_valid_segment = true;
-      }
-    } else {
-      // Invalid distance between points
-      if (in_valid_segment && !current_segment_t.path.points.empty()) {
-        // We were in a valid segment, save it and start a new invalid one
-        current_segment_t.is_valid = in_valid_segment;
-        path_segments.push_back(current_segment_t);
-        current_segment_t.path.points.clear();
-        in_valid_segment = false;
-      }
-    }
-
-    // Add the current point to the segment
-    current_segment_t.path.points.push_back(msg.points[i]);
-
-    if (subtasks.at(i).size() > 0) {
-      path_segments.push_back(current_segment_t);
-      current_segment_t.path.points.clear();
-    }
-  }
-
-  // Add the last segment if it's not empty
-  if (!current_segment_t.path.points.empty()) {
-    current_segment_t.is_valid = in_valid_segment;
-    path_segments.push_back(current_segment_t);
-  }
-
-  // This is a debug log/ to remove after testing
-  ROS_DEBUG_STREAM("[MissionHandler]: Path size: " << msg.points.size());
-  ROS_DEBUG("[MissionHandler]: Path segments: %zu", path_segments.size());
-  // Print path segments
-  int segment_idx = 0;
-  for (const auto& segment : path_segments) {
-    auto valid = segment.is_valid ? "Valid" : "Invalid";
-    ROS_DEBUG("[MissionHandler]: Segment %d: %s", ++segment_idx, valid);
-    for (const auto& point : segment.path.points) {
-      ROS_DEBUG("[MissionHandler]: Point: %f, %f, %f Heading: %f", point.position.x, point.position.y, point.position.z, point.heading);
-    }
-  }
-
-  return path_segments;
-}
-//}
-
 /* getTrajectoryFromSegments() //{ */
-std::tuple<MissionHandler::result_t, MissionHandler::trajectory_t> MissionHandler::getTrajectoryFromSegments(std::vector<path_segments_t> path_segments) {
+std::tuple<MissionHandler::result_t, MissionHandler::trajectory_t> MissionHandler::getTrajectoryFromSegments(std::vector<path_segment_t> path_segments) {
   mrs_msgs::TrajectoryReference    trajectory;
   std::vector<mrs_msgs::Reference> aggregated_points;
   bool                             first_point = true;
@@ -1194,7 +1202,7 @@ std::tuple<MissionHandler::result_t, MissionHandler::trajectory_t> MissionHandle
     ROS_DEBUG("[MissionHandler]: Point: %f, %f, %f Heading: %f", point.position.x, point.position.y, point.position.z, point.heading);
   }
 
-  return std::make_tuple(result_t{true, "Successfull"}, trajectory_s);
+  return std::make_tuple(result_t{true, "Successful"}, trajectory_s);
 }
 //}
 
@@ -1255,7 +1263,7 @@ std::tuple<std::vector<mrs_msgs::Reference>, std::vector<long int>> MissionHandl
 /* processMissionInfo() //{ */
 
 void MissionHandler::processMissionInfo(const mrs_msgs::ReferenceArray reference_array) {
-  std::scoped_lock lock(mission_informaton_mutex);
+  std::scoped_lock lock(mission_information_mutex);
   // Clear member variables used in feedback
   goal_idx_               = 0;
   distance_to_finish_     = 0.0;
@@ -1268,44 +1276,7 @@ void MissionHandler::processMissionInfo(const mrs_msgs::ReferenceArray reference
 
 /* replanMission() //{ */
 
-bool MissionHandler::replanMission() {
-  mrs_msgs::ReferenceArray remaining_path_array;
-  // Copy remaining points from current path, starting from the current goal idx
-  remaining_path_array.array.insert(remaining_path_array.array.end(), current_path_array_.array.begin() + goal_idx_, current_path_array_.array.end());
-
-  for (const auto& point : current_path_array_.array) {
-    ROS_DEBUG("[MissionHandler]: Traversed point: x:%f y:%f z:%f h:%f ", point.position.x, point.position.y, point.position.z, point.heading);
-  }
-
-  for (const auto& point : remaining_path_array.array) {
-    ROS_DEBUG("[MissionHandler]: Remaining point: x:%f y:%f z:%f h:%f ", point.position.x, point.position.y, point.position.z, point.heading);
-  }
-
-  mrs_msgs::Path msg_path;
-  msg_path.points       = remaining_path_array.array;
-  msg_path.header.stamp = ros::Time::now();
-  msg_path.fly_now      = false;
-  msg_path.use_heading  = true;
-  // do not use the current position for planning of the path
-  msg_path.dont_prepend_current_state = false;
-  msg_path.header.frame_id            = current_path_array_.header.frame_id;
-
-  std::vector<std::vector<iroc_mission_handler::Subtask>> remaining_subtasks;
-  // Copy remaining subtasks from action server goal, starting from the current goal idx
-  auto       path_segments = pathValidation(msg_path);
-  const auto result        = validateMissionSrv(path_segments);
-
-  if (!result.success) {
-    ROS_WARN("Service call for trajectory_reference failed,  returned '%s'", result.message.c_str());
-    return false;
-  } else {
-    global_goal_idx_ += goal_idx_;              // Saving the reached goals
-    current_path_array_ = remaining_path_array; // If a new pause is triggered, will continue with current path
-    total_progress_ += current_trajectory_idx_; // Accumulate current progress
-    processMissionInfo(remaining_path_array);
-    return true;
-  }
-}
+bool MissionHandler::replanMission() { return true; }
 //}
 
 /* transformReference() //{ */
