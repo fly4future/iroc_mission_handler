@@ -977,18 +977,18 @@ MissionHandler::result_t MissionHandler::validateMissionSrv(const std::vector<pa
       ROS_WARN_STREAM("Trajectory points outside of safety area, validation from  calling service \""
                       << sc_mission_validation_.getService() << "\" with response \"" << validateReferenceSrv.response.message << "\".");
 
-      std::vector<mrs_msgs::Reference> unvalid_points;
+      std::vector<mrs_msgs::Reference> invalid_points;
       for (auto& point_id : current_trajectory_idxs_) {
         if (!validateReferenceSrv.response.success.at(point_id)) {
-          unvalid_points.push_back(current_trajectory_.points.at(point_id));
+          invalid_points.push_back(current_trajectory_.points.at(point_id));
         }
       }
 
-      for (auto& point : unvalid_points) {
+      for (auto& point : invalid_points) {
         ROS_WARN_STREAM("[MissionHandler]: Unvalid point: " << point);
       }
 
-      if (unvalid_points.size() == 0) {
+      if (invalid_points.size() == 0) {
         ROS_WARN("[MissionHandler]: The given points are valid, however the generated trajectory seems to be outside of safety area or within anobstacle.");
         return {false, "The given points are valid for: " + robot_name_ +
                            ", however the generated trajectory seems to be outside of safety area or within an obstacle."};
