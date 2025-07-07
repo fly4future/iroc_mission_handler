@@ -43,9 +43,6 @@
 using vec2_t = mrs_lib::geometry::vec_t<2>;
 using vec3_t = mrs_lib::geometry::vec_t<3>;
 
-using radians = mrs_lib::geometry::radians;
-using sradians = mrs_lib::geometry::sradians;
-
 namespace iroc_mission_handler {
 
 /* class MissionHandler //{ */
@@ -88,7 +85,7 @@ class MissionHandler : public nodelet::Nodelet {
   struct trajectory_t {
     mrs_msgs::TrajectoryReference trajectory;
     std::vector<long int> trajectory_idxs;
-    std::vector<iroc_mission_handler::Subtask> subtasks_;
+    std::vector<iroc_mission_handler::Subtask> subtasks;
   };
 
   typedef mrs_robot_diagnostics::uav_state_t uav_state_t;
@@ -180,8 +177,7 @@ class MissionHandler : public nodelet::Nodelet {
   result_t createMission(const ActionServerGoal& action_server_goal);
   result_t validateSegments(const std::vector<path_segment_t>& path_segments);
   std::vector<path_segment_t> segmentPath(const mrs_msgs::Path& msg, const std::vector<std::vector<Subtask>>& waypoint_subtasks = {});
-  std::tuple<std::vector<mrs_msgs::Reference>, std::vector<long int>> generateHeadingTrajectory(const mrs_msgs::Reference& last_valid_point,
-                                                                                                const mrs_msgs::Path& path, double T);
+  std::tuple<std::vector<mrs_msgs::Reference>, std::vector<long int>> generateHeadingTrajectory(const mrs_msgs::Path& path, double T);
   std::tuple<result_t, trajectory_t> getTrajectoryFromSegments(std::vector<path_segment_t> path_segments);
   void processMissionInfo(const mrs_msgs::ReferenceArray reference_ist);
   bool replanMission(void);
@@ -1181,7 +1177,7 @@ std::tuple<MissionHandler::result_t, MissionHandler::trajectory_t> MissionHandle
     // Invalid segment
     if (!segment.is_valid) {
       // Generating heading trajectory
-      auto [heading_trajectory, heading_trajectory_idxs] = generateHeadingTrajectory(last_valid_point, segment.path, 0.2);
+      auto [heading_trajectory, heading_trajectory_idxs] = generateHeadingTrajectory(segment.path, 0.2);
       aggregated_points.insert(aggregated_points.end(), heading_trajectory.begin(), heading_trajectory.end());
       last_invalid_point = heading_trajectory.back();
 
@@ -1275,8 +1271,21 @@ std::tuple<MissionHandler::result_t, MissionHandler::trajectory_t> MissionHandle
 
 /* generateHeadingTrajectory() //{ */
 
-std::tuple<std::vector<mrs_msgs::Reference>, std::vector<long int>> MissionHandler::generateHeadingTrajectory(const mrs_msgs::Reference& last_valid_point,
-                                                                                                              const mrs_msgs::Path& path, double T = 0.2) {
+/**
+ * \brief Generates a heading trajectory based on the input path.
+ *
+ * This function takes a path and generates a trajectory by interpolating the heading between consecutive points.
+ * If the distance between two points is less than a threshold, it generates intermediate points with interpolated headings.
+ *
+ * \param path The input path containing reference points.
+ * \param T The period for heading interpolation (default is 0.2 seconds).
+ *
+ * \return A tuple containing the generated trajectory and the indices of the trajectory points.
+ */
+std::tuple<std::vector<mrs_msgs::Reference>, std::vector<long int>> MissionHandler::generateHeadingTrajectory(const mrs_msgs::Path& path, double T = 0.2) {
+  using radians = mrs_lib::geometry::radians;
+  using sradians = mrs_lib::geometry::sradians;
+
   std::vector<mrs_msgs::Reference> trajectory;
   std::vector<long int> trajectory_idxs;
 
@@ -1284,7 +1293,7 @@ std::tuple<std::vector<mrs_msgs::Reference>, std::vector<long int>> MissionHandl
     return {trajectory, trajectory_idxs};
   }
 
-  auto p0 = last_valid_point;
+  auto p0 = path.points.front();
   mrs_msgs::Reference point;
   // Interpolation to the next points within segment
   for (size_t i = 0; i < path.points.size(); ++i) {
@@ -1300,7 +1309,6 @@ std::tuple<std::vector<mrs_msgs::Reference>, std::vector<long int>> MissionHandl
     // Only interpolate heading if it's different
     if (std::abs(sradians::diff(h0, h1)) > 1e-6) {
       // Calculate number of samples for heading interpolation
-
       auto heading_diff = sradians::diff(h0, h1);
       ROS_DEBUG("[MissionHandler]: h1 %f, h2 %f diff:%f", h0, h1, heading_diff);
       // absolute value of heading diff
