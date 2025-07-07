@@ -45,6 +45,7 @@ using vec3_t = mrs_lib::geometry::vec_t<3>;
 
 using radians = mrs_lib::geometry::radians;
 using sradians = mrs_lib::geometry::sradians;
+
 namespace iroc_mission_handler {
 
 /* class MissionHandler //{ */
@@ -67,7 +68,7 @@ class MissionHandler : public nodelet::Nodelet {
    *
    * This struct contains a path, a validity flag, and a vector of subtasks.
    * - `path`: The path segment.
-   * - `is_valid`: A boolean indicating whether the path segment is just heading (true) or a valid path (false).
+   * - `is_valid`: A boolean indicating whether the path segment is a valid movement path (true) or just heading changes (false).
    * - `subtasks`: A vector of subtasks that will be executed at the end of the path segment.
    */
   struct path_segment_t {
@@ -76,6 +77,14 @@ class MissionHandler : public nodelet::Nodelet {
     std::vector<iroc_mission_handler::Subtask> subtasks;
   };
 
+  /**
+   * \brief Struct to hold trajectory information.
+   *
+   * This struct contains a trajectory reference, a vector of trajectory indices, and a vector of subtasks.
+   * - `trajectory`: The trajectory reference.
+   * - `trajectory_idxs`: A vector of indices corresponding to the trajectory points.
+   * - `subtasks_`: A vector of subtasks associated with the trajectory.
+   */
   struct trajectory_t {
     mrs_msgs::TrajectoryReference trajectory;
     std::vector<long int> trajectory_idxs;
@@ -164,7 +173,6 @@ class MissionHandler : public nodelet::Nodelet {
   int goal_start_ = 0;
   double distance_to_goal_;
 
-  double tolerance_;
   const double _trajectory_sampling_period_ = 0.2;
   ros::Time trajectory_start_time_;
 
@@ -223,7 +231,6 @@ void MissionHandler::onInit() {
 
   const auto main_timer_rate = param_loader.loadParam2<double>("main_timer_rate");
   const auto feedback_timer_rate = param_loader.loadParam2<double>("feedback_timer_rate");
-  tolerance_ = param_loader.loadParam2<double>("correspondence_tolerance");
 
   if (!param_loader.loadedSuccessfully()) {
     ROS_ERROR("[MissionHandler]: Could not load all parameters!");
@@ -981,12 +988,45 @@ MissionHandler::result_t MissionHandler::createMission(const ActionServerGoal& a
  * \param waypoint_subtasks A vector of subtasks associated with each waypoint (it must match the size of the path points).
  *
  * \return A vector of segmented paths.
+ *
+ * \details This example illustrates how the segmentation works with a path consisting of several points (P0, P1, P2, P3, P4, P5) and their respective
+ * distances.
+ *
+ *                     Y
+ *                     ↑
+ *                     | dist > 0.05m                                             ▶ = 0°
+ *         P1 ▶────────┼─────────────── P2 ▶                                      ▲ = 90°
+ *        /            |                 \ dist < 0.05m (heading only)            ◀ = 180°
+ *       /             |                  P3 ▼                                    ▼ = 270°
+ *      /              |                   \
+ *    ▲                |                    \
+ *   P0                |                     \
+ * ────────────────────┼──────────────────────\──────→ X
+ *                     |                       \
+ *                     |                        \
+ *                     |              [Subtask] P4 ▶──────→ P5 ▲
+ *
+ *  Segmentation Analysis:
+ *   - P0 to P1: Valid segment (distance > 0.05m)
+ *   - P1 to P2: Valid segment (distance > 0.05m)
+ *   - P2 to P3: Invalid segment (distance < 0.05m, heading trajectory)
+ *   - P3 to P4: Valid segment (distance > 0.05m, new subtask)
+ *   - P4 to P5: Valid segment (distance > 0.05m)
  */
 std::vector<MissionHandler::path_segment_t> MissionHandler::segmentPath(const mrs_msgs::Path& msg, const std::vector<std::vector<Subtask>>& waypoint_subtasks) {
-  if (msg.points.size() != waypoint_subtasks.size()) {
-    ROS_WARN("[MissionHandler]: Number of subtasks does not match number of points in the path.");
+  // Input validation
+  if (msg.points.empty()) {
+    ROS_WARN("[MissionHandler]: Empty path provided to segmentPath.");
     return {};
   }
+
+  if (msg.points.size() != waypoint_subtasks.size()) {
+    ROS_WARN("[MissionHandler]: Number of subtasks (%zu) does not match number of points in the path (%zu).", waypoint_subtasks.size(), msg.points.size());
+    return {};
+  }
+
+  // Constants
+  constexpr double MIN_DISTANCE_THRESHOLD = 0.05; // Minimum distance to consider as valid movement
 
   std::vector<path_segment_t> path_segments;
 
@@ -1003,13 +1043,13 @@ std::vector<MissionHandler::path_segment_t> MissionHandler::segmentPath(const mr
   for (size_t i = 1; i < msg.points.size(); i++) {
     const double dist = distance(msg.points[i - 1], msg.points[i]);
 
-    if (dist < 0.05) {
+    if (dist < MIN_DISTANCE_THRESHOLD) {
       if (current_segment.is_valid) { // If the segment is valid, we need to finalize it and start a new one
         path_segments.push_back(current_segment);
 
         current_segment.path.points.clear();
-        current_segment.path.points.push_back(msg.points[i - 1]);
-        current_segment.is_valid = false; // Mark the segment as invalid for heading trajectory processing
+        current_segment.path.points.push_back(msg.points[i]); // Start a new segment with the current point
+        current_segment.is_valid = false;                     // Mark the segment as invalid for heading trajectory processing
       }
     } else {
       if (!current_segment.is_valid) { // If the segment was invalid, we need to reset it
@@ -1023,7 +1063,7 @@ std::vector<MissionHandler::path_segment_t> MissionHandler::segmentPath(const mr
     // Add the current point to the segment
     current_segment.path.points.push_back(msg.points[i]);
 
-    // Check if there are subtasks for the current point that need to be waited for
+    // Check if there are subtasks for the current point that require segment break
     if (!waypoint_subtasks.at(i).empty()) {
       path_segments.push_back(current_segment);
       current_segment.path.points.clear();
@@ -1099,7 +1139,7 @@ MissionHandler::result_t MissionHandler::validateSegments(const std::vector<path
       }
 
       if (invalid_points.size() == 0) {
-        ROS_WARN("[MissionHandler]: The given points are valid, however the generated trajectory seems to be outside of safety area or within anobstacle.");
+        ROS_WARN("[MissionHandler]: The given points are valid, however the generated trajectory seems to be outside of safety area or within an obstacle.");
         return {false, "The given points are valid for: " + robot_name_ +
                            ", however the generated trajectory seems to be outside of safety area or within an obstacle."};
       } else {
