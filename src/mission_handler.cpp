@@ -971,6 +971,78 @@ MissionHandler::result_t MissionHandler::createMission(const ActionServerGoal& a
 }
 //}
 
+/* validateSegments() //{ */
+
+MissionHandler::result_t MissionHandler::validateSegments(const std::vector<path_segment_t>& path_segments) {
+  auto [result, trajectory_t] = getTrajectoryFromSegments(path_segments);
+
+  if (!result.success) {
+    ROS_WARN_STREAM("Failed to get trajectory from segments: " << result.message);
+    return {false, result.message};
+  }
+
+  /* Validation of trajectory within safety area */
+  current_trajectory_ = trajectory_t.trajectory;
+  // Saving trajectory idx
+  current_trajectory_idxs_ = trajectory_t.trajectory_idxs;
+  mrs_msgs::ReferenceArray waypointArray;
+  waypointArray.header = current_trajectory_.header;
+  waypointArray.array = current_trajectory_.points;
+
+  mrs_msgs::ValidateReferenceArray validateReferenceSrv;
+  validateReferenceSrv.request.array = waypointArray;
+
+  ROS_DEBUG_STREAM("[MissionHandler]: Trajectory size: " << current_trajectory_.points.size());
+  ROS_DEBUG_STREAM("[MissionHandler]: Trajectory idxs size: " << current_trajectory_idxs_.size());
+
+  for (const auto& id : current_trajectory_idxs_) {
+    ROS_DEBUG_STREAM("[MissionHandler]: Trajectory idx: " << id);
+  }
+
+  if (sc_mission_validation_.call(validateReferenceSrv)) {
+    const bool all_success = std::all_of(validateReferenceSrv.response.success.begin(), validateReferenceSrv.response.success.end(), [](bool v) { return v; });
+    if (all_success) {
+      ROS_INFO_STREAM("Called service \"" << sc_mission_validation_.getService() << "\" with response \"" << validateReferenceSrv.response.message << "\".");
+    } else {
+      ROS_WARN_STREAM("Trajectory points outside of safety area, validation from  calling service \""
+                      << sc_mission_validation_.getService() << "\" with response \"" << validateReferenceSrv.response.message << "\".");
+
+      std::vector<mrs_msgs::Reference> invalid_points;
+      for (auto& point_id : current_trajectory_idxs_) {
+        if (!validateReferenceSrv.response.success.at(point_id)) {
+          invalid_points.push_back(current_trajectory_.points.at(point_id));
+        }
+      }
+
+      for (auto& point : invalid_points) {
+        ROS_WARN_STREAM("[MissionHandler]: Unvalid point: " << point);
+      }
+
+      if (invalid_points.size() == 0) {
+        ROS_WARN("[MissionHandler]: The given points are valid, however the generated trajectory seems to be outside of safety area or within an obstacle.");
+        return {false, "The given points are valid for: " + robot_name_ +
+                           ", however the generated trajectory seems to be outside of safety area or within an obstacle."};
+      } else {
+        return {false, "Unvalid trajectory for " + robot_name_ + ", trajectory is outside of safety area"};
+      }
+    }
+  }
+
+  /* Sending generated trajectory to control manager */
+  mrs_msgs::TrajectoryReferenceSrv srv;
+  srv.request.trajectory = current_trajectory_;
+
+  const bool res = sc_trajectory_reference_.call(srv);
+
+  if (!srv.response.success) {
+    ROS_WARN("Service call for trajectory_reference failed,  returned '%s'", srv.response.message.c_str());
+    return {false, srv.response.message};
+  } else {
+    return {true, srv.response.message};
+  }
+}
+//}
+
 /* segmentPath() //{ */
 
 /**
@@ -1044,15 +1116,16 @@ std::vector<MissionHandler::path_segment_t> MissionHandler::segmentPath(const mr
         path_segments.push_back(current_segment);
 
         current_segment.path.points.clear();
-        current_segment.path.points.push_back(msg.points[i]); // Start a new segment with the current point
-        current_segment.is_valid = false;                     // Mark the segment as invalid for heading trajectory processing
+        current_segment.path.points.push_back(msg.points[i - 1]); // Start a new segment with the current point
+        current_segment.is_valid = false;                         // Mark the segment as invalid for heading trajectory processing
       }
     } else {
       if (!current_segment.is_valid) { // If the segment was invalid, we need to reset it
         path_segments.push_back(current_segment);
 
         current_segment.path.points.clear();
-        current_segment.is_valid = true; // Reset validity for the next segment
+        current_segment.path.points.push_back(msg.points[i - 1]); // Start a new segment with the current point
+        current_segment.is_valid = true;                          // Reset validity for the next segment
       }
     }
 
@@ -1087,78 +1160,6 @@ std::vector<MissionHandler::path_segment_t> MissionHandler::segmentPath(const mr
 }
 //}
 
-/* validateSegments() //{ */
-
-MissionHandler::result_t MissionHandler::validateSegments(const std::vector<path_segment_t>& path_segments) {
-  auto [result, trajectory_t] = getTrajectoryFromSegments(path_segments);
-
-  if (!result.success) {
-    ROS_WARN_STREAM("Failed to get trajectory from segments: " << result.message);
-    return {false, result.message};
-  }
-
-  /* Validation of trajectory within safety area */
-  current_trajectory_ = trajectory_t.trajectory;
-  // Saving trajectory idx
-  current_trajectory_idxs_ = trajectory_t.trajectory_idxs;
-  mrs_msgs::ReferenceArray waypointArray;
-  waypointArray.header = current_trajectory_.header;
-  waypointArray.array = current_trajectory_.points;
-
-  mrs_msgs::ValidateReferenceArray validateReferenceSrv;
-  validateReferenceSrv.request.array = waypointArray;
-
-  ROS_DEBUG_STREAM("[MissionHandler]: Trajectory size: " << current_trajectory_.points.size());
-  ROS_DEBUG_STREAM("[MissionHandler]: Trajectory idxs size: " << current_trajectory_idxs_.size());
-
-  for (const auto& id : current_trajectory_idxs_) {
-    ROS_DEBUG_STREAM("[MissionHandler]: Trajectory idx: " << id);
-  }
-
-  if (sc_mission_validation_.call(validateReferenceSrv)) {
-    const bool all_success = std::all_of(validateReferenceSrv.response.success.begin(), validateReferenceSrv.response.success.end(), [](bool v) { return v; });
-    if (all_success) {
-      ROS_INFO_STREAM("Called service \"" << sc_mission_validation_.getService() << "\" with response \"" << validateReferenceSrv.response.message << "\".");
-    } else {
-      ROS_WARN_STREAM("Trajectory points outside of safety area, validation from  calling service \""
-                      << sc_mission_validation_.getService() << "\" with response \"" << validateReferenceSrv.response.message << "\".");
-
-      std::vector<mrs_msgs::Reference> invalid_points;
-      for (auto& point_id : current_trajectory_idxs_) {
-        if (!validateReferenceSrv.response.success.at(point_id)) {
-          invalid_points.push_back(current_trajectory_.points.at(point_id));
-        }
-      }
-
-      for (auto& point : invalid_points) {
-        ROS_WARN_STREAM("[MissionHandler]: Unvalid point: " << point);
-      }
-
-      if (invalid_points.size() == 0) {
-        ROS_WARN("[MissionHandler]: The given points are valid, however the generated trajectory seems to be outside of safety area or within an obstacle.");
-        return {false, "The given points are valid for: " + robot_name_ +
-                           ", however the generated trajectory seems to be outside of safety area or within an obstacle."};
-      } else {
-        return {false, "Unvalid trajectory for " + robot_name_ + ", trajectory is outside of safety area"};
-      }
-    }
-  }
-
-  /* Sending generated trajectory to control manager */
-  mrs_msgs::TrajectoryReferenceSrv srv;
-  srv.request.trajectory = current_trajectory_;
-
-  const bool res = sc_trajectory_reference_.call(srv);
-
-  if (!srv.response.success) {
-    ROS_WARN("Service call for trajectory_reference failed,  returned '%s'", srv.response.message.c_str());
-    return {false, srv.response.message};
-  } else {
-    return {true, srv.response.message};
-  }
-}
-//}
-
 /* getTrajectoryFromSegments() //{ */
 std::tuple<MissionHandler::result_t, MissionHandler::trajectory_t> MissionHandler::getTrajectoryFromSegments(std::vector<path_segment_t> path_segments) {
   mrs_msgs::TrajectoryReference trajectory;
@@ -1174,9 +1175,7 @@ std::tuple<MissionHandler::result_t, MissionHandler::trajectory_t> MissionHandle
   trajectory_t trajectory_s;
 
   for (auto& segment : path_segments) {
-    // Invalid segment
-    if (!segment.is_valid) {
-      // Generating heading trajectory
+    if (!segment.is_valid) { // Invalid segment, generate heading trajectory
       auto [heading_trajectory, heading_trajectory_idxs] = generateHeadingTrajectory(segment.path, 0.2);
       aggregated_points.insert(aggregated_points.end(), heading_trajectory.begin(), heading_trajectory.end());
       last_invalid_point = heading_trajectory.back();
@@ -1293,16 +1292,11 @@ std::tuple<std::vector<mrs_msgs::Reference>, std::vector<long int>> MissionHandl
     return {trajectory, trajectory_idxs};
   }
 
-  auto p0 = path.points.front();
-  mrs_msgs::Reference point;
   // Interpolation to the next points within segment
-  for (size_t i = 0; i < path.points.size(); ++i) {
+  mrs_msgs::Reference p0 = path.points[0];
+  for (size_t i = 1; i < path.points.size(); ++i) {
     const auto& p1 = path.points[i];
 
-    // All positions are the same in invalid segments
-    double x = p0.position.x;
-    double y = p0.position.y;
-    double z = p0.position.z;
     double h0 = p0.heading;
     double h1 = p1.heading;
 
@@ -1316,9 +1310,13 @@ std::tuple<std::vector<mrs_msgs::Reference>, std::vector<long int>> MissionHandl
 
       for (int j = 1; j <= num_heading_samples; ++j) {
         double t = static_cast<double>(j) / num_heading_samples;
-        point.position.x = x;
-        point.position.y = y;
-        point.position.z = z;
+
+        mrs_msgs::Reference point;
+        // Copy position from p0
+        point.position.x = p0.position.x;
+        point.position.y = p0.position.y;
+        point.position.z = p0.position.z;
+
         point.heading = h0 + t * (std::abs(heading_diff));
         trajectory.push_back(point);
       }
