@@ -75,7 +75,7 @@ class MissionHandler : public nodelet::Nodelet {
   };
 
   /**
-   * \brief Struct to hold trajectory information.
+   * \brief Struct to hold trajectory information and track subtasks.
    *
    * This struct contains a trajectory reference, a vector of trajectory indices, and a vector of subtasks.
    * - `trajectory`: The trajectory reference.
@@ -83,8 +83,8 @@ class MissionHandler : public nodelet::Nodelet {
    * - `subtasks_`: A vector of subtasks associated with the trajectory.
    */
   struct trajectory_t {
-    mrs_msgs::TrajectoryReference trajectory;
-    std::vector<long int> trajectory_idxs;
+    mrs_msgs::TrajectoryReference reference;
+    std::vector<long int> idxs;
     std::vector<iroc_mission_handler::Subtask> subtasks;
   };
 
@@ -171,32 +171,26 @@ class MissionHandler : public nodelet::Nodelet {
   double distance_to_goal_;
 
   const double _trajectory_sampling_period_ = 0.2;
-  ros::Time trajectory_start_time_;
 
   // | ------------------ Additional functions ------------------ |
   result_t createMission(const ActionServerGoal& action_server_goal);
-  result_t validateSegments(const std::vector<path_segment_t>& path_segments);
+  result_t validateTrajectory(const trajectory_t& trajectory);
   std::vector<path_segment_t> segmentPath(const mrs_msgs::Path& msg, const std::vector<std::vector<Subtask>>& waypoint_subtasks = {});
   std::tuple<std::vector<mrs_msgs::Reference>, std::vector<long int>> generateHeadingTrajectory(const mrs_msgs::Path& path, double T);
-  std::tuple<result_t, trajectory_t> getTrajectoryFromSegments(std::vector<path_segment_t> path_segments);
-  void processMissionInfo(const mrs_msgs::ReferenceArray reference_ist);
+  std::tuple<result_t, std::vector<trajectory_t>> generateTrajectoriesFromSegments(std::vector<path_segment_t> path_segments);
   bool replanMission(void);
   void updateMissionState(const mission_state_t& new_state);
-  std::tuple<bool, mrs_msgs::ReferenceStamped> transformReference(mrs_msgs::TransformReferenceSrv transformSrv);
   std::tuple<bool, mrs_msgs::ReferenceArray> transformReferenceArray(mrs_msgs::TransformReferenceArraySrv transformArraySrv);
   double distance(const mrs_msgs::Reference& waypoint_1, const mrs_msgs::Reference& waypoint_2);
   void controlManagerDiagCallback(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg);
   void actionPublishFeedback(void);
 
   // Call service methods overloads
-  template <typename Svc_T>
-  result_t callService(ros::ServiceClient& sc, typename Svc_T::Request req);
+  template <typename ServiceType>
+  result_t callService(ros::ServiceClient& sc, typename ServiceType::Request req, typename ServiceType::Response& res);
 
-  template <typename Svc_T>
-  result_t callService(ros::ServiceClient& sc, typename Svc_T::Request req, typename Svc_T::Response& res);
-
-  template <typename Svc_T>
-  result_t callService(ros::ServiceClient& sc);
+  template <typename ServiceType>
+  result_t callService(ros::ServiceClient& sc, typename ServiceType::Request req = {});
 
   result_t callService(ros::ServiceClient& sc, const bool val);
 };
@@ -339,8 +333,8 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
   if (sh_uav_state_.hasMsg()) {
     uav_state_.set(mrs_robot_diagnostics::from_ros<uav_state_t>(sh_uav_state_.getMsg()->state));
   }
-  const bool not_idle_or_land = mission_state_.value() != mission_state_t::IDLE && mission_state_.value() != mission_state_t::LAND;
 
+  const bool not_idle_or_land = mission_state_.value() != mission_state_t::IDLE && mission_state_.value() != mission_state_t::LAND;
   if (uav_state_.value() == uav_state_t::LAND && not_idle_or_land) {
     ROS_WARN_STREAM("[MissionHandler]: Landing detected. Switching to LAND state.");
     updateMissionState(mission_state_t::LAND);
@@ -482,78 +476,80 @@ bool MissionHandler::missionActivationServiceCallback(std_srvs::Trigger::Request
   std::scoped_lock lock(action_server_mutex_);
   ROS_INFO_STREAM("[MissionHandler]: Received mission activation request.");
 
-  if (mission_handler_server_ptr_->isActive()) {
-    switch (mission_state_.value()) {
-      case mission_state_t::MISSION_LOADED: {
-        if (!mrs_robot_diagnostics::is_flying(uav_state_.value())) {
-          ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Calling takeoff");
-          auto resp = callService<std_srvs::Trigger>(sc_takeoff_);
-          res.success = resp.success;
-          res.message = resp.message;
-          if (!resp.success) {
-            ROS_WARN_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
-            break;
-          }
-          updateMissionState(mission_state_t::TAKEOFF);
-          break;
-        } else {
-          ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Executing mission.");
-          auto resp = callService<std_srvs::Trigger>(sc_mission_start_);
-          res.success = resp.success;
-          res.message = resp.message;
-          if (!resp.success) {
-            ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call mission start service.");
-            break;
-          }
-          updateMissionState(mission_state_t::EXECUTING);
+  if (!mission_handler_server_ptr_->isActive()) {
+    res.success = false;
+    res.message = "Mission handler server is not active.";
+    ROS_WARN_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
+    return true;
+  }
+
+  switch (mission_state_.value()) {
+    case mission_state_t::MISSION_LOADED: {
+      if (!mrs_robot_diagnostics::is_flying(uav_state_.value())) {
+        ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Calling takeoff");
+        auto takeoff_res = callService<std_srvs::Trigger>(sc_takeoff_);
+        res.success = takeoff_res.success;
+        res.message = takeoff_res.message;
+        if (!takeoff_res.success) {
+          ROS_WARN_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
           break;
         }
-      };
-
-      case mission_state_t::PAUSED: {
-        ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Replanning mission from current position");
-        const auto resp_plan = replanMission();
-        if (!resp_plan) {
-          ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to replan mission.");
-          res.success = false;
-          res.message = "failed to replan mission";
-          break;
-        } else {
-          ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Replanning mission successfully.");
-          updateMissionState(mission_state_t::MISSION_LOADED);
-        }
-
+        updateMissionState(mission_state_t::TAKEOFF);
+        break;
+      } else {
         ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Executing mission.");
-        auto resp = callService<std_srvs::Trigger>(sc_mission_start_);
-        res.success = resp.success;
-        res.message = resp.message;
-        if (!resp.success) {
+        auto start_res = callService<std_srvs::Trigger>(sc_mission_start_);
+        res.success = start_res.success;
+        res.message = start_res.message;
+        if (!start_res.success) {
           ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call mission start service.");
           break;
         }
         updateMissionState(mission_state_t::EXECUTING);
         break;
-      };
+      }
+    };
 
-      case mission_state_t::PAUSED_DUE_TO_RC_MODE: {
+    case mission_state_t::PAUSED: {
+      ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Replanning mission from current position");
+      const auto replan_res = replanMission();
+      if (!replan_res) {
+        ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to replan mission.");
         res.success = false;
-        res.message = "Mission is pause due to active MRS Remote mode. Disable the mode, to continue with the mission execution.";
-        ROS_WARN_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
+        res.message = "failed to replan mission";
         break;
-      };
+      } else {
+        ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Replanning mission successfully.");
+        updateMissionState(mission_state_t::MISSION_LOADED);
+      }
 
-      default: {
-        res.success = false;
-        res.message = "Mission is already activated.";
-        ROS_WARN_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
+      ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Executing mission.");
+      auto resp = callService<std_srvs::Trigger>(sc_mission_start_);
+      res.success = resp.success;
+      res.message = resp.message;
+      if (!resp.success) {
+        ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call mission start service.");
         break;
-      };
-    }
-  } else {
-    res.success = false;
-    res.message = "No active mission.";
-    ROS_WARN_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
+      }
+      updateMissionState(mission_state_t::EXECUTING);
+      break;
+    };
+
+    case mission_state_t::PAUSED_DUE_TO_RC_MODE: {
+      res.success = false;
+      res.message = "Mission is paused due to active MRS Remote mode. Disable the mode to continue mission execution.";
+      ROS_WARN_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
+      break;
+    };
+
+    default: {
+      res.success = false;
+      res.message = "Mission is already activated.";
+      ROS_WARN_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
+      break;
+    };
   }
+
   return true;
 }
 
@@ -627,45 +623,6 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::ControlManagerDi
       "[MissionHandler]: current_trajectory_idx_ = %d, current_trajectory_goal_idx_ = %d, goal_idx_ = %d, have_goal = %d, current_trajectory_length_ = %d",
       current_trajectory_idx_, current_trajectory_goal_idx_, goal_idx_, have_goal, current_trajectory_length_);
 
-  if (!subtasks_.at(goal_idx_).empty()) {
-    auto resp = callService<std_srvs::Trigger>(sc_mission_pause_);
-    if (!resp.success) {
-      ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call mission pause service.");
-      return;
-    }
-    ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Mission paused. Subtask is being executed.");
-    updateMissionState(mission_state_t::EXECUTING_SUBTASK);
-
-    for (const auto& subtask : subtasks_.at(goal_idx_)) {
-      ros::Duration(1.0).sleep();
-    }
-
-    ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Subtask finished. Continuing with the mission.");
-
-    auto resp_continue = callService<std_srvs::Trigger>(sc_mission_start_);
-    if (!resp_continue.success) {
-      ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call mission start service.");
-      return;
-    }
-    updateMissionState(mission_state_t::EXECUTING);
-    goal_start_ = current_trajectory_goal_idx_;
-    goal_idx_++;                     // Reached current goal, calculating for next goal
-    mission_info_processed_ = false; // Reset mission info processed flag to recalculate the mission info
-    return;
-  }
-
-  if (current_trajectory_idx_ >= current_trajectory_idxs_.back() || current_trajectory_length_ == 1) {
-    ROS_INFO("[MissionHandler]: Reached last point");
-    updateMissionState(mission_state_t::FINISHED);
-    distance_to_finish_ = 0.0;
-    distance_to_goal_ = 0.0;
-    mission_progress_ = 100.0;
-    goal_progress_ = 100.0;
-    goal_estimated_time_of_arrival_ = 0.0;
-    finish_estimated_time_of_arrival_ = 0.0;
-    mission_info_processed_ = false;
-    return;
-  }
   /* Restart distance, as we  will recalculate based on current trajectory idx */
   distance_to_finish_ = 0.0;
 
@@ -956,46 +913,76 @@ MissionHandler::result_t MissionHandler::createMission(const ActionServerGoal& a
   }
   std::vector<path_segment_t> path_segments = segmentPath(msg_path, subtasks_);
 
-  const auto result = validateSegments(path_segments);
-
+  // Generating trajectory from the path segments
+  auto [result, trajectories] = generateTrajectoriesFromSegments(path_segments);
   if (!result.success) {
-    ROS_WARN_STREAM("Trajectory points outside of safety area!");
+    ROS_WARN_STREAM("Failed to get trajectory from segments: " << result.message);
     return {false, result.message};
+  } else if (trajectories.empty()) {
+    ROS_WARN_STREAM("No trajectories generated from segments.");
+    return {false, "No trajectories generated from segments"};
+  }
+
+  for (const auto& trajectory : trajectories) {
+    ROS_DEBUG_STREAM("[MissionHandler]: Trajectory size: " << trajectory.reference.points.size());
+
+    auto validation_result = validateTrajectory(trajectory);
+    if (!validation_result.success) {
+      ROS_WARN_STREAM("[MissionHandler]: Trajectory validation failed: " << validation_result.message);
+      ROS_WARN_STREAM("Trajectory points outside of safety area!");
+      return {false, validation_result.message};
+    } else {
+      ROS_DEBUG_STREAM("[MissionHandler]: Trajectory validation succeeded: " << validation_result.message);
+    }
+  }
+
+  // Processing the mission information
+  trajectories_ = trajectories;
+  goal_idx_ = 0;
+  distance_to_finish_ = 0.0;
+  distance_to_goal_ = 0.0;
+  mission_progress_ = 0.0;
+  goal_progress_ = 0.0;
+  mission_info_processed_ = true;
+
+  // Sending first trajectory to the control manager
+  mrs_msgs::TrajectoryReferenceSrv srv;
+  srv.request.trajectory = trajectories_.front().reference;
+  sc_trajectory_reference_.call(srv);
+
+  if (!srv.response.success) {
+    ROS_WARN("Service call for trajectory_reference failed,  returned '%s'", srv.response.message.c_str());
+    return {false, srv.response.message};
   } else {
-    ROS_INFO_STREAM("Valid trajectory");
-    /* Trajectory is valid, processing information for feedback */
-    current_path_array_ = transformed_array;
-    processMissionInfo(goal_points_array);
-    return {result.success, result.message};
+    return {true, srv.response.message};
   }
 }
 //}
 
-/* validateSegments() //{ */
+/* validateTrajectory() //{ */
 
-MissionHandler::result_t MissionHandler::validateSegments(const std::vector<path_segment_t>& path_segments) {
-  auto [result, trajectory_t] = getTrajectoryFromSegments(path_segments);
-
-  if (!result.success) {
-    ROS_WARN_STREAM("Failed to get trajectory from segments: " << result.message);
-    return {false, result.message};
-  }
-
-  /* Validation of trajectory within safety area */
-  current_trajectory_ = trajectory_t.trajectory;
-  // Saving trajectory idx
-  current_trajectory_idxs_ = trajectory_t.trajectory_idxs;
+/**
+ * \brief Validates the trajectory against the safety area and sends it to the control manager.
+ *
+ * This function checks if the trajectory points are within the safety area using a service call.
+ * If the trajectory is valid, it sends the trajectory to the control manager for execution.
+ *
+ * \param trajectory The trajectory to be validated.
+ *
+ * \return A result_t structure indicating success or failure of the validation and a message.
+ */
+MissionHandler::result_t MissionHandler::validateTrajectory(const trajectory_t& trajectory) {
+  // Create a ReferenceArray from the trajectory points for sending to the validation service
   mrs_msgs::ReferenceArray waypointArray;
-  waypointArray.header = current_trajectory_.header;
-  waypointArray.array = current_trajectory_.points;
+  waypointArray.header = trajectory.reference.header;
+  waypointArray.array = trajectory.reference.points;
 
   mrs_msgs::ValidateReferenceArray validateReferenceSrv;
   validateReferenceSrv.request.array = waypointArray;
 
-  ROS_DEBUG_STREAM("[MissionHandler]: Trajectory size: " << current_trajectory_.points.size());
-  ROS_DEBUG_STREAM("[MissionHandler]: Trajectory idxs size: " << current_trajectory_idxs_.size());
-
-  for (const auto& id : current_trajectory_idxs_) {
+  ROS_DEBUG_STREAM("[MissionHandler]: Trajectory size: " << trajectory.reference.points.size());
+  ROS_DEBUG_STREAM("[MissionHandler]: Trajectory idxs size: " << trajectory.idxs.size());
+  for (const auto& id : trajectory.idxs) {
     ROS_DEBUG_STREAM("[MissionHandler]: Trajectory idx: " << id);
   }
 
@@ -1008,9 +995,9 @@ MissionHandler::result_t MissionHandler::validateSegments(const std::vector<path
                       << sc_mission_validation_.getService() << "\" with response \"" << validateReferenceSrv.response.message << "\".");
 
       std::vector<mrs_msgs::Reference> invalid_points;
-      for (auto& point_id : current_trajectory_idxs_) {
+      for (auto& point_id : trajectory.idxs) {
         if (!validateReferenceSrv.response.success.at(point_id)) {
-          invalid_points.push_back(current_trajectory_.points.at(point_id));
+          invalid_points.push_back(trajectory.reference.points.at(point_id));
         }
       }
 
@@ -1028,18 +1015,7 @@ MissionHandler::result_t MissionHandler::validateSegments(const std::vector<path
     }
   }
 
-  /* Sending generated trajectory to control manager */
-  mrs_msgs::TrajectoryReferenceSrv srv;
-  srv.request.trajectory = current_trajectory_;
-
-  const bool res = sc_trajectory_reference_.call(srv);
-
-  if (!srv.response.success) {
-    ROS_WARN("Service call for trajectory_reference failed,  returned '%s'", srv.response.message.c_str());
-    return {false, srv.response.message};
-  } else {
-    return {true, srv.response.message};
-  }
+  return {true, "Trajectory is valid for " + robot_name_ + ", sending to control manager"};
 }
 //}
 
@@ -1063,16 +1039,16 @@ MissionHandler::result_t MissionHandler::validateSegments(const std::vector<path
  *                     Y
  *                     ↑
  *                     | dist > 0.05m                                             ▶ = 0°
- *         P1 ▶────────┼─────────────── P2 ▶                                      ▲ = 90°
- *        /            |                 \ dist < 0.05m (heading only)            ◀ = 180°
- *       /             |                  P3 ▼                                    ▼ = 270°
- *      /              |                   \
- *    ▲                |                    \
- *   P0                |                     \
+ *        P1 ▶ ────────┼─────────────── P2 ▶                                      ▲ = 90°
+ *       /             |                 \ dist < 0.05m (heading only)            ◀ = 180°
+ *      /              |                  P3 ▼                                    ▼ = 270°
+ *     /               |                   \
+ *   P0 ▲              |                    \
+ *                     |                     \
  * ────────────────────┼──────────────────────\──────→ X
  *                     |                       \
  *                     |                        \
- *                     |              [Subtask] P4 ▶──────→ P5 ▲
+ *                     |              [Subtask] P4 ▶ ────── P5 ▲
  *
  *  Segmentation Analysis:
  *   - P0 to P1: Valid segment (distance > 0.05m)
@@ -1134,9 +1110,20 @@ std::vector<MissionHandler::path_segment_t> MissionHandler::segmentPath(const mr
 
     // Check if there are subtasks for the current point that require segment break
     if (!waypoint_subtasks.at(i).empty()) {
+      current_segment.subtasks = waypoint_subtasks.at(i);
       path_segments.push_back(current_segment);
+
+      // Reset the current segment for the next points
       current_segment.path.points.clear();
-      current_segment.is_valid = true; // Reset validity for the next segment
+      current_segment.subtasks.clear();
+
+      // Start a new segment with the current point
+      current_segment.path.points.push_back(msg.points[i]);
+      if (i + 1 < msg.points.size() && distance(msg.points[i], msg.points[i + 1]) < MIN_DISTANCE_THRESHOLD) {
+        current_segment.is_valid = false;
+      } else {
+        current_segment.is_valid = true;
+      }
     }
   }
 
@@ -1160,111 +1147,118 @@ std::vector<MissionHandler::path_segment_t> MissionHandler::segmentPath(const mr
 }
 //}
 
-/* getTrajectoryFromSegments() //{ */
-std::tuple<MissionHandler::result_t, MissionHandler::trajectory_t> MissionHandler::getTrajectoryFromSegments(std::vector<path_segment_t> path_segments) {
-  mrs_msgs::TrajectoryReference trajectory;
-  std::vector<mrs_msgs::Reference> aggregated_points;
-  bool first_point = true;
-  mrs_msgs::Reference last_invalid_point;
-  mrs_msgs::Reference last_valid_point;
-  last_valid_point = path_segments.begin()->path.points.back();
+/* generateTrajectoriesFromSegments() //{ */
 
-  bool previous_segment_invalid = false;
-  std::vector<long int> trajectory_idxs;
-  long int current_trajectory_size = 0;
-  trajectory_t trajectory_s;
+/**
+ * \brief Generates a trajectory from the given path segments.
+ *
+ * This function processes the path segments and generates a trajectory by calling the `getPath` service for valid
+ * segments. For invalid segments, it generates a heading trajectory using the `generateHeadingTrajectory` function. It
+ * will append trajectories to `trajectories_` if a subtask is present. For heading trajectories, it will append the
+ * trajectory points to the current trajectory.
+ *
+ * \param path_segments A vector of path segments to process.
+ *
+ * \return A tuple containing the result of the trajectory generation and a vector of generated trajectories.
+ */
+std::tuple<MissionHandler::result_t, std::vector<MissionHandler::trajectory_t>>
+MissionHandler::generateTrajectoriesFromSegments(std::vector<path_segment_t> path_segments) {
+  ros::Time trajectory_generation_start_time_ = ros::Time::now();
 
+  std::vector<trajectory_t> trajectories;
+
+  mrs_msgs::TrajectoryReference current_trajectory;
+  std::vector<long int> current_trajectory_idxs;
+
+  bool is_first_segment = true;
   for (auto& segment : path_segments) {
-    if (!segment.is_valid) { // Invalid segment, generate heading trajectory
-      auto [heading_trajectory, heading_trajectory_idxs] = generateHeadingTrajectory(segment.path, 0.2);
-      aggregated_points.insert(aggregated_points.end(), heading_trajectory.begin(), heading_trajectory.end());
-      last_invalid_point = heading_trajectory.back();
+    ROS_DEBUG("[MissionHandler]: Processing segment with %zu points", segment.path.points.size());
 
-      // Add trajectory idxs to vector
-      for (const auto& idx : heading_trajectory_idxs) {
-        auto idx_to_add = current_trajectory_size + idx;
-        trajectory_idxs.push_back(idx_to_add);
-      }
+    if (!is_first_segment) {
+      segment.path.dont_prepend_current_state = true; // Do not add current position to the trajectory
+    }
 
-      // Update current trajectory size
-      current_trajectory_size = aggregated_points.size();
-      previous_segment_invalid = true;
+    std::vector<mrs_msgs::Reference> points_to_add;
+    std::vector<long int> idxs_to_add;
 
-      // Valid segment
-    } else {
-      if (!first_point) {
-        // As we only want to prepend the current state once
-        segment.path.dont_prepend_current_state = true;
-      }
-
-      if (previous_segment_invalid) {
-        segment.path.points.insert(segment.path.points.begin(), last_invalid_point);
-        previous_segment_invalid = false;
-      }
-
-      // Using standard mrs_trajectory generation
+    // If the segment is invalid, we need to generate a heading trajectory otherwise we will call the getPath service
+    if (segment.is_valid) {
       mrs_msgs::GetPathSrv getPathSrv;
-      mrs_msgs::ValidateReferenceArray validateReferenceSrv;
       getPathSrv.request.path = segment.path;
       auto response = getPathSrv.response;
+
       // Calling getPath service
-      auto resp = callService<mrs_msgs::GetPathSrv>(sc_get_path_, getPathSrv.request, response);
-
-      if (!resp.success) {
+      auto result = callService<mrs_msgs::GetPathSrv>(sc_get_path_, getPathSrv.request, response);
+      if (!result.success) {
         ROS_INFO_STREAM("Failed to call the service: \"" << sc_get_path_.getService());
-        return std::make_tuple(result_t{false, resp.message}, trajectory_t{});
+        return {result_t{false, result.message}, {}};
       }
 
-      if (first_point) {
+      if (is_first_segment) {
         // Copy the header of the trajectory
-        trajectory.header = response.trajectory.header;
-        trajectory.header.stamp = ros::Time::now();
-        trajectory.input_id = response.trajectory.input_id;
-        trajectory.use_heading = response.trajectory.use_heading;
-        trajectory.fly_now = response.trajectory.fly_now;
-        trajectory.loop = response.trajectory.loop;
-        trajectory.dt = response.trajectory.dt;
-        first_point = false;
+        current_trajectory.header = response.trajectory.header;
+        current_trajectory.header.stamp = ros::Time::now();
+        current_trajectory.input_id = response.trajectory.input_id;
+        current_trajectory.use_heading = response.trajectory.use_heading;
+        current_trajectory.fly_now = response.trajectory.fly_now;
+        current_trajectory.loop = response.trajectory.loop;
+        current_trajectory.dt = response.trajectory.dt;
+
+        is_first_segment = false;
       }
 
-      aggregated_points.insert(aggregated_points.end(), response.trajectory.points.begin(), response.trajectory.points.end());
-      // Get trajectory idxs
-      auto resp_trajectory_idxs = response.waypoint_trajectory_idxs;
+      // Save the trajectory points and indices from the response
+      points_to_add = response.trajectory.points;
+      idxs_to_add = response.waypoint_trajectory_idxs;
+    } else {
+      std::tie(points_to_add, idxs_to_add) = generateHeadingTrajectory(segment.path, 0.2);
+    }
 
-      if (!resp_trajectory_idxs.empty()) {
-        // Add trajectory idxs to vector
-        for (const auto& idx : resp_trajectory_idxs) {
-          // Print original idx
-          auto idx_to_add = (idx == 0 ? current_trajectory_size + 1 : current_trajectory_size + idx);
-          trajectory_idxs.push_back(idx_to_add);
-        }
-      } else {
-        trajectory_idxs.push_back(current_trajectory_size + 1);
-      }
+    // Add points to the current trajectory
+    const long int points_size = current_trajectory.points.size(); // Save the size of points before appending new ones
+    current_trajectory.points.insert(current_trajectory.points.end(), points_to_add.begin(), points_to_add.end());
 
-      // Update trajectory size
-      current_trajectory_size = aggregated_points.size();
-      last_valid_point.position = aggregated_points.back().position;
-      last_valid_point.heading = aggregated_points.back().heading;
+    for (const auto& idx : idxs_to_add) { // Add trajectory idxs to vector
+      auto idx_to_add = points_size + idx;
+      current_trajectory_idxs.push_back(idx_to_add);
+    }
+
+    // If the segment has subtasks, we need to finalize the current trajectory (it will stop the mission while executing
+    // the subtask if it is needed)
+    if (segment.subtasks.size() > 0) {
+      trajectory_t trajectory;
+      trajectory.reference = current_trajectory;
+      trajectory.idxs = current_trajectory_idxs;
+      trajectory.subtasks = segment.subtasks;
+
+      trajectories.push_back(trajectory);
+
+      // Reset variables for the next trajectory
+      current_trajectory = mrs_msgs::TrajectoryReference();
+      current_trajectory_idxs.clear();
     }
   }
 
-  trajectory.points = aggregated_points;
-  trajectory_s.trajectory = trajectory;
-  trajectory_s.trajectory_idxs = trajectory_idxs;
-  trajectory.header.stamp = ros::Time::now();
+  // If there are still points in the current trajectory, we need to finalize it
+  if (!current_trajectory.points.empty()) {
+    trajectory_t trajectory;
+    trajectory.reference = current_trajectory;
+    trajectory.idxs = current_trajectory_idxs;
 
-  // Change the stamp based on the time it took to generate the trajectory
-  double path_time_offset = (ros::Time::now() - trajectory_start_time_).toSec();
-  ROS_INFO("[MissionHandler]: Trajectory generation took: %f seconds", path_time_offset);
-
-  // Print trajectory
-  ROS_DEBUG("[MissionHandler]: Trajectory points: %zu", trajectory.points.size());
-  for (const auto& point : trajectory.points) {
-    ROS_DEBUG("[MissionHandler]: Point: %f, %f, %f Heading: %f", point.position.x, point.position.y, point.position.z, point.heading);
+    trajectories.push_back(trajectory);
   }
 
-  return std::make_tuple(result_t{true, "Successful"}, trajectory_s);
+  // Log the trajectory generation time and number of trajectories
+  const double generation_time = (ros::Time::now() - trajectory_generation_start_time_).toSec();
+  ROS_INFO("[MissionHandler]: Trajectory generation took: %f seconds", generation_time);
+  ROS_DEBUG("[MissionHandler]: Number of trajectories generated: %zu", trajectories.size());
+
+  for (size_t i = 0; i < trajectories.size(); ++i) {
+    const auto& trajectory = trajectories[i];
+    ROS_DEBUG("[MissionHandler]: Trajectory %zu has %zu points and %zu waypoints", i, trajectory.reference.points.size(), trajectory.idxs.size());
+  }
+
+  return {result_t{true, "Successfully generated trajectory"}, trajectories};
 }
 //}
 
@@ -1333,42 +1327,9 @@ std::tuple<std::vector<mrs_msgs::Reference>, std::vector<long int>> MissionHandl
 }
 //}
 
-/* processMissionInfo() //{ */
-
-void MissionHandler::processMissionInfo(const mrs_msgs::ReferenceArray reference_array) {
-  std::scoped_lock lock(mission_information_mutex);
-  // Clear member variables used in feedback
-  goal_idx_ = 0;
-  distance_to_finish_ = 0.0;
-  distance_to_goal_ = 0.0;
-  mission_progress_ = 0.0;
-  goal_progress_ = 0.0;
-  mission_info_processed_ = true;
-}
-//}
-
 /* replanMission() //{ */
 
 bool MissionHandler::replanMission() { return true; }
-//}
-
-/* transformReference() //{ */
-std::tuple<bool, mrs_msgs::ReferenceStamped> MissionHandler::transformReference(mrs_msgs::TransformReferenceSrv transformSrv) {
-  mrs_msgs::ReferenceStamped waypoint_out;
-  if (sc_transform_reference_.call(transformSrv)) {
-    if (transformSrv.response.success) {
-      waypoint_out = transformSrv.response.reference;
-      return std::make_tuple(true, waypoint_out);
-    } else {
-      ROS_WARN_STREAM("Transformation failed \"" << sc_transform_reference_.getService() << "\" with response \"" << transformSrv.response.message << "\".");
-      return std::make_tuple(false, waypoint_out);
-    }
-  } else {
-    ROS_WARN_STREAM("Failed while calling service \"" << sc_transform_reference_.getService() << "\" with response \"" << transformSrv.response.message
-                                                      << "\".");
-    return std::make_tuple(false, waypoint_out);
-  }
-}
 //}
 
 /* transformReferenceArray() //{ */
@@ -1414,14 +1375,8 @@ void MissionHandler::updateMissionState(const mission_state_t& new_state) {
 
 /* callService() //{ */
 
-template <typename Svc_T>
-MissionHandler::result_t MissionHandler::callService(ros::ServiceClient& sc, typename Svc_T::Request req) {
-  typename Svc_T::Response res;
-  return callService<Svc_T>(sc, req, res);
-}
-
-template <typename Svc_T>
-MissionHandler::result_t MissionHandler::callService(ros::ServiceClient& sc, typename Svc_T::Request req, typename Svc_T::Response& res) {
+template <typename ServiceType>
+MissionHandler::result_t MissionHandler::callService(ros::ServiceClient& sc, typename ServiceType::Request req, typename ServiceType::Response& res) {
   if (sc.call(req, res)) {
     if (res.success) {
       ROS_INFO_STREAM_THROTTLE(1.0, "Called service \"" << sc.getService() << "\" with response \"" << res.message << "\".");
@@ -1436,16 +1391,18 @@ MissionHandler::result_t MissionHandler::callService(ros::ServiceClient& sc, typ
     return {false, msg};
   }
 }
-template <typename Svc_T>
-MissionHandler::result_t MissionHandler::callService(ros::ServiceClient& sc) {
-  return callService<Svc_T>(sc, {});
+
+template <typename ServiceType>
+MissionHandler::result_t MissionHandler::callService(ros::ServiceClient& sc, typename ServiceType::Request req) {
+  typename ServiceType::Response res;
+  return callService<ServiceType>(sc, req, res);
 }
 
 MissionHandler::result_t MissionHandler::callService(ros::ServiceClient& sc, const bool val) {
-  using svc_t = std_srvs::SetBool;
-  svc_t::Request req;
+  using ServiceType = std_srvs::SetBool;
+  ServiceType::Request req;
   req.data = val;
-  return callService<svc_t>(sc, req);
+  return callService<ServiceType>(sc, req);
 }
 //}
 
