@@ -24,12 +24,16 @@ bool success
 string message
 ---
 # Define a feedback message
-string  name
-string  message
-uint16  goal_idx
-float64 distance_to_finish
-float64 goal_estimated_arrival_time
-float64 mission_progress
-float64 distance_to_closest_goal
-float64 finish_estimated_arrival_time
-float64 goal_progress
+string robot_name
+string status_message # Informational feedback message
+
+# Next waypoint information
+uint16 waypoint_idx       # Index of the next waypoint the drone is flying to
+float64 waypoint_distance # Distance (in meters) to the next waypoint
+float64 waypoint_eta      # Estimated time of arrival (in seconds) to the next waypoint
+float64 waypoint_progress # Progress towards the next waypoint as a percentage (0.0 - 100.0)
+
+# Mission completion information
+float64 mission_distance # Remaining distance (in meters) to the mission finish point
+float64 mission_eta      # Estimated time of arrival (in seconds) to the mission finish point
+float64 mission_progress # Overall mission progress as a percentage (0.0 - 100.0)
