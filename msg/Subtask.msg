@@ -1,6 +1,6 @@
 # Task type constants
-uint8 TASK_WAIT = 0
-uint8 TASK_GIMBAL = 1
+uint8 TYPE_WAIT = 0
+uint8 TYPE_GIMBAL = 1
 
 # Task identification
 uint8 type                      # Type of task (from constants above)
