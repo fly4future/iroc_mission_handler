@@ -407,8 +407,8 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
         if (!takeoff_res.success) {
           ROS_ERROR_THROTTLE(1.0, "[MissionHandler]: %s", takeoff_res.message.c_str());
           updateMissionState(mission_state_t::IDLE);
-          break;
         }
+        break;
       }
 
       // If it's the first trajectory, we need to call the mission flying to start service
@@ -418,12 +418,13 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
         if (!resp.success) {
           ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call mission start service.");
           updateMissionState(mission_state_t::IDLE);
-          break;
         }
-        updateMissionState(mission_state_t::EXECUTING);
         break;
       }
 
+      // |-------------------------------------------------------------|
+      // |                  Trajectory tracking logic                  |
+      // |-------------------------------------------------------------|
       if (!finished_tracking_) {
         break; // Wait until the trajectory is finished tracking
       }
@@ -441,7 +442,7 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
         ROS_INFO_STREAM("[MissionHandler]: All trajectories completed.");
         finished_tracking_ = true;
         updateMissionState(mission_state_t::FINISHED);
-        return;
+        break;
       }
 
       // Start next trajectory
@@ -449,6 +450,16 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
       auto result = sendTrajectoryToController(trajectories_[current_trajectory_idx_]);
       if (!result.success) {
         ROS_WARN_STREAM("[MissionHandler]: Failed to send trajectory: " << result.message);
+
+        iroc_mission_handler::MissionResult action_server_result;
+        action_server_result.name = robot_name_;
+        action_server_result.success = false;
+        action_server_result.message = result.message;
+        action_server_ptr_->setAborted(action_server_result);
+
+        finished_tracking_ = false;
+        current_trajectory_idx_ = 0;
+        updateMissionState(mission_state_t::IDLE);
         return;
       }
 
@@ -501,6 +512,12 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
           break;
         };
       }
+
+      // Reset mission state and trajectory tracking
+      goal_idx_ = 0;
+      finished_tracking_ = false;
+      current_trajectory_idx_ = 0;
+      trajectories_.clear();
       break;
     };
 
@@ -596,42 +613,43 @@ bool MissionHandler::missionActivationServiceCallback(std_srvs::Trigger::Request
 bool MissionHandler::missionPausingServiceCallback(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res) {
   std::scoped_lock lock(action_server_mutex_);
   ROS_INFO_STREAM("[MissionHandler]: Received mission pausing request.");
-  if (action_server_ptr_->isActive()) {
-    switch (mission_state_.value()) {
-      case mission_state_t::MISSION_LOADED: {
-        ROS_INFO_STREAM("[MissionHandler]: Mission paused before execution.");
-        res.success = true;
-        res.message = "Mission paused before execution.";
-        updateMissionState(mission_state_t::PAUSED);
-        break;
-      };
-
-      case mission_state_t::EXECUTING: {
-        ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Mission paused. Hover started.");
-        auto resp = callService<std_srvs::Trigger>(sc_mission_pause_);
-        res.success = resp.success;
-        res.message = resp.message;
-        if (!resp.success) {
-          ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call stop trajectory tracking service.");
-          break;
-        }
-
-        updateMissionState(mission_state_t::PAUSED);
-        break;
-      };
-
-      default: {
-        res.success = false;
-        res.message = "Mission is in the state in which cannot be paused.";
-        ROS_WARN_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
-        break;
-      };
-    }
-  } else {
+  if (!action_server_ptr_->isActive()) {
     res.success = false;
     res.message = "No active mission.";
     ROS_WARN_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
   }
+
+  switch (mission_state_.value()) {
+    case mission_state_t::MISSION_LOADED: {
+      ROS_INFO_STREAM("[MissionHandler]: Mission paused before execution.");
+      res.success = true;
+      res.message = "Mission paused before execution.";
+      updateMissionState(mission_state_t::PAUSED);
+      break;
+    };
+
+    case mission_state_t::EXECUTING: {
+      ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Mission paused. Hover started.");
+      auto resp = callService<std_srvs::Trigger>(sc_mission_pause_);
+      res.success = resp.success;
+      res.message = resp.message;
+      if (!resp.success) {
+        ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call stop trajectory tracking service.");
+        break;
+      }
+
+      updateMissionState(mission_state_t::PAUSED);
+      break;
+    };
+
+    default: {
+      res.success = false;
+      res.message = "Mission is in the state in which cannot be paused.";
+      ROS_WARN_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
+      break;
+    };
+  }
+
   return true;
 }
 //}
@@ -759,7 +777,6 @@ void MissionHandler::actionCallbackGoal() {
     return;
   }
 
-  action_finished_ = false;
   updateMissionState(mission_state_t::MISSION_LOADED);
   action_server_goal_ = *new_action_server_goal;
 }
@@ -1154,8 +1171,8 @@ std::vector<MissionHandler::path_segment_t> MissionHandler::segmentPath(const mr
     }
   }
 
-  // Add the last segment if it's not empty
-  if (!current_segment.path.points.empty()) {
+  // Add the last segment if it has more than one point or if there are no segments yet (i.e., the first point was added)
+  if (current_segment.path.points.size() > 1 || path_segments.empty()) {
     path_segments.push_back(current_segment);
   }
 
@@ -1366,7 +1383,8 @@ std::tuple<std::vector<mrs_msgs::Reference>, std::vector<long int>> MissionHandl
 bool MissionHandler::replanMission() {
   std::scoped_lock lock(action_server_mutex_);
 
-  ROS_ERROR("[MissionHandler]: Replanning mission from trajectory %d, goal index %d", current_trajectory_idx_, goal_idx_);
+  ROS_ERROR("[MissionHandler]: Replanning trajectory %d, goal index %d, waypoints %zu, points %zu", current_trajectory_idx_, goal_idx_,
+            trajectories_[current_trajectory_idx_].idxs.size(), trajectories_[current_trajectory_idx_].reference.points.size());
 
   std::vector<std::vector<Subtask>> remaining_subtasks;
   remaining_subtasks.resize(trajectories_[current_trajectory_idx_].idxs.size() - goal_idx_);
@@ -1375,6 +1393,8 @@ bool MissionHandler::replanMission() {
   std::vector<mrs_msgs::Reference> remaining_points;
   for (size_t i = goal_idx_; i < trajectories_[current_trajectory_idx_].idxs.size(); i++) {
     remaining_points.push_back(trajectories_[current_trajectory_idx_].reference.points[trajectories_[current_trajectory_idx_].idxs[i]]);
+    ROS_DEBUG("[MissionHandler]: Remaining point %zu: %f, %f, %f Heading: %f", i - goal_idx_, remaining_points.back().position.x,
+              remaining_points.back().position.y, remaining_points.back().position.z, remaining_points.back().heading);
   }
 
   mrs_msgs::Path remaining_path;
@@ -1411,7 +1431,8 @@ bool MissionHandler::replanMission() {
 
   // Setting the mission information
   trajectories_ = recomputed_trajectories;
-  goal_idx_ = 0; // Reset the goal index to the first goal
+  goal_idx_ = 0;               // Reset the goal index to the first goal
+  current_trajectory_idx_ = 0; // Reset the current trajectory index to the first trajectory
 
   return true;
 }
