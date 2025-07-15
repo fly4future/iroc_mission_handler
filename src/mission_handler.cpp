@@ -37,6 +37,7 @@
 #include <mutex>
 
 #include "iroc_mission_handler/enums/mission_state.h"
+#include "iroc_mission_handler/subtask_executor.h"
 
 //}
 
@@ -93,6 +94,9 @@ class MissionHandler : public nodelet::Nodelet {
   std::string robot_name_;
   std::atomic_bool is_initialized_ = false;
 
+  // | -------------------- subtask management ------------------- |
+  std::unique_ptr<SubtaskManager> subtask_manager_;
+
   // | ---------------------- ROS subscribers --------------------- |
   std::shared_ptr<mrs_lib::TimeoutManager> tim_mgr_;
 
@@ -143,8 +147,6 @@ class MissionHandler : public nodelet::Nodelet {
 
   // | --------------------- mission status -------------------- |
   std::atomic_bool finished_tracking_ = false;
-  std::atomic_bool action_finished_ = false;
-  std::atomic_bool pause_requested_ = false;
 
   // | --------------------- mission feedback and trajectory t-------------------- |
   std::vector<trajectory_t> trajectories_;
@@ -227,18 +229,18 @@ void MissionHandler::onInit() {
   // | ----------------------- subscribers ---------------------- |
   tim_mgr_ = std::make_shared<mrs_lib::TimeoutManager>(nh_, ros::Rate(1.0));
 
-  mrs_lib::SubscribeHandlerOptions subscriber_options;
-  subscriber_options.nh = nh_;
-  subscriber_options.node_name = "MissionHandler";
-  subscriber_options.no_message_timeout = ros::Duration(5.0);
-  subscriber_options.timeout_manager = tim_mgr_;
-  subscriber_options.threadsafe = true;
-  subscriber_options.autostart = true;
-  subscriber_options.queue_size = 10;
-  subscriber_options.transport_hints = ros::TransportHints().tcpNoDelay();
+  mrs_lib::SubscribeHandlerOptions sh_opts;
+  sh_opts.nh = nh_;
+  sh_opts.node_name = "MissionHandler";
+  sh_opts.no_message_timeout = ros::Duration(5.0);
+  sh_opts.timeout_manager = tim_mgr_;
+  sh_opts.threadsafe = true;
+  sh_opts.autostart = true;
+  sh_opts.queue_size = 10;
+  sh_opts.transport_hints = ros::TransportHints().tcpNoDelay();
 
-  sh_uav_state_ = mrs_lib::SubscribeHandler<mrs_robot_diagnostics::UavState>(subscriber_options, "in/uav_state");
-  sh_control_manager_diag_ = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(subscriber_options, "control_manager_diagnostics_in",
+  sh_uav_state_ = mrs_lib::SubscribeHandler<mrs_robot_diagnostics::UavState>(sh_opts, "in/uav_state");
+  sh_control_manager_diag_ = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(sh_opts, "control_manager_diagnostics_in",
                                                                                             &MissionHandler::controlManagerDiagCallback, this);
 
   // | --------------------- service clients -------------------- |
@@ -297,6 +299,9 @@ void MissionHandler::onInit() {
   action_server_ptr_->registerGoalCallback(boost::bind(&MissionHandler::actionCallbackGoal, this));
   action_server_ptr_->registerPreemptCallback(boost::bind(&MissionHandler::actionCallbackPreempt, this));
   action_server_ptr_->start();
+
+  // | -------------------- subtask manager -------------------- |
+  subtask_manager_ = std::make_unique<SubtaskManager>(nh_, sh_opts);
 
   // | --------------------- finish the init -------------------- |
   ROS_INFO("[MissionHandler]: initialized");
@@ -382,7 +387,7 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
   }
 
   // |-----------------------------------------------------------|
-  // |            Behavior tree (state machine) logic            |
+  // |                   State machine logic                     |
   // |-----------------------------------------------------------|
   if (!action_server_ptr_->isActive()) {
     return;
@@ -411,65 +416,43 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
         break;
       }
 
-      // If it's the first trajectory, we need to call the mission flying to start service
+      // Send and start the trajectory
       if (uav_state_.value() == uav_state_t::HOVER) {
-        sendTrajectoryToController(trajectories_[current_trajectory_idx_]);
-        auto resp = callService<std_srvs::Trigger>(sc_mission_start_);
-        if (!resp.success) {
-          ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call mission start service.");
+        ROS_INFO_STREAM("[MissionHandler]: Starting trajectory id " << current_trajectory_idx_ << ", total " << trajectories_.size());
+        auto result = sendTrajectoryToController(trajectories_[current_trajectory_idx_]);
+        if (!result.success) {
+          ROS_WARN_STREAM("[MissionHandler]: Failed to send trajectory: " << result.message);
+
+          iroc_mission_handler::MissionResult action_server_result;
+          action_server_result.name = robot_name_;
+          action_server_result.success = false;
+          action_server_result.message = result.message;
+          action_server_ptr_->setAborted(action_server_result);
+
+          current_trajectory_idx_ = 0;
+          updateMissionState(mission_state_t::IDLE);
+          return;
+        }
+
+        auto start_res = callService<std_srvs::Trigger>(sc_mission_start_);
+        if (!start_res.success) {
+          ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call mission start service: %s", start_res.message.c_str());
           updateMissionState(mission_state_t::IDLE);
         }
+
+        // Move to next trajectory
+        current_trajectory_idx_++;
+
         break;
       }
 
-      // |-------------------------------------------------------------|
-      // |                  Trajectory tracking logic                  |
-      // |-------------------------------------------------------------|
-      if (!finished_tracking_) {
-        break; // Wait until the trajectory is finished tracking
-      }
-      ROS_INFO_STREAM("[MissionHandler]: Trajectory " << current_trajectory_idx_ << " finished.");
+      break;
+    };
 
-      // Execute subtasks if any
-      if (!trajectories_[current_trajectory_idx_].subtasks.empty()) {
-        ROS_INFO_STREAM("[MissionHandler]: Executing subtasks in the waypoint " << goal_idx_ << " of trajectory " << current_trajectory_idx_);
-        executeSubtasks(trajectories_[current_trajectory_idx_].subtasks);
-      }
-
-      // Move to next trajectory
-      current_trajectory_idx_++;
-      if (current_trajectory_idx_ >= trajectories_.size()) {
-        ROS_INFO_STREAM("[MissionHandler]: All trajectories completed.");
-        finished_tracking_ = true;
-        updateMissionState(mission_state_t::FINISHED);
-        break;
-      }
-
-      // Start next trajectory
-      ROS_INFO_STREAM("[MissionHandler]: Starting trajectory " << current_trajectory_idx_ + 1 << " of " << trajectories_.size());
-      auto result = sendTrajectoryToController(trajectories_[current_trajectory_idx_]);
-      if (!result.success) {
-        ROS_WARN_STREAM("[MissionHandler]: Failed to send trajectory: " << result.message);
-
-        iroc_mission_handler::MissionResult action_server_result;
-        action_server_result.name = robot_name_;
-        action_server_result.success = false;
-        action_server_result.message = result.message;
-        action_server_ptr_->setAborted(action_server_result);
-
-        finished_tracking_ = false;
-        current_trajectory_idx_ = 0;
-        updateMissionState(mission_state_t::IDLE);
-        return;
-      }
-
-      // Reset goal tracking for new trajectory
-      finished_tracking_ = false;
-      goal_idx_ = 0;
-
-      auto resp = callService<std_srvs::Trigger>(sc_mission_start_);
-      if (!resp.success) {
-        ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call mission start service.");
+    case mission_state_t::EXECUTING_SUBTASK: {
+      if (subtask_manager_->areAllSubtasksCompleted()) {
+        current_trajectory_idx_++;
+        updateMissionState(mission_state_t::EXECUTING);
       }
       break;
     };
@@ -1478,21 +1461,15 @@ MissionHandler::result_t MissionHandler::sendTrajectoryToController(const trajec
  * \param subtasks A vector of subtasks to be executed.
  */
 void MissionHandler::executeSubtasks(const std::vector<iroc_mission_handler::Subtask>& subtasks) {
-  for (const auto& subtask : subtasks) {
-    ROS_INFO_STREAM("[MissionHandler]: Executing subtask of type: " << subtask.type);
+  for (size_t i = 0; i < subtasks.size(); ++i) {
+    const auto& subtask = subtasks[i];
+    ROS_INFO_STREAM("[MissionHandler]: Executing subtask of type: " << static_cast<int>(subtask.type));
 
-    switch (subtask.type) {
-      case iroc_mission_handler::Subtask::TYPE_WAIT: {
-        ROS_INFO_STREAM("[MissionHandler]: Waiting for " << 2.0 << " seconds");
-        ros::Duration(2.0).sleep();
-        break;
-      }
-
-      // Add more subtask types as needed
-      default: {
-        ROS_WARN_STREAM("[MissionHandler]: Unknown subtask type: " << subtask.type);
-        break;
-      }
+    // Use the subtask manager to execute the subtask
+    auto [success, message] = subtask_manager_->executeSubtask(subtask, i);
+    if (!success) {
+      ROS_WARN_STREAM("[MissionHandler]: Failed to execute subtask of type: " << static_cast<int>(subtask.type));
+      continue;
     }
   }
 }

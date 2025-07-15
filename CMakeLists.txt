@@ -57,6 +57,7 @@ include_directories(
 
 add_library(IROCMissionHandler
   src/mission_handler.cpp
+  src/subtask_executor.cpp
 )
 
 add_dependencies(IROCMissionHandler
