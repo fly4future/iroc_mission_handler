@@ -416,8 +416,31 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
         break;
       }
 
+      // Check if the current trajectory is finished
+      if (finished_tracking_) {
+        ROS_INFO_STREAM("[MissionHandler]: Finished tracking trajectory " << current_trajectory_idx_);
+
+        if (!trajectories_[current_trajectory_idx_].subtasks.empty()) {
+          ROS_INFO_STREAM("[MissionHandler]: Executing subtasks in the waypoint " << goal_idx_ << " of trajectory " << current_trajectory_idx_);
+          executeSubtasks(trajectories_[current_trajectory_idx_].subtasks);
+
+          updateMissionState(mission_state_t::EXECUTING_SUBTASK);
+        }
+
+        // Move to next trajectory
+        current_trajectory_idx_++;
+        finished_tracking_ = false;
+        break;
+      }
+
       // Send and start the trajectory
       if (uav_state_.value() == uav_state_t::HOVER) {
+        if (current_trajectory_idx_ >= trajectories_.size()) {
+          ROS_WARN_STREAM("[MissionHandler]: No more trajectories to execute. Current trajectory index: " << current_trajectory_idx_);
+          updateMissionState(mission_state_t::FINISHED);
+          return;
+        }
+
         ROS_INFO_STREAM("[MissionHandler]: Starting trajectory id " << current_trajectory_idx_ << ", total " << trajectories_.size());
         auto result = sendTrajectoryToController(trajectories_[current_trajectory_idx_]);
         if (!result.success) {
@@ -439,10 +462,6 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
           ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call mission start service: %s", start_res.message.c_str());
           updateMissionState(mission_state_t::IDLE);
         }
-
-        // Move to next trajectory
-        current_trajectory_idx_++;
-
         break;
       }
 
@@ -451,7 +470,6 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
     case mission_state_t::EXECUTING_SUBTASK: {
       if (subtask_manager_->areAllSubtasksCompleted()) {
-        current_trajectory_idx_++;
         updateMissionState(mission_state_t::EXECUTING);
       }
       break;
