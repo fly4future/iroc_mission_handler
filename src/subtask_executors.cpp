@@ -71,10 +71,10 @@ bool WaitSubtaskExecutor::stop() {
 GimbalSubtaskExecutor::GimbalSubtaskExecutor(const ros::NodeHandle& nh, const mrs_lib::SubscribeHandlerOptions& sh_opts) : nh_(nh) {
   sh_opts_ = sh_opts;
   sh_opts_.autostart = false; // We will start the SubscribeHandler manually
-  sh_current_orientation_ = mrs_lib::SubscribeHandler<std_msgs::Float32MultiArray>(sh_opts_, "/uav1/servo_camera/orientation",
+  sh_current_orientation_ = mrs_lib::SubscribeHandler<std_msgs::Float32MultiArray>(sh_opts_, "~in/servo_camera/orientation",
                                                                                    &GimbalSubtaskExecutor::orientationCallback, this); // Gimbal topic
 
-  sc_set_gimbal_orientation_ = nh_.serviceClient<mrs_msgs::Vec4>("/uav1/servo_camera/set_orientation");
+  sc_set_gimbal_orientation_ = nh_.serviceClient<mrs_msgs::Vec4>("~svc/servo_camera/set_orientation");
 
   ROS_DEBUG("[GimbalSubtaskExecutor]: Initialized");
 }
