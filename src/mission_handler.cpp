@@ -147,15 +147,16 @@ class MissionHandler : public nodelet::Nodelet {
 
   // | --------------------- mission feedback and trajectory t-------------------- |
   std::vector<trajectory_t> trajectories_;
-  int current_trajectory_idx_ = 0;
-  int current_trajectory_goal_idx_ = 0;
-  std::atomic_bool finished_current_trajectory_ = false;
+  int current_trajectory_idx_ = 0;          // Index of the current trajectory being executed
+  int current_trajectory_waypoint_idx_ = 0; // Index of the current waypoint in the current trajectory
+
+  std::atomic_bool is_current_trajectory_finished_ = false;
 
   // Waypoint information (which waypoint is currently being followed)
-  int goal_idx_ = 0;
-  double goal_distance_ = 0.0;
-  double goal_eta_ = 0.0;
-  double goal_progress_ = 0.0;
+  int mission_waypoint_idx_ = 0;           // Index of the current waypoint being followed
+  double mission_waypoint_distance_ = 0.0; // Distance to the next waypoint
+  double mission_waypoint_eta_ = 0.0;      // Estimated time of arrival to the next waypoint
+  double mission_waypoint_progress_ = 0.0; // Progress towards the next waypoint (0.0 - 1.0)
 
   // Mission information
   double mission_distance_ = 0.0; // Remaining distance to the mission finish point
@@ -167,6 +168,7 @@ class MissionHandler : public nodelet::Nodelet {
   // | ------------------ Additional functions ------------------ |
   result_t createMission(const ActionServerGoal& action_server_goal);
   bool replanMission();
+  void resetMission();
 
   // Trajectory management functions
   result_t sendTrajectoryToController(const trajectory_t& trajectory);
@@ -355,7 +357,6 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
     if (mission_state_.value() != mission_state_t::PAUSED_DUE_TO_RC_MODE) {
       ROS_INFO_STREAM_THROTTLE(1.0,
                                "[MissionHandler]: Mission is pause due to active MRS Remote mode. Disable the mode, to continue with the mission execution.");
-      previous_mission_state_ = mission_state_.value(); // Store current state before pausing
       updateMissionState(mission_state_t::PAUSED_DUE_TO_RC_MODE);
     }
     return;
@@ -363,28 +364,26 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
   // Check for manual control during active missions
   if (uav_state_.value() == uav_state_t::MANUAL) {
-
     iroc_mission_handler::MissionResult action_server_result;
     action_server_result.name = robot_name_;
     action_server_result.success = false;
     action_server_result.message = "Mission cancelled because drone is under manual control.";
-    ROS_INFO("[MissionHandler]: %s", action_server_result.message.c_str());
 
+    ROS_INFO("[MissionHandler]: %s", action_server_result.message.c_str());
     action_server_ptr_->setAborted(action_server_result);
 
     updateMissionState(mission_state_t::IDLE);
+    resetMission();
     return;
   }
 
   switch (mission_state_.value()) {
     case mission_state_t::EXECUTING: {
       if (current_trajectory_idx_ >= trajectories_.size()) {
-        ROS_ERROR("[MissionHandler]: No more trajectories to execute. Current trajectory index: %d", current_trajectory_idx_);
         if (uav_state_.value() == uav_state_t::HOVER) { // Wait for the UAV currently executing trajectory to finish
           updateMissionState(mission_state_t::FINISHED);
           ROS_WARN_STREAM("[MissionHandler]: No more trajectories to execute. Current trajectory index: " << current_trajectory_idx_);
         }
-
         break;
       }
 
@@ -399,11 +398,11 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
       }
 
       // Check if the current trajectory is finished
-      if (finished_current_trajectory_) {
+      if (is_current_trajectory_finished_) {
         ROS_INFO_STREAM("[MissionHandler]: Finished tracking trajectory " << current_trajectory_idx_);
 
         if (!trajectories_[current_trajectory_idx_].subtasks.empty()) {
-          ROS_INFO_STREAM("[MissionHandler]: Executing subtasks in the waypoint " << goal_idx_ << " of trajectory " << current_trajectory_idx_);
+          ROS_INFO("[MissionHandler]: Executing subtasks in the waypoint %d ", mission_waypoint_idx_);
           executeSubtasks(trajectories_[current_trajectory_idx_].subtasks);
 
           updateMissionState(mission_state_t::EXECUTING_SUBTASK);
@@ -411,7 +410,7 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
         // Move to next trajectory
         current_trajectory_idx_++;
-        finished_current_trajectory_ = false;
+        is_current_trajectory_finished_ = false;
         break;
       }
 
@@ -430,13 +429,14 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
           current_trajectory_idx_ = 0;
           updateMissionState(mission_state_t::IDLE);
+          resetMission();
           return;
         }
 
         auto start_res = callService<std_srvs::Trigger>(sc_mission_start_);
         if (!start_res.success) {
           ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call mission start service: %s", start_res.message.c_str());
-          updateMissionState(mission_state_t::IDLE);
+          updateMissionState(mission_state_t::MISSION_LOADED);
         }
         break;
       }
@@ -491,10 +491,7 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
       }
 
       // Reset mission state and trajectory tracking
-      goal_idx_ = 0;
-      current_trajectory_idx_ = 0;
-      finished_current_trajectory_ = false;
-      trajectories_.clear();
+      resetMission();
       break;
     };
 
@@ -520,6 +517,7 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
         }
 
         updateMissionState(mission_state_t::IDLE);
+        resetMission();
         return;
       }
     }
@@ -567,7 +565,7 @@ bool MissionHandler::missionActivationServiceCallback(std_srvs::Trigger::Request
   switch (mission_state_.value()) {
     case mission_state_t::MISSION_LOADED: {
       ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Already flying. Starting mission with first trajectory.");
-      finished_current_trajectory_ = false;
+      is_current_trajectory_finished_ = false;
       updateMissionState(mission_state_t::EXECUTING);
       break;
     };
@@ -661,88 +659,77 @@ bool MissionHandler::missionPausingServiceCallback(std_srvs::Trigger::Request& r
 
 /* controlManagerDiagCallback() //{ */
 
+/**
+ * \brief Callback function for ControlManagerDiagnostics messages.
+ *
+ * This function processes the diagnostics data to update the mission state, current trajectory, and waypoint information.
+ * It calculates the distance to the next waypoint, estimated time of arrival (ETA), and progress towards the next waypoint.
+ * It also checks if the current waypoint has been reached or if the current trajectory has been completed.
+ *
+ * \param diagnostics The ControlManagerDiagnostics message containing the current state of the control manager.
+ */
 void MissionHandler::controlManagerDiagCallback(const mrs_msgs::ControlManagerDiagnostics::ConstPtr diagnostics) {
   std::scoped_lock lock(action_server_mutex_);
 
-  // Do not continue if the nodelet is not initialized
-  if (!is_initialized_) {
+  if (!is_initialized_ ||                                       // Node initialization check
+      !diagnostics || !diagnostics->tracker_status.have_goal || // Diagnostics check
+      current_trajectory_idx_ >= trajectories_.size() ||        // Current trajectory index check
+      mission_state_.value() != mission_state_t::EXECUTING) {   // Mission state check
     return;
   }
 
-  if (trajectories_.empty() || mission_state_.value() != mission_state_t::EXECUTING) {
-    return;
+  // Get current state
+  trajectory_t& current_trajectory = trajectories_.at(current_trajectory_idx_);
+
+  int current_point_idx = diagnostics->tracker_status.trajectory_idx;
+  int previous_waypoint_point_idx = current_trajectory_waypoint_idx_ > 0 ? current_trajectory.idxs[current_trajectory_waypoint_idx_ - 1] : 0;
+  int next_waypoint_point_idx = current_trajectory.idxs[current_trajectory_waypoint_idx_];
+
+  const mrs_msgs::Reference current_position = current_trajectory.reference.points.at(current_point_idx);
+  const mrs_msgs::Reference next_waypoint_position = current_trajectory.reference.points.at(next_waypoint_point_idx);
+
+  // Number of points in the current path segment (waypoint to next waypoint)
+  const int number_of_points = next_waypoint_point_idx - previous_waypoint_point_idx;
+  double current_progress = 0.0;
+  if (number_of_points > 0) {
+    current_progress = std::min((static_cast<double>(current_point_idx - previous_waypoint_point_idx) / number_of_points) * 100.0, 100.0);
   }
 
-  // ---------------------------------------------
+  // Update feedback information
+  mission_waypoint_distance_ = distance(current_position, next_waypoint_position);
+  mission_waypoint_eta_ = std::max(static_cast<double>(next_waypoint_point_idx - current_point_idx) * _trajectory_sampling_period_, 0.0);
+  mission_waypoint_progress_ = current_progress;
 
-  // const bool have_goal = diagnostics->tracker_status.have_goal;
-  // current_trajectory_length_ = diagnostics->tracker_status.trajectory_length;
+  // Accumulate the distance to the next waypoint and the next trajectory waypoints
+  mission_distance_ = 0.0;
+  mission_eta_ = 0.0;
+  for (size_t i = current_trajectory_idx_; i < trajectories_.size(); i++) {
+    for (size_t j = 0; j < trajectories_[i].reference.points.size() - 1; j++) {
+      if (i == current_trajectory_idx_ && j < current_point_idx) {
+        continue; // Skip points before the current waypoint
+      }
 
-  // if (current_trajectory_length_ == 0 || !mission_info_processed_) {
-  //   return;
-  // }
+      const mrs_msgs::Reference start_position = trajectories_[i].reference.points.at(j);
+      const mrs_msgs::Reference end_position = trajectories_[i].reference.points.at(j + 1);
 
-  // Get current trajectory index
-  current_trajectory_goal_idx_ = diagnostics->tracker_status.trajectory_idx;
+      mission_distance_ += distance(start_position, end_position);
+      mission_eta_ += _trajectory_sampling_period_;
+    }
+  }
 
-  // /* Restart distance, as we  will recalculate based on current trajectory idx */
-  // distance_to_finish_ = 0.0;
+  // Check if we reached the current waypoint or finished the current trajectory
+  if (current_point_idx >= current_trajectory.idxs[current_trajectory_waypoint_idx_]) {
+    ROS_INFO("[MissionHandler]: Reached %d waypoint in trajectory %d", current_trajectory_waypoint_idx_, current_trajectory_idx_);
 
-  // /* Calculating distance from current position to closest goal */
-  // const mrs_msgs::Reference current_position = current_trajectory_.points.at(current_trajectory_idx_);
-  // const int closest_goal_idx = current_trajectory_idxs_.at(goal_idx_);
-  // const mrs_msgs::Reference next_closest_goal = current_trajectory_.points.at(closest_goal_idx);
+    // Reached the current waypoint, update the mission state and indices
+    mission_waypoint_idx_++;
+    current_trajectory_waypoint_idx_++;
 
-  // distance_to_goal_ = distance(current_position, next_closest_goal);
-  // distance_to_finish_ += distance_to_goal_;
-
-  // /* Calculating distance between remaining goal segments */
-  // for (size_t i = goal_idx_; i < current_trajectory_idxs_.size() - 1; i++) {
-  //   const int current_goal_idx = current_trajectory_idxs_.at(i);
-  //   const mrs_msgs::Reference closest_goal_position = current_trajectory_.points.at(current_goal_idx);
-  //   const int next_goal_idx = current_trajectory_idxs_.at(i + 1);
-  //   mrs_msgs::Reference next_closest_goal_position = current_trajectory_.points.at(next_goal_idx);
-  //   const auto dist = distance(closest_goal_position, next_closest_goal_position);
-  //   distance_to_finish_ += dist;
-  // }
-
-  // const int total_goal_segment = closest_goal_idx - goal_start_;
-  // /* Calculate goal progress */
-  // if (total_goal_segment > 0) {
-  //   const int current_progress = (current_trajectory_idx_ - goal_start_);
-  //   const double calculated_goal_progress = (static_cast<double>(current_trajectory_idx_ - goal_start_) / total_goal_segment) * 100;
-  //   goal_progress_ = std::min(calculated_goal_progress, 100.0);
-  //   const double calculated_goal_time = static_cast<double>(closest_goal_idx - current_trajectory_idx_) * _trajectory_sampling_period_;
-  //   goal_estimated_time_of_arrival_ = std::max(calculated_goal_time, 0.0);
-
-  // } else {
-  //   goal_progress_ = 0;
-  // }
-
-  // /* Calculate overall mission progress */
-  // if (current_trajectory_length_ + total_progress_ > 0) {
-  //   // using total progress to accumulate the mission progress when pausing the mission
-  //   const double calculated_mission_progress =
-  //       (static_cast<double>(current_trajectory_idx_ + total_progress_) / (current_trajectory_length_ + total_progress_)) * 100;
-
-  //   mission_progress_ = std::min(calculated_mission_progress, 100.0);
-  //   const double calculated_mission_time = static_cast<double>(current_trajectory_length_ - current_trajectory_idx_) * _trajectory_sampling_period_;
-  //   finish_estimated_time_of_arrival_ = std::max(calculated_mission_time, 0.0);
-  // } else {
-  //   ROS_WARN("[MissionHandler]: Trajectory length is 0, validate if the trajectory was successfully generated.");
-  //   mission_progress_ = 0;
-  // }
-
-  if (current_trajectory_goal_idx_ >= trajectories_[current_trajectory_idx_].idxs[goal_idx_]) {
-    ROS_INFO("[MissionHandler]: Reached %d waypoint in trajectory %d", goal_idx_, current_trajectory_idx_);
-    goal_idx_++; // Reached current goal, calculating for next goal
-
-    ROS_ERROR("[MissionHandler]: Goal idx %d, trajectory idx %d", goal_idx_, current_trajectory_idx_);
-
-    if (goal_idx_ >= trajectories_[current_trajectory_idx_].idxs.size()) {
+    if (current_trajectory_waypoint_idx_ >= current_trajectory.idxs.size()) {
+      // If we reached the last waypoint in the trajectory, mark it as finished and reset the trajectory waypoint index
       ROS_INFO("[MissionHandler]: Reached last waypoint in trajectory %d", current_trajectory_idx_);
-      finished_current_trajectory_ = true; // Finished tracking the current trajectory
-      goal_idx_ = 0;                       // Reset goal index for the next trajectory
+      is_current_trajectory_finished_ = true;
+      current_trajectory_waypoint_idx_ = 0;
     }
   }
 }
@@ -840,10 +827,10 @@ void MissionHandler::actionPublishFeedback() {
     action_server_feedback.name = robot_name_;
     action_server_feedback.message = to_string(mission_state_.value());
 
-    action_server_feedback.goal_idx = goal_idx_;
-    action_server_feedback.distance_to_closest_goal = goal_distance_;
-    action_server_feedback.goal_estimated_arrival_time = goal_eta_;
-    action_server_feedback.goal_progress = goal_progress_;
+    action_server_feedback.goal_idx = mission_waypoint_idx_;
+    action_server_feedback.distance_to_closest_goal = mission_waypoint_distance_;
+    action_server_feedback.goal_estimated_arrival_time = mission_waypoint_eta_;
+    action_server_feedback.goal_progress = mission_waypoint_progress_;
 
     action_server_feedback.distance_to_finish = mission_distance_;
     action_server_feedback.finish_estimated_arrival_time = mission_eta_;
@@ -1384,17 +1371,18 @@ std::tuple<std::vector<mrs_msgs::Reference>, std::vector<long int>> MissionHandl
 bool MissionHandler::replanMission() {
   std::scoped_lock lock(action_server_mutex_);
 
-  ROS_ERROR("[MissionHandler]: Replanning trajectory %d, goal index %d, waypoints %zu, points %zu", current_trajectory_idx_, goal_idx_,
-            trajectories_[current_trajectory_idx_].idxs.size(), trajectories_[current_trajectory_idx_].reference.points.size());
+  ROS_WARN_STREAM("[MissionHandler]: Replanning trajectory" << current_trajectory_idx_ << ", current goal index: " << current_trajectory_waypoint_idx_
+                                                            << ", waypoints " << trajectories_[current_trajectory_idx_].idxs.size() << ", points "
+                                                            << trajectories_[current_trajectory_idx_].reference.points.size());
 
-  std::vector<std::vector<Subtask>> remaining_subtasks;
-  remaining_subtasks.resize(trajectories_[current_trajectory_idx_].idxs.size() - goal_idx_);
+  ROS_WARN_STREAM("[MissionHandler]: Replanning trajectory " << current_trajectory_idx_ << ", current goal index: " << current_trajectory_waypoint_idx_
+  remaining_subtasks.resize(trajectories_[current_trajectory_idx_].idxs.size() - current_trajectory_waypoint_idx_);
   remaining_subtasks.back() = trajectories_[current_trajectory_idx_].subtasks; // Copy the last subtask to the last point
 
   std::vector<mrs_msgs::Reference> remaining_points;
-  for (size_t i = goal_idx_; i < trajectories_[current_trajectory_idx_].idxs.size(); i++) {
+  for (size_t i = current_trajectory_waypoint_idx_; i < trajectories_[current_trajectory_idx_].idxs.size(); i++) {
     remaining_points.push_back(trajectories_[current_trajectory_idx_].reference.points[trajectories_[current_trajectory_idx_].idxs[i]]);
-    ROS_DEBUG("[MissionHandler]: Remaining point %zu: %f, %f, %f Heading: %f", i - goal_idx_, remaining_points.back().position.x,
+    ROS_DEBUG("[MissionHandler]: Remaining point %zu: %f, %f, %f Heading: %f", i - current_trajectory_waypoint_idx_, remaining_points.back().position.x,
               remaining_points.back().position.y, remaining_points.back().position.z, remaining_points.back().heading);
   }
 
@@ -1432,8 +1420,8 @@ bool MissionHandler::replanMission() {
 
   // Setting the mission information
   trajectories_ = recomputed_trajectories;
-  goal_idx_ = 0;               // Reset the goal index to the first goal
-  current_trajectory_idx_ = 0; // Reset the current trajectory index to the first trajectory
+  current_trajectory_waypoint_idx_ = 0; // Reset the goal index to the first goal
+  current_trajectory_idx_ = 0;          // Reset the current trajectory index to the first trajectory
 
   return true;
 }
@@ -1533,6 +1521,30 @@ void MissionHandler::updateMissionState(const mission_state_t& new_state) {
   previous_mission_state_ = mission_state_.value();
   mission_state_.set(new_state);
   actionPublishFeedback();
+}
+//}
+
+/* resetMission() //{ */
+
+void MissionHandler::resetMission() {
+  std::scoped_lock lock(action_server_mutex_);
+
+  current_trajectory_idx_ = 0;
+  current_trajectory_waypoint_idx_ = 0;
+
+  mission_waypoint_idx_ = 0;
+  mission_waypoint_distance_ = 0.0;
+  mission_waypoint_eta_ = 0.0;
+  mission_waypoint_progress_ = 0.0;
+
+  mission_distance_ = 0.0;
+  mission_eta_ = 0.0;
+  mission_progress_ = 0.0;
+
+  is_current_trajectory_finished_ = false;
+  trajectories_.clear();
+  actionPublishFeedback();
+  ROS_INFO("[MissionHandler]: Mission reset successfully.");
 }
 //}
 
