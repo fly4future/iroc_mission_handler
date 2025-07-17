@@ -335,59 +335,18 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
     uav_state_.set(mrs_robot_diagnostics::from_ros<uav_state_t>(sh_uav_state_.getMsg()->state));
   }
 
-  // | --------------------- mission state handling --------------------- |
+  // |-----------------------------------------------------------|
+  // |                   State machine logic                     |
+  // |-----------------------------------------------------------|
+  if (!action_server_ptr_->isActive()) {
+    return;
+  }
+
   // Detect landing state and update mission state accordingly
   const bool not_idle_or_land = mission_state_.value() != mission_state_t::IDLE && mission_state_.value() != mission_state_t::LAND;
   if (uav_state_.value() == uav_state_t::LAND && not_idle_or_land) {
     ROS_WARN_STREAM("[MissionHandler]: Landing detected. Switching to LAND state.");
     updateMissionState(mission_state_t::LAND);
-    return;
-  }
-
-  // Detect when the UAV finishes landing
-  if (mission_state_.value() == mission_state_t::LAND &&
-      (uav_state_.value() == uav_state_t::ARMED || uav_state_.value() == uav_state_t::DISARMED || uav_state_.value() == uav_state_t::OFFBOARD)) {
-    ROS_INFO_STREAM("[MissionHandler]: Landing finished.");
-
-    iroc_mission_handler::MissionResult action_server_result;
-    if (!action_server_ptr_->isActive()) {
-      action_server_result.name = robot_name_;
-      action_server_result.success = true;
-      action_server_result.message = "Mission finished";
-      ROS_INFO("[MissionHandler]: Mission finished.");
-      action_server_ptr_->setSucceeded(action_server_result);
-    } else {
-      action_server_result.name = robot_name_;
-      action_server_result.success = false;
-      action_server_result.message = "Mission stopped due to landing.";
-      ROS_WARN("[MissionHandler]: Mission stopped due to landing.");
-      action_server_ptr_->setAborted(action_server_result);
-    }
-
-    updateMissionState(mission_state_t::IDLE);
-    return;
-  }
-
-  // Check for manual control during active missions
-  if (uav_state_.value() == uav_state_t::MANUAL) {
-    iroc_mission_handler::MissionResult action_server_result;
-    action_server_result.name = robot_name_;
-    action_server_result.success = false;
-    action_server_result.message = "Mission cancelled because drone is under manual control.";
-    ROS_INFO("[MissionHandler]: %s", action_server_result.message.c_str());
-
-    if (action_server_ptr_->isActive()) {
-      action_server_ptr_->setAborted(action_server_result);
-    }
-
-    updateMissionState(mission_state_t::IDLE);
-    return;
-  }
-
-  // |-----------------------------------------------------------|
-  // |                   State machine logic                     |
-  // |-----------------------------------------------------------|
-  if (!action_server_ptr_->isActive()) {
     return;
   }
 
@@ -402,24 +361,34 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
     return;
   }
 
+  // Check for manual control during active missions
+  if (uav_state_.value() == uav_state_t::MANUAL) {
+
+    iroc_mission_handler::MissionResult action_server_result;
+    action_server_result.name = robot_name_;
+    action_server_result.success = false;
+    action_server_result.message = "Mission cancelled because drone is under manual control.";
+    ROS_INFO("[MissionHandler]: %s", action_server_result.message.c_str());
+
+    action_server_ptr_->setAborted(action_server_result);
+
+    updateMissionState(mission_state_t::IDLE);
+    return;
+  }
+
   switch (mission_state_.value()) {
     case mission_state_t::EXECUTING: {
       if (current_trajectory_idx_ >= trajectories_.size()) {
-        ROS_WARN_STREAM("[MissionHandler]: No more trajectories to execute. Current trajectory index: " << current_trajectory_idx_);
-
+        ROS_ERROR("[MissionHandler]: No more trajectories to execute. Current trajectory index: %d", current_trajectory_idx_);
         if (uav_state_.value() == uav_state_t::HOVER) { // Wait for the UAV currently executing trajectory to finish
           updateMissionState(mission_state_t::FINISHED);
+          ROS_WARN_STREAM("[MissionHandler]: No more trajectories to execute. Current trajectory index: " << current_trajectory_idx_);
         }
+
         break;
       }
 
       if (!mrs_robot_diagnostics::is_flying(uav_state_.value())) {
-        if (uav_state_.value() != uav_state_t::ARMED) {
-          ROS_WARN("[MissionHandler]: UAV is not armed, cannot take off. Waiting for the UAV to be armed.");
-          updateMissionState(mission_state_t::MISSION_LOADED);
-          break;
-        }
-
         ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Calling takeoff");
         auto takeoff_res = callService<std_srvs::Trigger>(sc_takeoff_);
         if (!takeoff_res.success) {
@@ -528,6 +497,32 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
       trajectories_.clear();
       break;
     };
+
+    case mission_state_t::LAND: {
+      if (uav_state_.value() == uav_state_t::ARMED || uav_state_.value() == uav_state_t::DISARMED || uav_state_.value() == uav_state_t::OFFBOARD) {
+        ROS_INFO_STREAM("[MissionHandler]: Landing finished.");
+
+        iroc_mission_handler::MissionResult action_server_result;
+        if (previous_mission_state_ == mission_state_t::FINISHED) {
+          action_server_result.name = robot_name_;
+          action_server_result.success = true;
+          action_server_result.message = "Mission finished";
+
+          ROS_INFO("[MissionHandler]: Mission finished.");
+          action_server_ptr_->setSucceeded(action_server_result);
+        } else {
+          action_server_result.name = robot_name_;
+          action_server_result.success = false;
+          action_server_result.message = "Mission stopped due to landing.";
+
+          ROS_WARN("[MissionHandler]: Mission stopped due to landing.");
+          action_server_ptr_->setAborted(action_server_result);
+        }
+
+        updateMissionState(mission_state_t::IDLE);
+        return;
+      }
+    }
 
     case mission_state_t::PAUSED_DUE_TO_RC_MODE: {
       // mission continue if we are again not in RC_mode
@@ -742,9 +737,12 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::ControlManagerDi
     ROS_INFO("[MissionHandler]: Reached %d waypoint in trajectory %d", goal_idx_, current_trajectory_idx_);
     goal_idx_++; // Reached current goal, calculating for next goal
 
+    ROS_ERROR("[MissionHandler]: Goal idx %d, trajectory idx %d", goal_idx_, current_trajectory_idx_);
+
     if (goal_idx_ >= trajectories_[current_trajectory_idx_].idxs.size()) {
       ROS_INFO("[MissionHandler]: Reached last waypoint in trajectory %d", current_trajectory_idx_);
       finished_current_trajectory_ = true; // Finished tracking the current trajectory
+      goal_idx_ = 0;                       // Reset goal index for the next trajectory
     }
   }
 }
