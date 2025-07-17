@@ -1375,7 +1375,7 @@ bool MissionHandler::replanMission() {
                                                             << ", waypoints " << trajectories_[current_trajectory_idx_].idxs.size() << ", points "
                                                             << trajectories_[current_trajectory_idx_].reference.points.size());
 
-  ROS_WARN_STREAM("[MissionHandler]: Replanning trajectory " << current_trajectory_idx_ << ", current goal index: " << current_trajectory_waypoint_idx_
+  std::vector<std::vector<Subtask>> remaining_subtasks;
   remaining_subtasks.resize(trajectories_[current_trajectory_idx_].idxs.size() - current_trajectory_waypoint_idx_);
   remaining_subtasks.back() = trajectories_[current_trajectory_idx_].subtasks; // Copy the last subtask to the last point
 
