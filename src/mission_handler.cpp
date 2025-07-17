@@ -37,7 +37,7 @@
 #include <mutex>
 
 #include "iroc_mission_handler/enums/mission_state.h"
-#include "iroc_mission_handler/subtask_executor.h"
+#include "iroc_mission_handler/subtask_manager.h"
 
 //}
 
@@ -145,13 +145,11 @@ class MissionHandler : public nodelet::Nodelet {
   std::recursive_mutex action_server_mutex_;
   std::recursive_mutex mission_information_mutex;
 
-  // | --------------------- mission status -------------------- |
-  std::atomic_bool finished_tracking_ = false;
-
   // | --------------------- mission feedback and trajectory t-------------------- |
   std::vector<trajectory_t> trajectories_;
   int current_trajectory_idx_ = 0;
   int current_trajectory_goal_idx_ = 0;
+  std::atomic_bool finished_current_trajectory_ = false;
 
   // Waypoint information (which waypoint is currently being followed)
   int goal_idx_ = 0;
@@ -406,7 +404,22 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
   switch (mission_state_.value()) {
     case mission_state_t::EXECUTING: {
+      if (current_trajectory_idx_ >= trajectories_.size()) {
+        ROS_WARN_STREAM("[MissionHandler]: No more trajectories to execute. Current trajectory index: " << current_trajectory_idx_);
+
+        if (uav_state_.value() == uav_state_t::HOVER) { // Wait for the UAV currently executing trajectory to finish
+          updateMissionState(mission_state_t::FINISHED);
+        }
+        break;
+      }
+
       if (!mrs_robot_diagnostics::is_flying(uav_state_.value())) {
+        if (uav_state_.value() != uav_state_t::ARMED) {
+          ROS_WARN("[MissionHandler]: UAV is not armed, cannot take off. Waiting for the UAV to be armed.");
+          updateMissionState(mission_state_t::MISSION_LOADED);
+          break;
+        }
+
         ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Calling takeoff");
         auto takeoff_res = callService<std_srvs::Trigger>(sc_takeoff_);
         if (!takeoff_res.success) {
@@ -417,7 +430,7 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
       }
 
       // Check if the current trajectory is finished
-      if (finished_tracking_) {
+      if (finished_current_trajectory_) {
         ROS_INFO_STREAM("[MissionHandler]: Finished tracking trajectory " << current_trajectory_idx_);
 
         if (!trajectories_[current_trajectory_idx_].subtasks.empty()) {
@@ -429,18 +442,12 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
         // Move to next trajectory
         current_trajectory_idx_++;
-        finished_tracking_ = false;
+        finished_current_trajectory_ = false;
         break;
       }
 
       // Send and start the trajectory
       if (uav_state_.value() == uav_state_t::HOVER) {
-        if (current_trajectory_idx_ >= trajectories_.size()) {
-          ROS_WARN_STREAM("[MissionHandler]: No more trajectories to execute. Current trajectory index: " << current_trajectory_idx_);
-          updateMissionState(mission_state_t::FINISHED);
-          return;
-        }
-
         ROS_INFO_STREAM("[MissionHandler]: Starting trajectory id " << current_trajectory_idx_ << ", total " << trajectories_.size());
         auto result = sendTrajectoryToController(trajectories_[current_trajectory_idx_]);
         if (!result.success) {
@@ -516,8 +523,8 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
       // Reset mission state and trajectory tracking
       goal_idx_ = 0;
-      finished_tracking_ = false;
       current_trajectory_idx_ = 0;
+      finished_current_trajectory_ = false;
       trajectories_.clear();
       break;
     };
@@ -565,7 +572,7 @@ bool MissionHandler::missionActivationServiceCallback(std_srvs::Trigger::Request
   switch (mission_state_.value()) {
     case mission_state_t::MISSION_LOADED: {
       ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Already flying. Starting mission with first trajectory.");
-      finished_tracking_ = false;
+      finished_current_trajectory_ = false;
       updateMissionState(mission_state_t::EXECUTING);
       break;
     };
@@ -673,11 +680,6 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::ControlManagerDi
 
   // ---------------------------------------------
 
-  // /* do not continue if the nodelet is not initialized */
-  // if (!is_initialized_) {
-  //   return;
-  // }
-
   // const bool have_goal = diagnostics->tracker_status.have_goal;
   // current_trajectory_length_ = diagnostics->tracker_status.trajectory_length;
 
@@ -742,7 +744,7 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::ControlManagerDi
 
     if (goal_idx_ >= trajectories_[current_trajectory_idx_].idxs.size()) {
       ROS_INFO("[MissionHandler]: Reached last waypoint in trajectory %d", current_trajectory_idx_);
-      finished_tracking_ = true; // Finished tracking the current trajectory
+      finished_current_trajectory_ = true; // Finished tracking the current trajectory
     }
   }
 }
