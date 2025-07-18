@@ -76,9 +76,9 @@ class MissionHandler : public nodelet::Nodelet {
    * \brief Struct to hold trajectory information and track subtasks.
    *
    * This struct contains a trajectory reference, a vector of trajectory indices, and a vector of subtasks.
-   * - `trajectory`: The trajectory reference.
-   * - `trajectory_idxs`: A vector of indices corresponding to the trajectory points.
-   * - `subtasks_`: A vector of subtasks associated with the trajectory.
+   * - `reference`: The trajectory reference.
+   * - `idxs`: A vector of indices corresponding to the trajectory points indices (each index corresponds to a point in the trajectory).
+   * - `subtasks`: A vector of subtasks associated with the trajectory.
    */
   struct trajectory_t {
     mrs_msgs::TrajectoryReference reference;
