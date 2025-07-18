@@ -86,10 +86,6 @@ bool GimbalSubtaskExecutor::execute(const std::string& parameters) {
     ROS_ERROR_STREAM("[GimbalSubtaskExecutor]: Invalid parameters format: " << parameters);
     return false;
   }
-  if (angles[0] < -M_PI || angles[0] > M_PI || angles[1] < -M_PI || angles[1] > M_PI || angles[2] < -M_PI || angles[2] > M_PI) {
-    ROS_ERROR_STREAM("[GimbalSubtaskExecutor]: Angles must be in range [-pi, pi]: " << parameters);
-    return false;
-  }
 
   // Set target angles
   target_roll_ = angles[0];

@@ -86,6 +86,19 @@ class MissionHandler : public nodelet::Nodelet {
     std::vector<iroc_mission_handler::Subtask> subtasks;
   };
 
+  /**
+   * \brief Struct to hold metrics for the mission handler.
+   *
+   * - `remaining_distance`: The remaining distance to the mission finish point.
+   * - `eta`: The estimated time of arrival to the mission end.
+   * - `progress`: The overall mission progress as a percentage (0.0 - 100.0).
+   */
+  struct metrics_t {
+    double remaining_distance = 0.0;
+    double eta = 0.0;
+    double progress = 0.0;
+  };
+
   typedef mrs_robot_diagnostics::uav_state_t uav_state_t;
   enum_helpers::enum_updater<uav_state_t> uav_state_ = {"UAV STATE", uav_state_t::UNKNOWN};
   enum_helpers::enum_updater<mission_state_t> mission_state_ = {"MISSION STATE", mission_state_t::IDLE};
@@ -93,7 +106,7 @@ class MissionHandler : public nodelet::Nodelet {
 
   std::string robot_name_;
   std::atomic_bool is_initialized_ = false;
-  double min_distance_threshold_ = 0.05; // Minimum distance to consider a segment as valid (not just a heading change)
+  double min_distance_threshold_; // Minimum distance to consider a segment as valid (not just a heading change)
 
   // | -------------------- subtask management ------------------- |
   std::unique_ptr<SubtaskManager> subtask_manager_;
@@ -153,16 +166,12 @@ class MissionHandler : public nodelet::Nodelet {
   std::atomic_bool is_current_trajectory_finished_ = false;
 
   // Waypoint information (which waypoint is currently being followed)
-  int mission_waypoint_idx_ = 0;           // Index of the current waypoint being followed
-  double mission_waypoint_distance_ = 0.0; // Distance to the next waypoint
-  double mission_waypoint_eta_ = 0.0;      // Estimated time of arrival to the next waypoint
-  double mission_waypoint_progress_ = 0.0; // Progress towards the next waypoint (0.0 - 1.0)
+  int mission_waypoint_idx_ = 0; // Index of the current waypoint being followed
 
-  // Mission information
-  double mission_distance_ = 0.0; // Remaining distance to the mission finish point
-  double mission_eta_ = 0.0;      // Estimated time of arrival to the
-  double mission_progress_ = 0.0; // Overall mission progress as a percentage (0.0 - 100.0)
+  metrics_t mission_metrics_;  // Metrics for the current mission
+  metrics_t waypoint_metrics_; // Metrics for the current waypoint
 
+  // Trajectory sampling period (it is to compute the mission metrics because the trajectory is sampled at this period)
   const double _trajectory_sampling_period_ = 0.2;
 
   // | ------------------ Additional functions ------------------ |
@@ -697,13 +706,13 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::ControlManagerDi
   }
 
   // Update feedback information
-  mission_waypoint_distance_ = distance(current_position, next_waypoint_position);
-  mission_waypoint_eta_ = std::max(static_cast<double>(next_waypoint_point_idx - current_point_idx) * _trajectory_sampling_period_, 0.0);
-  mission_waypoint_progress_ = current_progress;
+  waypoint_metrics_.remaining_distance = distance(current_position, next_waypoint_position);
+  waypoint_metrics_.eta = std::max(static_cast<double>(next_waypoint_point_idx - current_point_idx) * _trajectory_sampling_period_, 0.0);
+  waypoint_metrics_.progress = current_progress;
 
   // Accumulate the distance to the next waypoint and the next trajectory waypoints
-  mission_distance_ = 0.0;
-  mission_eta_ = 0.0;
+  mission_metrics_.remaining_distance = 0.0;
+  mission_metrics_.eta = 0.0;
   for (size_t i = current_trajectory_idx_; i < trajectories_.size(); i++) {
     for (size_t j = 0; j < trajectories_[i].reference.points.size() - 1; j++) {
       if (i == current_trajectory_idx_ && j < current_point_idx) {
@@ -713,8 +722,8 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::ControlManagerDi
       const mrs_msgs::Reference start_position = trajectories_[i].reference.points.at(j);
       const mrs_msgs::Reference end_position = trajectories_[i].reference.points.at(j + 1);
 
-      mission_distance_ += distance(start_position, end_position);
-      mission_eta_ += _trajectory_sampling_period_;
+      mission_metrics_.remaining_distance += distance(start_position, end_position);
+      mission_metrics_.eta += _trajectory_sampling_period_;
     }
   }
 
@@ -828,13 +837,13 @@ void MissionHandler::actionPublishFeedback() {
     action_server_feedback.message = to_string(mission_state_.value());
 
     action_server_feedback.goal_idx = mission_waypoint_idx_;
-    action_server_feedback.distance_to_closest_goal = mission_waypoint_distance_;
-    action_server_feedback.goal_estimated_arrival_time = mission_waypoint_eta_;
-    action_server_feedback.goal_progress = mission_waypoint_progress_;
+    action_server_feedback.distance_to_closest_goal = mission_metrics_.remaining_distance;
+    action_server_feedback.goal_estimated_arrival_time = mission_metrics_.eta;
+    action_server_feedback.goal_progress = mission_metrics_.progress;
 
-    action_server_feedback.distance_to_finish = mission_distance_;
-    action_server_feedback.finish_estimated_arrival_time = mission_eta_;
-    action_server_feedback.mission_progress = mission_progress_;
+    action_server_feedback.distance_to_finish = mission_metrics_.remaining_distance;
+    action_server_feedback.finish_estimated_arrival_time = mission_metrics_.eta;
+    action_server_feedback.mission_progress = mission_metrics_.progress;
 
     action_server_ptr_->publishFeedback(action_server_feedback);
   }
@@ -1531,13 +1540,14 @@ void MissionHandler::resetMission() {
   current_trajectory_waypoint_idx_ = 0;
 
   mission_waypoint_idx_ = 0;
-  mission_waypoint_distance_ = 0.0;
-  mission_waypoint_eta_ = 0.0;
-  mission_waypoint_progress_ = 0.0;
 
-  mission_distance_ = 0.0;
-  mission_eta_ = 0.0;
-  mission_progress_ = 0.0;
+  waypoint_metrics_.remaining_distance = 0.0;
+  waypoint_metrics_.eta = 0.0;
+  waypoint_metrics_.progress = 0.0;
+
+  mission_metrics_.remaining_distance = 0.0;
+  mission_metrics_.eta = 0.0;
+  mission_metrics_.progress = 0.0;
 
   is_current_trajectory_finished_ = false;
   trajectories_.clear();
