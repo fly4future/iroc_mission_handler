@@ -698,6 +698,22 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::ControlManagerDi
   int previous_waypoint_point_idx = current_trajectory_waypoint_idx_ > 0 ? current_trajectory.idxs[current_trajectory_waypoint_idx_ - 1] : 0;
   int next_waypoint_point_idx = current_trajectory.idxs[current_trajectory_waypoint_idx_];
 
+  // | ----------------------- Check if current waypoint is reached ----------------------- |
+  if (current_point_idx >= current_trajectory.idxs[current_trajectory_waypoint_idx_]) {
+    ROS_INFO("[MissionHandler]: Reached %d waypoint in trajectory %d", current_trajectory_waypoint_idx_, current_trajectory_idx_);
+
+    // Reached the current waypoint, update the mission state and indices
+    mission_waypoint_idx_++;
+    current_trajectory_waypoint_idx_++;
+
+    if (current_trajectory_waypoint_idx_ >= current_trajectory.idxs.size()) {
+      // If we reached the last waypoint in the trajectory, mark it as finished and reset the trajectory waypoint index
+      ROS_INFO("[MissionHandler]: Reached last waypoint in trajectory %d", current_trajectory_idx_);
+      is_current_trajectory_finished_ = true;
+      current_trajectory_waypoint_idx_ = 0;
+    }
+  }
+
   // | ----------------------- Update waypoint metrics ----------------------- |
   const mrs_msgs::Reference current_position = current_trajectory.reference.points.at(current_point_idx);
   const mrs_msgs::Reference next_waypoint_position = current_trajectory.reference.points.at(next_waypoint_point_idx);
@@ -747,22 +763,6 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::ControlManagerDi
                                      << "  Remaining distance: " << mission_metrics_.remaining_distance << "\n"
                                      << "  ETA: " << mission_metrics_.eta << "\n"
                                      << "  Progress: " << mission_metrics_.progress << "%\n");
-
-  // | ----------------------- Check if current waypoint is reached ----------------------- |
-  if (current_point_idx >= current_trajectory.idxs[current_trajectory_waypoint_idx_]) {
-    ROS_INFO("[MissionHandler]: Reached %d waypoint in trajectory %d", current_trajectory_waypoint_idx_, current_trajectory_idx_);
-
-    // Reached the current waypoint, update the mission state and indices
-    mission_waypoint_idx_++;
-    current_trajectory_waypoint_idx_++;
-
-    if (current_trajectory_waypoint_idx_ >= current_trajectory.idxs.size()) {
-      // If we reached the last waypoint in the trajectory, mark it as finished and reset the trajectory waypoint index
-      ROS_INFO("[MissionHandler]: Reached last waypoint in trajectory %d", current_trajectory_idx_);
-      is_current_trajectory_finished_ = true;
-      current_trajectory_waypoint_idx_ = 0;
-    }
-  }
 }
 //}
 
