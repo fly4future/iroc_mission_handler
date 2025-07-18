@@ -93,6 +93,7 @@ class MissionHandler : public nodelet::Nodelet {
 
   std::string robot_name_;
   std::atomic_bool is_initialized_ = false;
+  double min_distance_threshold_ = 0.05; // Minimum distance to consider a segment as valid (not just a heading change)
 
   // | -------------------- subtask management ------------------- |
   std::unique_ptr<SubtaskManager> subtask_manager_;
@@ -219,6 +220,7 @@ void MissionHandler::onInit() {
 
   const auto main_timer_rate = param_loader.loadParam2<double>("main_timer_rate");
   const auto feedback_timer_rate = param_loader.loadParam2<double>("feedback_timer_rate");
+  min_distance_threshold_ = param_loader.loadParam2<double>("min_distance_threshold");
 
   if (!param_loader.loadedSuccessfully()) {
     ROS_ERROR("[MissionHandler]: Could not load all parameters!");
@@ -1099,9 +1101,6 @@ std::vector<MissionHandler::path_segment_t> MissionHandler::segmentPath(const mr
     return {};
   }
 
-  // Constants
-  constexpr double MIN_DISTANCE_THRESHOLD = 0.05; // Minimum distance to consider as valid movement
-
   std::vector<path_segment_t> path_segments;
 
   path_segment_t current_segment;
@@ -1117,7 +1116,7 @@ std::vector<MissionHandler::path_segment_t> MissionHandler::segmentPath(const mr
   for (size_t i = 1; i < msg.points.size(); i++) {
     const double dist = distance(msg.points[i - 1], msg.points[i]);
 
-    if (dist < MIN_DISTANCE_THRESHOLD) {
+    if (dist < min_distance_threshold_) {
       if (current_segment.is_valid) { // If the segment is valid, we need to finalize it and start a new one
         path_segments.push_back(current_segment);
 
@@ -1149,7 +1148,7 @@ std::vector<MissionHandler::path_segment_t> MissionHandler::segmentPath(const mr
 
       // Start a new segment with the current point
       current_segment.path.points.push_back(msg.points[i]);
-      if (i + 1 < msg.points.size() && distance(msg.points[i], msg.points[i + 1]) < MIN_DISTANCE_THRESHOLD) {
+      if (i + 1 < msg.points.size() && distance(msg.points[i], msg.points[i + 1]) < min_distance_threshold_) {
         current_segment.is_valid = false;
       } else {
         current_segment.is_valid = true;
