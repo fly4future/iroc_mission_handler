@@ -1,4 +1,2 @@
 main_timer_rate: 100.0 # [Hz]
 feedback_timer_rate: 1.0 # [Hz]
-correspondence_tolerance: 0.15  # Tolerance used to evaluate correspondence with path and trajectory points
-min_distance_threshold: 0.05  # Minimum distance to consider a segment as valid (not just a heading change)
