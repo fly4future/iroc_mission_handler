@@ -143,7 +143,6 @@ class MissionHandler : public nodelet::Nodelet {
   typedef iroc_mission_handler::MissionGoal ActionServerGoal;
   ActionServerGoal action_server_goal_;
   std::recursive_mutex action_server_mutex_;
-  std::recursive_mutex mission_information_mutex;
 
   // | --------------------- mission feedback and trajectory t-------------------- |
   std::vector<trajectory_t> trajectories_;
@@ -820,7 +819,6 @@ void MissionHandler::actionCallbackPreempt() {
 /* actionPublishFeedback()//{ */
 void MissionHandler::actionPublishFeedback() {
   std::scoped_lock lock(action_server_mutex_);
-  std::scoped_lock mission_lock(mission_information_mutex); // Is this right?
 
   if (action_server_ptr_->isActive()) {
     iroc_mission_handler::MissionFeedback action_server_feedback;
