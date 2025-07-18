@@ -153,7 +153,6 @@ class GimbalSubtaskExecutor : public SubtaskExecutorBase {
  private:
   ros::NodeHandle nh_;
   mrs_lib::SubscribeHandlerOptions sh_opts_;
-  std::string base_topic_ = "/uav1/servo_camera";
 
   mrs_lib::SubscribeHandler<std_msgs::Float32MultiArray> sh_current_orientation_;
   ros::ServiceClient sc_set_gimbal_orientation_;
