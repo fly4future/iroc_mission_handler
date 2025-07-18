@@ -173,6 +173,7 @@ class MissionHandler : public nodelet::Nodelet {
 
   // Trajectory sampling period (it is to compute the mission metrics because the trajectory is sampled at this period)
   const double _trajectory_sampling_period_ = 0.2;
+  double mission_progress_before_pause_ = 0.0; // Progress before the mission was paused
 
   // | ------------------ Additional functions ------------------ |
   result_t createMission(const ActionServerGoal& action_server_goal);
@@ -631,6 +632,7 @@ bool MissionHandler::missionPausingServiceCallback(std_srvs::Trigger::Request& r
     ROS_WARN_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
   }
 
+  mission_progress_before_pause_ = mission_metrics_.progress;
   switch (mission_state_.value()) {
     case mission_state_t::MISSION_LOADED: {
       ROS_INFO_STREAM("[MissionHandler]: Mission paused before execution.");
@@ -690,45 +692,63 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::ControlManagerDi
   }
 
   // Get current state
+  int current_point_idx = diagnostics->tracker_status.trajectory_idx;
   trajectory_t& current_trajectory = trajectories_.at(current_trajectory_idx_);
 
-  int current_point_idx = diagnostics->tracker_status.trajectory_idx;
   int previous_waypoint_point_idx = current_trajectory_waypoint_idx_ > 0 ? current_trajectory.idxs[current_trajectory_waypoint_idx_ - 1] : 0;
   int next_waypoint_point_idx = current_trajectory.idxs[current_trajectory_waypoint_idx_];
 
+  // | ----------------------- Update waypoint metrics ----------------------- |
   const mrs_msgs::Reference current_position = current_trajectory.reference.points.at(current_point_idx);
   const mrs_msgs::Reference next_waypoint_position = current_trajectory.reference.points.at(next_waypoint_point_idx);
 
   // Number of points in the current path segment (waypoint to next waypoint)
   const int number_of_points = next_waypoint_point_idx - previous_waypoint_point_idx;
-  double current_progress = 0.0;
-  if (number_of_points > 0) {
-    current_progress = std::min((static_cast<double>(current_point_idx - previous_waypoint_point_idx) / number_of_points) * 100.0, 100.0);
-  }
+  double waypoint_progress = number_of_points > 0 ? (static_cast<double>(current_point_idx - previous_waypoint_point_idx) / number_of_points) * 100.0 : 0.0;
 
-  // Update feedback information
   waypoint_metrics_.remaining_distance = distance(current_position, next_waypoint_position);
   waypoint_metrics_.eta = std::max(static_cast<double>(next_waypoint_point_idx - current_point_idx) * _trajectory_sampling_period_, 0.0);
-  waypoint_metrics_.progress = current_progress;
+  waypoint_metrics_.progress = std::min(waypoint_progress, 100.0);
 
-  // Accumulate the distance to the next waypoint and the next trajectory waypoints
-  mission_metrics_.remaining_distance = 0.0;
-  mission_metrics_.eta = 0.0;
-  for (size_t i = current_trajectory_idx_; i < trajectories_.size(); i++) {
+  // | ----------------------- Update mission metrics ----------------------- |
+  double remaining_distance = 0.0;
+  unsigned int remaining_points = 0;
+  unsigned int total_num_points = 0;
+  for (size_t i = 0; i < trajectories_.size(); i++) {
+    total_num_points += trajectories_[i].reference.points.size() - 1; // Add the number of points in the trajectory
+
+    if (i < current_trajectory_idx_) {
+      continue; // Skip trajectories before the current one
+    }
     for (size_t j = 0; j < trajectories_[i].reference.points.size() - 1; j++) {
-      if (i == current_trajectory_idx_ && j < current_point_idx) {
+      if (i <= current_trajectory_idx_ && j < current_point_idx) {
         continue; // Skip points before the current waypoint
       }
 
       const mrs_msgs::Reference start_position = trajectories_[i].reference.points.at(j);
       const mrs_msgs::Reference end_position = trajectories_[i].reference.points.at(j + 1);
 
-      mission_metrics_.remaining_distance += distance(start_position, end_position);
-      mission_metrics_.eta += _trajectory_sampling_period_;
+      remaining_distance += distance(start_position, end_position);
+      remaining_points++;
     }
+    remaining_points++; // Count the last point of the trajectory as well
   }
+  double current_progress = static_cast<double>(total_num_points - remaining_points) / total_num_points * 100.0;
 
-  // Check if we reached the current waypoint or finished the current trajectory
+  mission_metrics_.progress = std::min(mission_progress_before_pause_ + current_progress * (1.0 - (mission_progress_before_pause_ / 100.0)), 100.0);
+  mission_metrics_.remaining_distance = remaining_distance;
+  mission_metrics_.eta = static_cast<double>(remaining_points) * _trajectory_sampling_period_;
+
+  ROS_DEBUG_STREAM_THROTTLE(1.0, "[MissionHandler]: Current waypoint metrics: \n"
+                                     << "  Remaining distance: " << waypoint_metrics_.remaining_distance << "\n"
+                                     << "  ETA: " << waypoint_metrics_.eta << "\n"
+                                     << "  Progress: " << waypoint_metrics_.progress << "%\n");
+  ROS_DEBUG_STREAM_THROTTLE(1.0, "[MissionHandler]: Mission metrics: \n"
+                                     << "  Remaining distance: " << mission_metrics_.remaining_distance << "\n"
+                                     << "  ETA: " << mission_metrics_.eta << "\n"
+                                     << "  Progress: " << mission_metrics_.progress << "%\n");
+
+  // | ----------------------- Check if current waypoint is reached ----------------------- |
   if (current_point_idx >= current_trajectory.idxs[current_trajectory_waypoint_idx_]) {
     ROS_INFO("[MissionHandler]: Reached %d waypoint in trajectory %d", current_trajectory_waypoint_idx_, current_trajectory_idx_);
 
@@ -838,9 +858,9 @@ void MissionHandler::actionPublishFeedback() {
     action_server_feedback.message = to_string(mission_state_.value());
 
     action_server_feedback.goal_idx = mission_waypoint_idx_;
-    action_server_feedback.distance_to_closest_goal = mission_metrics_.remaining_distance;
-    action_server_feedback.goal_estimated_arrival_time = mission_metrics_.eta;
-    action_server_feedback.goal_progress = mission_metrics_.progress;
+    action_server_feedback.distance_to_closest_goal = waypoint_metrics_.remaining_distance;
+    action_server_feedback.goal_estimated_arrival_time = waypoint_metrics_.eta;
+    action_server_feedback.goal_progress = waypoint_metrics_.progress;
 
     action_server_feedback.distance_to_finish = mission_metrics_.remaining_distance;
     action_server_feedback.finish_estimated_arrival_time = mission_metrics_.eta;
