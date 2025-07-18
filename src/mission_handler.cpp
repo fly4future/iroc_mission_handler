@@ -221,15 +221,16 @@ void MissionHandler::onInit() {
   param_loader.loadParam("custom_config", custom_config_path);
   param_loader.loadParam("robot_name", robot_name_);
 
+  param_loader.addYamlFileFromParam("config");
+  param_loader.addYamlFileFromParam("trajectory_generation_config");
+
   if (custom_config_path != "") {
     param_loader.addYamlFile(custom_config_path);
   }
 
-  param_loader.addYamlFileFromParam("config");
-
   const auto main_timer_rate = param_loader.loadParam2<double>("main_timer_rate");
   const auto feedback_timer_rate = param_loader.loadParam2<double>("feedback_timer_rate");
-  min_distance_threshold_ = param_loader.loadParam2<double>("min_distance_threshold");
+  min_distance_threshold_ = param_loader.loadParam2<double>("mrs_uav_trajectory_generation/min_waypoint_distance");
 
   if (!param_loader.loadedSuccessfully()) {
     ROS_ERROR("[MissionHandler]: Could not load all parameters!");
