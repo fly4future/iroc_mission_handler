@@ -158,12 +158,12 @@ void GimbalSubtaskExecutor::orientationCallback(const std_msgs::Float32MultiArra
     double pitch_den = std::abs(target_pitch_ - initial_pitch_);
     double yaw_den = std::abs(target_yaw_ - initial_yaw_);
 
-    double roll_progress_ = (roll_den > 1e-6) ? std::abs(current_roll - initial_roll_) / roll_den : 1.0;
-    double pitch_progress_ = (pitch_den > 1e-6) ? std::abs(current_pitch - initial_pitch_) / pitch_den : 1.0;
-    double yaw_progress_ = (yaw_den > 1e-6) ? std::abs(current_yaw - initial_yaw_) / yaw_den : 1.0;
+    double roll_progress = (roll_den > 1e-6) ? std::abs(current_roll - initial_roll_) / roll_den : 1.0;
+    double pitch_progress = (pitch_den > 1e-6) ? std::abs(current_pitch - initial_pitch_) / pitch_den : 1.0;
+    double yaw_progress = (yaw_den > 1e-6) ? std::abs(current_yaw - initial_yaw_) / yaw_den : 1.0;
 
     // Calculate overall progress as the average of individual axis progress
-    progress_ = (roll_progress_ + pitch_progress_ + yaw_progress_) / 3.0;
+    progress_ = (roll_progress + pitch_progress + yaw_progress) / 3.0;
 
     if (std::abs(current_pitch - target_pitch_) < GIMBAL_ORIENTATION_TOLERANCE && // Pitch
         std::abs(current_yaw - target_yaw_) < GIMBAL_ORIENTATION_TOLERANCE &&     // Yaw
