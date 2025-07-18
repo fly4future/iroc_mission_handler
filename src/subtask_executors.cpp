@@ -103,17 +103,20 @@ bool GimbalSubtaskExecutor::execute(const std::string& parameters) {
   req.goal[2] = target_yaw_;
 
   mrs_msgs::Vec4::Response res;
-  sc_set_gimbal_orientation_.call(req, res);
+  if (sc_set_gimbal_orientation_.call(req, res)) {
+    if (!res.success) {
+      ROS_ERROR_STREAM("[GimbalSubtaskExecutor]: Failed to set gimbal orientation: " << res.message);
+      return false;
+    }
 
-  if (!res.success) {
-    ROS_ERROR_STREAM("[GimbalSubtaskExecutor]: Failed to set gimbal orientation: " << res.message);
+    ROS_INFO_STREAM("[GimbalSubtaskExecutor]: Executing gimbal command: " << req.goal[0] << ", " << req.goal[1] << ", " << req.goal[2]);
+
+    sh_current_orientation_.start();
+    return true;
+  } else {
+    ROS_ERROR("[GimbalSubtaskExecutor]: Failed to call service to set gimbal orientation");
     return false;
   }
-
-  ROS_INFO_STREAM("[GimbalSubtaskExecutor]: Executing gimbal command: " << req.goal[0] << ", " << req.goal[1] << ", " << req.goal[2]);
-
-  sh_current_orientation_.start();
-  return true;
 }
 
 bool GimbalSubtaskExecutor::isCompleted(double& progress) {

@@ -94,7 +94,7 @@ bool SubtaskManager::stopSubtask(const int id) {
 }
 
 void SubtaskManager::stopAllSubtasks() {
-  ROS_INFO("[SubtaskManager]: Stopping all %ld active subtasks", active_subtasks_.size());
+  ROS_INFO("[SubtaskManager]: Stopping all %zu active subtasks", active_subtasks_.size());
 
   for (auto& [id, executor] : active_subtasks_) {
     bool success = executor->stop();

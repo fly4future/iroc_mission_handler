@@ -1371,9 +1371,9 @@ std::tuple<std::vector<mrs_msgs::Reference>, std::vector<long int>> MissionHandl
 bool MissionHandler::replanMission() {
   std::scoped_lock lock(action_server_mutex_);
 
-  ROS_WARN_STREAM("[MissionHandler]: Replanning trajectory" << current_trajectory_idx_ << ", current goal index: " << current_trajectory_waypoint_idx_
-                                                            << ", waypoints " << trajectories_[current_trajectory_idx_].idxs.size() << ", points "
-                                                            << trajectories_[current_trajectory_idx_].reference.points.size());
+  ROS_WARN_STREAM("[MissionHandler]: Replanning trajectory " << current_trajectory_idx_ << ", current goal index: " << current_trajectory_waypoint_idx_
+                                                             << ", waypoints " << trajectories_[current_trajectory_idx_].idxs.size() << ", points "
+                                                             << trajectories_[current_trajectory_idx_].reference.points.size());
 
   std::vector<std::vector<Subtask>> remaining_subtasks;
   remaining_subtasks.resize(trajectories_[current_trajectory_idx_].idxs.size() - current_trajectory_waypoint_idx_);
@@ -1391,7 +1391,7 @@ bool MissionHandler::replanMission() {
   remaining_path.header.stamp = ros::Time::now();
   remaining_path.fly_now = false;
   remaining_path.use_heading = true;
-  remaining_path.dont_prepend_current_state = false; // do not use the current position for planning of the path
+  remaining_path.dont_prepend_current_state = false; // Use the current position for planning of the path
   remaining_path.header.frame_id = trajectories_[current_trajectory_idx_].reference.header.frame_id;
 
   std::vector<path_segment_t> path_segments = segmentPath(remaining_path, remaining_subtasks);
@@ -1422,6 +1422,7 @@ bool MissionHandler::replanMission() {
   trajectories_ = recomputed_trajectories;
   current_trajectory_waypoint_idx_ = 0; // Reset the goal index to the first goal
   current_trajectory_idx_ = 0;          // Reset the current trajectory index to the first trajectory
+  is_current_trajectory_finished_ = false;
 
   return true;
 }
