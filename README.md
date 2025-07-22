@@ -11,15 +11,26 @@ The state machine for the iroc_mission_handler is designed to manage the drone's
 title: State Machine Diagram
 ---
 stateDiagram-v2
-  ML: Mission Loaded
-  ST: Executing Subtask
-
+  [*] --> Idle
   Idle --> ML: Action server goal received
   ML --> Executing: Start mission service
+
   Executing --> Paused: Pause mission service
   Paused --> Executing: Start mission service
-  Executing --> ST: Segment with subtasks finished
+  Executing --> Idle: Stop mission service
+
+  state if_state <<choice>>
+  Executing --> if_state: Segment finished
+  if_state --> Executing: subtasks <= 0
+  if_state --> ST : subtasks > 0
   ST --> Executing: Subtask finished
+  ST --> ST: Not finished
+  note left of ST: Subtasks are initiated sequentially<br>but can run in parallel<br>if the subtask executor supports it.
+
   Executing --> Finished: No remaining segments
   Finished --> Idle: Terminal action finished
+
+
+  ML: Mission Loaded
+  ST: Executing Subtask
 ```
