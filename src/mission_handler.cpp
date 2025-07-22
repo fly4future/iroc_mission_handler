@@ -106,7 +106,8 @@ class MissionHandler : public nodelet::Nodelet {
 
   std::string robot_name_;
   std::atomic_bool is_initialized_ = false;
-  double min_distance_threshold_; // Minimum distance to consider a segment as valid (not just a heading change)
+  double _min_distance_threshold_; // Minimum distance to consider a segment as valid (not just a heading change)
+  double _trajectory_sampling_period_;
 
   // | -------------------- subtask management ------------------- |
   std::unique_ptr<SubtaskManager> subtask_manager_;
@@ -172,7 +173,6 @@ class MissionHandler : public nodelet::Nodelet {
   metrics_t waypoint_metrics_; // Metrics for the current waypoint
 
   // Trajectory sampling period (it is to compute the mission metrics because the trajectory is sampled at this period)
-  const double _trajectory_sampling_period_ = 0.2;
   double mission_progress_before_pause_ = 0.0; // Progress before the mission was paused
 
   // | ------------------ Additional functions ------------------ |
@@ -214,7 +214,7 @@ void MissionHandler::onInit() {
   /* waits for the ROS to publish clock */
   ros::Time::waitForValid();
 
-  /* load parameters */
+  // Load configuration files
   mrs_lib::ParamLoader param_loader(nh_, "MissionHandler");
 
   std::string custom_config_path;
@@ -229,9 +229,12 @@ void MissionHandler::onInit() {
     param_loader.addYamlFile(custom_config_path);
   }
 
+  // Load parameters
   const auto main_timer_rate = param_loader.loadParam2<double>("main_timer_rate");
   const auto feedback_timer_rate = param_loader.loadParam2<double>("feedback_timer_rate");
-  min_distance_threshold_ = param_loader.loadParam2<double>("mrs_uav_trajectory_generation/min_waypoint_distance");
+
+  _min_distance_threshold_ = param_loader.loadParam2<double>("mrs_uav_trajectory_generation/min_waypoint_distance");
+  _trajectory_sampling_period_ = param_loader.loadParam2<double>("mrs_uav_trajectory_generation/sampling_dt");
 
   if (!param_loader.loadedSuccessfully()) {
     ROS_ERROR("[MissionHandler]: Could not load all parameters!");
@@ -1143,7 +1146,7 @@ std::vector<MissionHandler::path_segment_t> MissionHandler::segmentPath(const mr
   for (size_t i = 1; i < msg.points.size(); i++) {
     const double dist = distance(msg.points[i - 1], msg.points[i]);
 
-    if (dist < min_distance_threshold_) {
+    if (dist < _min_distance_threshold_) {
       if (current_segment.is_valid) { // If the segment is valid, we need to finalize it and start a new one
         path_segments.push_back(current_segment);
 
@@ -1175,7 +1178,7 @@ std::vector<MissionHandler::path_segment_t> MissionHandler::segmentPath(const mr
 
       // Start a new segment with the current point
       current_segment.path.points.push_back(msg.points[i]);
-      if (i + 1 < msg.points.size() && distance(msg.points[i], msg.points[i + 1]) < min_distance_threshold_) {
+      if (i + 1 < msg.points.size() && distance(msg.points[i], msg.points[i + 1]) < _min_distance_threshold_) {
         current_segment.is_valid = false;
       } else {
         current_segment.is_valid = true;
