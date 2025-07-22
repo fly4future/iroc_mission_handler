@@ -1271,7 +1271,7 @@ MissionHandler::generateTrajectoriesFromSegments(const std::vector<path_segment_
     ROS_DEBUG("[MissionHandler]: Points to add: %zu, Indices to add: %zu", points_to_add.size(), idxs_to_add.size());
     if ((points_to_add.empty() || idxs_to_add.empty()) && !segment.subtasks.empty()) {
       ROS_ERROR("[MissionHandler]: No points or indices to add for the segment, skipping. %zu subtasks will not be executed.", segment.subtasks.size());
-      continue; // Skip this segment if no points or indices are available
+      return {result_t{false, "Bad segment, empty trajectory was generated and subtasks will not be executed"}, {}};
     }
 
     // Add points to the current trajectory
