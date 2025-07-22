@@ -15,21 +15,26 @@ stateDiagram-v2
   Idle --> ML: Action server goal received
   ML --> Executing: Start mission service
 
+  Finished --> Idle: Terminal action finished
+  Executing --> Finished: No remaining segments
+
   Executing --> Paused: Pause mission service
   Paused --> Executing: Start mission service
   Executing --> Idle: Stop mission service
+  Executing --> Executing: UAV is tracking trajectory
 
   state if_state <<choice>>
   Executing --> if_state: Segment finished
   if_state --> Executing: subtasks <= 0
-  if_state --> ST : subtasks > 0
-  ST --> Executing: Subtask finished
-  ST --> ST: Not finished
-  note left of ST: Subtasks are initiated sequentially<br>but can run in parallel<br>if the subtask executor supports it.
+  if_state --> subtask: subtasks > 0
 
-  Executing --> Finished: No remaining segments
-  Finished --> Idle: Terminal action finished
-
+  state subtask {
+    [*] --> ST
+    ST --> [*]: Subtask finished
+    ST --> ST: Not finished
+  }
+  note right of subtask: Subtasks are initiated sequentially<br>but can run in parallel<br>if the subtask executor supports it.
+  subtask --> Executing
 
   ML: Mission Loaded
   ST: Executing Subtask
