@@ -1265,7 +1265,13 @@ MissionHandler::generateTrajectoriesFromSegments(const std::vector<path_segment_
       points_to_add = response.trajectory.points;
       idxs_to_add = response.waypoint_trajectory_idxs;
     } else {
-      std::tie(points_to_add, idxs_to_add) = generateHeadingTrajectory(segment.path, 0.2);
+      std::tie(points_to_add, idxs_to_add) = generateHeadingTrajectory(segment.path, _trajectory_sampling_period_);
+    }
+
+    ROS_DEBUG("[MissionHandler]: Points to add: %zu, Indices to add: %zu", points_to_add.size(), idxs_to_add.size());
+    if ((points_to_add.empty() || idxs_to_add.empty()) && !segment.subtasks.empty()) {
+      ROS_ERROR("[MissionHandler]: No points or indices to add for the segment, skipping. %zu subtasks will not be executed.", segment.subtasks.size());
+      continue; // Skip this segment if no points or indices are available
     }
 
     // Add points to the current trajectory
@@ -1368,8 +1374,9 @@ std::tuple<std::vector<mrs_msgs::Reference>, std::vector<long int>> MissionHandl
         point.heading = h0 + t * (std::abs(heading_diff));
         trajectory.push_back(point);
       }
+
+      trajectory_idxs.push_back(trajectory.size() - 1);
     }
-    trajectory_idxs.push_back(trajectory.size() - 1);
     p0 = p1;
   }
 
