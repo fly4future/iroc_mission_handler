@@ -71,10 +71,12 @@ class SubtaskExecutorBase {
   template <typename T>
   bool parseParams(const std::string& str, std::vector<T>& vec) {
     vec.clear();
+
     std::string cleaned_str = str;
     cleaned_str.erase(std::remove(cleaned_str.begin(), cleaned_str.end(), '['), cleaned_str.end());
     cleaned_str.erase(std::remove(cleaned_str.begin(), cleaned_str.end(), ']'), cleaned_str.end());
     cleaned_str.erase(std::remove(cleaned_str.begin(), cleaned_str.end(), ' '), cleaned_str.end());
+
     std::stringstream ss(cleaned_str);
     std::string item;
     while (std::getline(ss, item, ',')) {
