@@ -992,9 +992,6 @@ MissionHandler::result_t MissionHandler::createMission(const ActionServerGoal& a
     if (point.subtasks.empty()) {
       continue;
     }
-    if (point.subtasks.size() > 1) {
-      ROS_WARN_STREAM("[MissionHandler]: More than one subtask at waypoint " << i << ", only the first one will be used.");
-    }
     subtasks.at(i) = point.subtasks;
   }
   std::vector<path_segment_t> path_segments = segmentPath(msg_path, subtasks);
