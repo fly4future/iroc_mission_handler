@@ -22,7 +22,7 @@ void WaitSubtaskExecutor::timerCallback([[maybe_unused]] const ros::TimerEvent& 
   ROS_DEBUG_STREAM("[WaitSubtaskExecutor]: Elapsed time: " << elapsed_time_);
 }
 
-bool WaitSubtaskExecutor::execute(const std::string& parameters) {
+bool WaitSubtaskExecutor::start(const std::string& parameters) {
   // Parse duration from parameters string
   if (!parseParams(parameters, duration_)) {
     ROS_ERROR_STREAM("[WaitSubtaskExecutor]: Invalid duration parameter: " << parameters);
@@ -79,7 +79,7 @@ GimbalSubtaskExecutor::GimbalSubtaskExecutor(const ros::NodeHandle& nh, const mr
   ROS_DEBUG("[GimbalSubtaskExecutor]: Initialized");
 }
 
-bool GimbalSubtaskExecutor::execute(const std::string& parameters) {
+bool GimbalSubtaskExecutor::start(const std::string& parameters) {
   // Parse gimbal control parameters from the parameters string
   std::vector<double> angles;
   if (!parseParams(parameters, angles) || angles.size() != 3) {

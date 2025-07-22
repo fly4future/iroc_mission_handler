@@ -16,11 +16,11 @@ class SubtaskManager {
 
   /**
    * \brief Execute a subtask
-   * \param subtask The subtask message to execute
+   * \param subtask The subtask message to start
    * \param id The index of the subtask
    * \return A tuple containing success status and the subtask ID if successful or an error message if failed.
    */
-  std::tuple<bool, std::string> executeSubtask(const Subtask& subtask, const int id = 0);
+  std::tuple<bool, std::string> startSubtask(const Subtask& subtask, const int id = 0);
 
   /**
    * \brief Check if a subtask has completed

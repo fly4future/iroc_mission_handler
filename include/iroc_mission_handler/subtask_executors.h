@@ -23,7 +23,7 @@ class SubtaskExecutorBase {
    * \param parameters String with task-specific parameters (format depends on task type)
    * \return True if execution started successfully
    */
-  virtual bool execute(const std::string& parameters) = 0;
+  virtual bool start(const std::string& parameters) = 0;
 
   /**
    * \brief Check if the subtask has completed
@@ -105,7 +105,7 @@ class WaitSubtaskExecutor : public SubtaskExecutorBase {
    */
   WaitSubtaskExecutor(const ros::NodeHandle& nh, const double freq = 1.0);
 
-  bool execute(const std::string& parameters) override;
+  bool start(const std::string& parameters) override;
   bool isCompleted(double& progress) override;
   bool stop() override;
 
@@ -148,7 +148,7 @@ class GimbalSubtaskExecutor : public SubtaskExecutorBase {
    *       Example: "1.57,0.707,0.0"
    *       If the string is not in the correct format, an error will be logged and the method will return false.
    */
-  bool execute(const std::string& parameters) override;
+  bool start(const std::string& parameters) override;
   bool isCompleted(double& progress) override;
   bool stop() override;
 

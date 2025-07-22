@@ -9,7 +9,7 @@ SubtaskManager::SubtaskManager(const ros::NodeHandle& nh, const mrs_lib::Subscri
   is_initialized_ = true;
 }
 
-std::tuple<bool, std::string> SubtaskManager::executeSubtask(const Subtask& subtask, const int id) {
+std::tuple<bool, std::string> SubtaskManager::startSubtask(const Subtask& subtask, const int id) {
   // Create the appropriate executor
   std::unique_ptr<SubtaskExecutorBase> executor_ptr = nullptr;
   switch (subtask.type) {
@@ -27,10 +27,10 @@ std::tuple<bool, std::string> SubtaskManager::executeSubtask(const Subtask& subt
   }
 
   // Execute the subtask
-  bool success = executor_ptr->execute(subtask.parameters);
+  bool success = executor_ptr->start(subtask.parameters);
   if (!success) {
-    ROS_ERROR("[SubtaskManager]: Failed to execute subtask %d of type: %d", id, static_cast<int>(subtask.type));
-    return std::make_tuple(false, "Failed to execute subtask");
+    ROS_ERROR("[SubtaskManager]: Failed to start subtask %d of type: %d", id, static_cast<int>(subtask.type));
+    return std::make_tuple(false, "Failed to start subtask");
   }
 
   // Store the active subtask
