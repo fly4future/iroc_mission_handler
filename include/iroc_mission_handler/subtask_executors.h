@@ -103,7 +103,7 @@ class WaitSubtaskExecutor : public SubtaskExecutorBase {
    * \note The frequency is used to set the timer for checking the elapsed time
    *       and can be adjusted based on the required precision.
    */
-  WaitSubtaskExecutor(const ros::NodeHandle& nh, const double freq = 1.0);
+  WaitSubtaskExecutor(const ros::NodeHandle& nh, const double frequency);
 
   bool start(const std::string& parameters) override;
   bool isCompleted(double& progress) override;

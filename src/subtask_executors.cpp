@@ -3,8 +3,8 @@
 namespace iroc_mission_handler {
 // | -------------------- WaitSubtaskExecutor -------------------- |
 
-WaitSubtaskExecutor::WaitSubtaskExecutor(const ros::NodeHandle& nh, const double freq) : nh_(nh) {
-  ros::Rate rate(freq);
+WaitSubtaskExecutor::WaitSubtaskExecutor(const ros::NodeHandle& nh, const double frequency = 10.0) : nh_(nh) {
+  ros::Rate rate(frequency);
   timer_ = nh_.createTimer(rate, &WaitSubtaskExecutor::timerCallback, this, false, false); // Create a timer that will not start immediately
 
   ROS_DEBUG("[WaitSubtaskExecutor]: Initialized");
