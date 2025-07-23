@@ -543,7 +543,7 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
       if (uav_state_.value() != uav_state_t::RC_MODE) {
         ROS_INFO("[MissionHandler]: RC mode disabled. Switching to previous mission mode");
         updateMissionState(previous_mission_state_);
-        return;
+        break;
       }
       break;
     };
