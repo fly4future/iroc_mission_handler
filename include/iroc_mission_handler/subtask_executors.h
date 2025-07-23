@@ -99,7 +99,7 @@ class WaitSubtaskExecutor : public SubtaskExecutorBase {
   /**
    * \brief Constructor for WaitSubtaskExecutor
    * \param nh ROS NodeHandle for communication
-   * \param freq Frequency at which to check the elapsed time (default is 1.0 Hz)
+   * \param frequency Frequency at which to check the elapsed time (default is 1.0 Hz)
    * \note The frequency is used to set the timer for checking the elapsed time
    *       and can be adjusted based on the required precision.
    */

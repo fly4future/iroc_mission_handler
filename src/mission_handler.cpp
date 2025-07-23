@@ -457,14 +457,14 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
       }
 
       break;
-    };
+    }
 
     case mission_state_t::EXECUTING_SUBTASK: {
       if (subtask_manager_->areAllSubtasksCompleted()) {
         updateMissionState(mission_state_t::EXECUTING);
       }
       break;
-    };
+    }
 
     case mission_state_t::FINISHED: {
       switch (action_server_goal_.terminal_action) {
@@ -478,7 +478,7 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
           updateMissionState(mission_state_t::LAND);
           break;
-        };
+        }
 
         case ActionServerGoal::TERMINAL_ACTION_RTH: {
           ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Executing terminal action. Calling land home");
@@ -490,7 +490,7 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
           updateMissionState(mission_state_t::RTH);
           break;
-        };
+        }
 
         default: {
           iroc_mission_handler::MissionResult action_server_result;
@@ -502,13 +502,13 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
           updateMissionState(mission_state_t::IDLE);
           break;
-        };
+        }
       }
 
       // Reset mission state and trajectory tracking
       resetMission();
       break;
-    };
+    }
 
     case mission_state_t::LAND: {
       if (uav_state_.value() == uav_state_t::ARMED || uav_state_.value() == uav_state_t::DISARMED || uav_state_.value() == uav_state_t::OFFBOARD) {
@@ -545,7 +545,7 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
         updateMissionState(previous_mission_state_);
       }
       break;
-    };
+    }
 
     default:
       break;
@@ -583,7 +583,7 @@ bool MissionHandler::missionActivationServiceCallback(std_srvs::Trigger::Request
       is_current_trajectory_finished_ = false;
       updateMissionState(mission_state_t::EXECUTING);
       break;
-    };
+    }
 
     case mission_state_t::PAUSED: {
       ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Replanning mission from current position");
@@ -601,21 +601,21 @@ bool MissionHandler::missionActivationServiceCallback(std_srvs::Trigger::Request
       ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Resuming mission with current trajectory.");
       updateMissionState(mission_state_t::EXECUTING);
       break;
-    };
+    }
 
     case mission_state_t::PAUSED_DUE_TO_RC_MODE: {
       res.success = false;
       res.message = "Mission is paused due to active MRS Remote mode. Disable the mode to continue mission execution.";
       ROS_WARN_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
       return true;
-    };
+    }
 
     default: {
       res.success = false;
       res.message = "Mission is already activated.";
       ROS_WARN_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
       return true;
-    };
+    }
   }
 
   res.success = true;
@@ -643,7 +643,7 @@ bool MissionHandler::missionPausingServiceCallback(std_srvs::Trigger::Request& r
       res.message = "Mission paused before execution.";
       updateMissionState(mission_state_t::PAUSED);
       break;
-    };
+    }
 
     case mission_state_t::EXECUTING: {
       ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Mission paused. Hover started.");
@@ -657,14 +657,14 @@ bool MissionHandler::missionPausingServiceCallback(std_srvs::Trigger::Request& r
 
       updateMissionState(mission_state_t::PAUSED);
       break;
-    };
+    }
 
     default: {
       res.success = false;
       res.message = "Mission is in the state in which cannot be paused.";
       ROS_WARN_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
       break;
-    };
+    }
   }
 
   return true;
@@ -834,7 +834,7 @@ void MissionHandler::actionCallbackPreempt() {
           ROS_INFO("[MissionHandler]: Mission stopped.");
           updateMissionState(mission_state_t::IDLE);
           break;
-        };
+        }
 
         default:
           iroc_mission_handler::MissionResult action_server_result;
