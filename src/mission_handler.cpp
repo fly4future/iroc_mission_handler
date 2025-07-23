@@ -533,8 +533,9 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
         updateMissionState(mission_state_t::IDLE);
         resetMission();
-        return;
       }
+
+      break;
     }
 
     case mission_state_t::PAUSED_DUE_TO_RC_MODE: {
