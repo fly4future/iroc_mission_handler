@@ -13,6 +13,7 @@ set(CATKIN_DEPENDENCIES
   mrs_lib
   actionlib_msgs
   mrs_robot_diagnostics
+  message_generation
 )
 
 set(LIBRARIES
@@ -26,6 +27,13 @@ find_package(catkin REQUIRED COMPONENTS
 add_action_files(
   DIRECTORY action FILES
   Mission.action
+)
+
+add_message_files(
+  DIRECTORY msg
+  FILES
+  Subtask.msg
+  Waypoint.msg
 )
 
 generate_messages(
@@ -49,6 +57,8 @@ include_directories(
 
 add_library(IROCMissionHandler
   src/mission_handler.cpp
+  src/subtask_executors.cpp
+  src/subtask_manager.cpp
 )
 
 add_dependencies(IROCMissionHandler

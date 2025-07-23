@@ -15,7 +15,7 @@ uint8 HEIGHT_ID_FCU=2
 string name 
 uint8 frame_id
 uint8 height_id
-mrs_msgs/Reference[] points
+iroc_mission_handler/Waypoint[] points
 uint8 terminal_action
 ---
 # Define the result
@@ -24,12 +24,16 @@ bool success
 string message
 ---
 # Define a feedback message
-string  name
-string  message
-uint16  goal_idx
-float64 distance_to_finish
-float64 goal_estimated_arrival_time
-float64 mission_progress
-float64 distance_to_closest_goal
-float64 finish_estimated_arrival_time
-float64 goal_progress
+string name
+string message
+
+# Next waypoint information
+uint16 goal_idx                     # Index of the next waypoint the drone is flying to
+float64 distance_to_closest_goal    # Distance (in meters) to the next waypoint
+float64 goal_estimated_arrival_time # Estimated time of arrival (in seconds) to the next waypoint
+float64 goal_progress               # Progress towards the next waypoint as a percentage (0.0 - 100.0)
+
+# Mission completion information
+float64 distance_to_finish            # Remaining distance (in meters) to the mission finish point
+float64 finish_estimated_arrival_time # Estimated time of arrival (in seconds) to the mission finish point
+float64 mission_progress              # Overall mission progress as a percentage (0.0 - 100.0)
