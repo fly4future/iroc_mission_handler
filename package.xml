@@ -26,6 +26,7 @@
 
   <export>
     <nodelet plugin="${prefix}/nodelets.xml" />
+    <iroc_mission_handler plugin="${prefix}/plugins.xml" />
   </export>
 
 </package>

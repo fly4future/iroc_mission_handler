@@ -182,7 +182,7 @@ class MissionHandler : public nodelet::Nodelet {
 
   // Trajectory management functions
   result_t sendTrajectoryToController(const trajectory_t& trajectory);
-  void startSubtasks(const std::vector<iroc_mission_handler::Subtask>& subtasks);
+  void createSubtasks(const std::vector<iroc_mission_handler::Subtask>& subtasks);
 
   result_t validateTrajectory(const trajectory_t& trajectory);
   std::vector<path_segment_t> segmentPath(const mrs_msgs::Path& msg, const std::vector<std::vector<Subtask>>& waypoint_subtasks = {});
@@ -316,7 +316,11 @@ void MissionHandler::onInit() {
   action_server_ptr_->start();
 
   // | -------------------- subtask manager -------------------- |
-  subtask_manager_ = std::make_unique<SubtaskManager>(nh_, sh_opts);
+  CommonHandlers common_handlers = {
+      .nh = nh_,
+      .sh_opts = sh_opts,
+  };
+  subtask_manager_ = std::make_unique<SubtaskManager>(common_handlers);
 
   // | --------------------- finish the init -------------------- |
   ROS_INFO("[MissionHandler]: initialized");
@@ -418,7 +422,7 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
         if (!trajectories_[current_trajectory_idx_].subtasks.empty()) {
           ROS_INFO("[MissionHandler]: Executing subtasks in the waypoint %d ", mission_waypoint_idx_);
-          startSubtasks(trajectories_[current_trajectory_idx_].subtasks);
+          createSubtasks(trajectories_[current_trajectory_idx_].subtasks);
 
           updateMissionState(mission_state_t::EXECUTING_SUBTASK);
         }
@@ -1491,7 +1495,7 @@ MissionHandler::result_t MissionHandler::sendTrajectoryToController(const trajec
 }
 //}
 
-/* startSubtasks() //{ */
+/* createSubtasks() //{ */
 
 /**
  * \brief Executes the given subtasks.
@@ -1501,15 +1505,15 @@ MissionHandler::result_t MissionHandler::sendTrajectoryToController(const trajec
  *
  * \param subtasks A vector of subtasks to be executed.
  */
-void MissionHandler::startSubtasks(const std::vector<iroc_mission_handler::Subtask>& subtasks) {
+void MissionHandler::createSubtasks(const std::vector<iroc_mission_handler::Subtask>& subtasks) {
   for (size_t i = 0; i < subtasks.size(); ++i) {
     const auto& subtask = subtasks[i];
-    ROS_INFO_STREAM("[MissionHandler]: Executing subtask of type: " << static_cast<int>(subtask.type));
+    ROS_INFO_STREAM("[MissionHandler]: Creating subtask of type: " << subtask.type);
 
     // Use the subtask manager to execute the subtask
-    auto [success, message] = subtask_manager_->startSubtask(subtask, i);
+    bool success = subtask_manager_->createSubtask(subtask, i);
     if (!success) {
-      ROS_WARN_STREAM("[MissionHandler]: Failed to execute subtask of type: " << static_cast<int>(subtask.type));
+      ROS_WARN_STREAM("[MissionHandler]: Failed to create subtask of type: " << subtask.type);
       continue;
     }
   }

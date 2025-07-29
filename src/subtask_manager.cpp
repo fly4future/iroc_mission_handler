@@ -2,41 +2,61 @@
 
 namespace iroc_mission_handler {
 
-// | ---------------------- SubtaskManager ---------------------- |
+SubtaskManager::SubtaskManager(const CommonHandlers& common_handlers) : common_handlers_(common_handlers) {
+  plugin_loader_ = std::make_unique<pluginlib::ClassLoader<SubtaskExecutorBase>>("iroc_mission_handler", "iroc_mission_handler::SubtaskExecutorBase");
 
-SubtaskManager::SubtaskManager(const ros::NodeHandle& nh, const mrs_lib::SubscribeHandlerOptions& sh_opts) : nh_(nh), sh_opts_(sh_opts) {
   ROS_INFO("[SubtaskManager]: Initialized");
   is_initialized_ = true;
 }
 
-std::tuple<bool, std::string> SubtaskManager::startSubtask(const Subtask& subtask, const int id) {
-  // Create the appropriate executor
-  std::unique_ptr<SubtaskExecutorBase> executor_ptr = nullptr;
-  switch (subtask.type) {
-    case Subtask::TYPE_WAIT:
-      executor_ptr = std::make_unique<WaitSubtaskExecutor>(nh_);
-      break;
+bool SubtaskManager::createSubtask(const Subtask& subtask, int id) {
+  std::scoped_lock lock(mutex_);
 
-    case Subtask::TYPE_GIMBAL:
-      executor_ptr = std::make_unique<GimbalSubtaskExecutor>(nh_, sh_opts_);
-      break;
+  if (!is_initialized_) {
+    ROS_ERROR("[SubtaskManager]: Not initialized, cannot create subtask");
+    return false;
+  }
 
-    default:
-      ROS_ERROR("[SubtaskManager]: Unknown subtask type: %d", static_cast<int>(subtask.type));
-      return std::make_tuple(false, "Unknown subtask type");
+  if (id < 0) {
+    id = static_cast<int>(active_subtasks_.size());
+    ROS_DEBUG("[SubtaskManager]: No ID provided, using next available ID: %d", id);
+  }
+
+  try {
+    active_subtasks_[id] = plugin_loader_->createInstance(subtask.type);
+    active_subtasks_[id]->initialize(common_handlers_, subtask.parameters);
+  } catch (const std::exception& e) {
+    ROS_ERROR("[SubtaskManager]: Exception while creating subtask for type '%s' with ID %d: %s", subtask.type.c_str(), id, e.what());
+    return false;
+  }
+
+  ROS_DEBUG("[SubtaskManager]: Created subtask executor for type: %s with ID: %d", subtask.type.c_str(), id);
+  return true;
+}
+
+std::tuple<bool, std::string> SubtaskManager::startSubtask(const int id) {
+  std::scoped_lock lock(mutex_);
+
+  auto it = active_subtasks_.find(id);
+  if (it == active_subtasks_.end()) {
+    ROS_WARN("[SubtaskManager]: Cannot start subtask, not found: %d", id);
+    return std::make_tuple(false, "Subtask not found");
+  }
+
+  auto& executor_ptr = it->second;
+  if (!executor_ptr) {
+    ROS_ERROR("[SubtaskManager]: Subtask executor is not initialized for ID: %d", id);
+    return std::make_tuple(false, "Subtask executor not initialized");
   }
 
   // Execute the subtask
-  bool success = executor_ptr->start(subtask.parameters);
+  bool success = executor_ptr->start();
   if (!success) {
-    ROS_ERROR("[SubtaskManager]: Failed to start subtask %d of type: %d", id, static_cast<int>(subtask.type));
+    ROS_ERROR("[SubtaskManager]: Failed to start subtask %d", id);
     return std::make_tuple(false, "Failed to start subtask");
   }
 
-  // Store the active subtask
-  active_subtasks_[id] = std::move(executor_ptr);
-
-  ROS_INFO("[SubtaskManager]: Started subtask: %d of type: %d", id, static_cast<int>(subtask.type));
+  ROS_INFO("[SubtaskManager]: Started subtask: %d", id);
   return std::make_tuple(true, "Subtask started successfully with ID: " + std::to_string(id));
 }
 
