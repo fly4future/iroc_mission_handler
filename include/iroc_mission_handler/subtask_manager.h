@@ -2,6 +2,7 @@
 
 #include <ros/ros.h>
 #include <pluginlib/class_loader.h>
+#include "iroc_mission_handler/common_handlers.h"
 
 #include "subtask_executor_base.h"
 #include "iroc_mission_handler/Subtask.h"
@@ -21,8 +22,7 @@ class SubtaskManager {
   /**
    * \brief Constructor
    *
-   * \param nh ROS NodeHandle for communication
-   * \param sh_opts SubscribeHandler options for executors
+   * \param common_handlers CommonHandlers object for managing ROS communication
    */
   SubtaskManager(const CommonHandlers& common_handlers);
 
@@ -96,6 +96,7 @@ class SubtaskManager {
 
   // Plugin loader for subtask executors
   std::unique_ptr<pluginlib::ClassLoader<SubtaskExecutorBase>> plugin_loader_;
+  std::map<std::string, XmlRpc::XmlRpcValue> plugin_configs_;
 
   // Map of active subtask executors
   std::unordered_map<int, boost::shared_ptr<SubtaskExecutorBase>> active_subtasks_;

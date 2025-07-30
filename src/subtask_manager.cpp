@@ -3,6 +3,35 @@
 namespace iroc_mission_handler {
 
 SubtaskManager::SubtaskManager(const CommonHandlers& common_handlers) : common_handlers_(common_handlers) {
+
+  // | ----------------------- Load parameters ---------------------- |
+  XmlRpc::XmlRpcValue executor_configs;
+  if (!common_handlers_.nh.getParam("mission_handler/subtask_executors", executor_configs)) {
+    ROS_ERROR("[SubtaskManager]: Failed to load subtask executor configurations");
+    return;
+  }
+
+  // Validate the loaded executor configurations
+  if (executor_configs.getType() == XmlRpc::XmlRpcValue::TypeStruct) {
+    ROS_INFO("[SubtaskManager]: Found %d subtask executor configurations", executor_configs.size());
+    for (const auto& key : executor_configs) {
+      if (key.second.getType() != XmlRpc::XmlRpcValue::TypeStruct) {
+        ROS_ERROR("[SubtaskManager]: Invalid configuration for executor type '%s', expected a struct", key.first.c_str());
+        throw std::runtime_error("Invalid subtask executor configuration");
+      } else if (key.second.hasMember("address") && key.second["address"].getType() != XmlRpc::XmlRpcValue::TypeString) {
+        ROS_ERROR("[SubtaskManager]: Invalid address for executor type '%s', expected a string", key.first.c_str());
+        throw std::runtime_error("Invalid subtask executor address");
+      }
+
+      plugin_configs_[key.first] = key.second;
+      ROS_DEBUG("[SubtaskManager]: Loaded subtask executor configuration for type '%s'", key.first.c_str());
+    }
+  } else {
+    ROS_ERROR("[SubtaskManager]: Expected an object for subtask executor plugins. Found type: %d", executor_configs.getType());
+    throw std::runtime_error("Invalid subtask executor configuration type");
+  }
+
+  // | ----------------------- Initialize plugin loader ---------------------- |
   plugin_loader_ = std::make_unique<pluginlib::ClassLoader<SubtaskExecutorBase>>("iroc_mission_handler", "iroc_mission_handler::SubtaskExecutorBase");
 
   ROS_INFO("[SubtaskManager]: Initialized");
@@ -23,9 +52,15 @@ bool SubtaskManager::createSubtask(const Subtask& subtask, int id) {
   }
 
   try {
-    active_subtasks_[id] = plugin_loader_->createInstance(subtask.type);
+    auto it = plugin_configs_.find(subtask.type);
+    if (it == plugin_configs_.end()) {
+      ROS_ERROR("[SubtaskManager]: Subtask type '%s' is not registered in plugin configurations", subtask.type.c_str());
+      return false;
+    }
+
+    active_subtasks_[id] = plugin_loader_->createInstance(it->second["address"]);
     active_subtasks_[id]->initialize(common_handlers_, subtask.parameters);
-  } catch (const std::exception& e) {
+  } catch (const pluginlib::PluginlibException& e) {
     ROS_ERROR("[SubtaskManager]: Exception while creating subtask for type '%s' with ID %d: %s", subtask.type.c_str(), id, e.what());
     return false;
   }

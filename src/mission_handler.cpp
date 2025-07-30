@@ -222,7 +222,6 @@ void MissionHandler::onInit() {
   param_loader.loadParam("custom_config", custom_config_path);
   param_loader.loadParam("robot_name", robot_name_);
 
-  param_loader.addYamlFileFromParam("config");
   param_loader.addYamlFileFromParam("trajectory_generation_config");
 
   if (custom_config_path != "") {
@@ -230,8 +229,8 @@ void MissionHandler::onInit() {
   }
 
   // Load parameters
-  const auto main_timer_rate = param_loader.loadParam2<double>("main_timer_rate");
-  const auto feedback_timer_rate = param_loader.loadParam2<double>("feedback_timer_rate");
+  const auto main_timer_rate = param_loader.loadParam2<double>("mission_handler/main_timer_rate");
+  const auto feedback_timer_rate = param_loader.loadParam2<double>("mission_handler/feedback_timer_rate");
 
   _min_distance_threshold_ = param_loader.loadParam2<double>("mrs_uav_trajectory_generation/min_waypoint_distance");
   _trajectory_sampling_period_ = param_loader.loadParam2<double>("mrs_uav_trajectory_generation/sampling_dt");
@@ -1512,8 +1511,12 @@ void MissionHandler::createSubtasks(const std::vector<iroc_mission_handler::Subt
 
     // Use the subtask manager to execute the subtask
     bool success = subtask_manager_->createSubtask(subtask, i);
+    auto [start_success, start_message] = subtask_manager_->startSubtask(i);
     if (!success) {
       ROS_WARN_STREAM("[MissionHandler]: Failed to create subtask of type: " << subtask.type);
+      continue;
+    } else if (!start_success) {
+      ROS_WARN_STREAM("[MissionHandler]: Failed to start subtask of type: " << subtask.type << ", message: " << start_message);
       continue;
     }
   }
