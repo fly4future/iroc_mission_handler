@@ -1,6 +1,6 @@
 #pragma once
 
-#include "iroc_mission_handler/subtask_executor_base.h"
+#include "iroc_mission_handler/subtask_executor_interface.h"
 
 namespace iroc_mission_handler {
 namespace executors {
@@ -14,7 +14,7 @@ namespace executors {
  * Parameters format: "duration_in_seconds"
  * Example: "5.0" (wait for 5 seconds)
  */
-class WaitExecutor : public SubtaskExecutorBase {
+class WaitExecutor : public SubtaskExecutor {
  public:
   WaitExecutor() = default;
   virtual ~WaitExecutor() = default;
@@ -26,10 +26,6 @@ class WaitExecutor : public SubtaskExecutorBase {
   bool stop() override;
 
   bool isCompleted(double& progress) override;
-
-  std::string getExecutorType() const override {
-    return "wait";
-  }
 
  private:
   ros::Timer timer_;
@@ -49,4 +45,4 @@ class WaitExecutor : public SubtaskExecutorBase {
 } // namespace iroc_mission_handler
 
 #include <pluginlib/class_list_macros.h>
-PLUGINLIB_EXPORT_CLASS(iroc_mission_handler::executors::WaitExecutor, iroc_mission_handler::SubtaskExecutorBase)
+PLUGINLIB_EXPORT_CLASS(iroc_mission_handler::executors::WaitExecutor, iroc_mission_handler::SubtaskExecutor)

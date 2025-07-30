@@ -717,6 +717,7 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::ControlManagerDi
       ROS_INFO("[MissionHandler]: Reached last waypoint in trajectory %d", current_trajectory_idx_);
       is_current_trajectory_finished_ = true;
       current_trajectory_waypoint_idx_ = 0;
+      return;
     }
   }
 
@@ -1511,11 +1512,13 @@ void MissionHandler::createSubtasks(const std::vector<iroc_mission_handler::Subt
 
     // Use the subtask manager to execute the subtask
     bool success = subtask_manager_->createSubtask(subtask, i);
-    auto [start_success, start_message] = subtask_manager_->startSubtask(i);
     if (!success) {
       ROS_WARN_STREAM("[MissionHandler]: Failed to create subtask of type: " << subtask.type);
       continue;
-    } else if (!start_success) {
+    }
+
+    auto [start_success, start_message] = subtask_manager_->startSubtask(i);
+    if (!start_success) {
       ROS_WARN_STREAM("[MissionHandler]: Failed to start subtask of type: " << subtask.type << ", message: " << start_message);
       continue;
     }

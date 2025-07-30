@@ -29,7 +29,7 @@ bool GimbalExecutor::initialize(const CommonHandlers& common_handlers, const std
   sh_current_orientation_ =
       mrs_lib::SubscribeHandler<std_msgs::Float32MultiArray>(sh_opts_, "in/servo_camera/orientation", &GimbalExecutor::orientationCallback, this);
 
-  sc_set_gimbal_orientation_ = nh_.serviceClient<mrs_msgs::Vec4>("out/servo_camera/set_orientation");
+  sc_set_gimbal_orientation_ = nh_.serviceClient<mrs_msgs::Vec4>("svc/servo_camera/set_orientation");
 
   setInitialized(true);
   ROS_DEBUG_STREAM("[GimbalExecutor]: Initialized with target angles - Roll: " << target_roll_ << ", Pitch: " << target_pitch_ << ", Yaw: " << target_yaw_);

@@ -1,9 +1,11 @@
 #pragma once
 
-#include "iroc_mission_handler/subtask_executor_base.h"
 #include <std_msgs/Float32MultiArray.h>
 #include <mrs_msgs/Vec4.h>
+
 #include <mutex>
+
+#include "iroc_mission_handler/subtask_executor_interface.h"
 
 namespace iroc_mission_handler {
 namespace executors {
@@ -17,7 +19,7 @@ namespace executors {
  * Parameters format: "roll,pitch,yaw"
  * Example: "[0.0,1.57,0.707]" (roll=0, pitch=90°, yaw=45°)
  */
-class GimbalExecutor : public SubtaskExecutorBase {
+class GimbalExecutor : public SubtaskExecutor {
  public:
   // Tolerance for orientation matching
   static constexpr double GIMBAL_ORIENTATION_TOLERANCE = 0.01;
@@ -28,11 +30,10 @@ class GimbalExecutor : public SubtaskExecutorBase {
   bool initialize(const CommonHandlers& common_handlers, const std::string& parameters) override;
 
   bool start() override;
-  bool isCompleted(double& progress) override;
   bool stop() override;
-  std::string getExecutorType() const override {
-    return "gimbal";
-  }
+
+  bool isCompleted(double& progress) override;
+
   bool validateParameters(const std::string& parameters) const override;
 
  private:
@@ -65,4 +66,4 @@ class GimbalExecutor : public SubtaskExecutorBase {
 } // namespace iroc_mission_handler
 
 #include <pluginlib/class_list_macros.h>
-PLUGINLIB_EXPORT_CLASS(iroc_mission_handler::executors::GimbalExecutor, iroc_mission_handler::SubtaskExecutorBase)
+PLUGINLIB_EXPORT_CLASS(iroc_mission_handler::executors::GimbalExecutor, iroc_mission_handler::SubtaskExecutor)

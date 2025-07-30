@@ -1,7 +1,7 @@
 #pragma once
 
 #include <ros/ros.h>
-#include "common_handlers.h"
+#include "iroc_mission_handler/common_handlers.h"
 
 namespace iroc_mission_handler {
 
@@ -12,9 +12,9 @@ namespace iroc_mission_handler {
  * It uses the plugin system from ROS (pluginlib) to allow dynamic loading
  * of different executor types at runtime.
  */
-class SubtaskExecutorBase {
+class SubtaskExecutor {
  public:
-  virtual ~SubtaskExecutorBase() = default;
+  virtual ~SubtaskExecutor() = default;
 
   /**
    * \brief Initialize the executor with ROS components
@@ -49,13 +49,6 @@ class SubtaskExecutorBase {
    * \return True if the subtask was stopped successfully
    */
   virtual bool stop() = 0;
-
-  /**
-   * \brief Get the name/type of this executor
-   *
-   * \return String identifier for this executor type
-   */
-  virtual std::string getExecutorType() const = 0;
 
   /**
    * \brief Validate parameters before initialization

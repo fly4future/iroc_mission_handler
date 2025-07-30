@@ -2,9 +2,9 @@
 
 #include <ros/ros.h>
 #include <pluginlib/class_loader.h>
-#include "iroc_mission_handler/common_handlers.h"
 
-#include "subtask_executor_base.h"
+#include "iroc_mission_handler/common_handlers.h"
+#include "iroc_mission_handler/subtask_executor_interface.h"
 #include "iroc_mission_handler/Subtask.h"
 
 #include <mutex>
@@ -76,30 +76,16 @@ class SubtaskManager {
    */
   void stopAllSubtasks();
 
-  /**
-   * \brief Get the number of active subtasks
-   *
-   * \return Number of active subtasks
-   */
-  size_t getActiveSubtaskCount() const;
-
-  /**
-   * \brief Get list of available executor types
-   *
-   * \return Vector of executor type names
-   */
-  std::vector<std::string> getAvailableExecutorTypes() const;
-
  private:
   CommonHandlers common_handlers_;
   bool is_initialized_ = false;
 
   // Plugin loader for subtask executors
-  std::unique_ptr<pluginlib::ClassLoader<SubtaskExecutorBase>> plugin_loader_;
+  std::unique_ptr<pluginlib::ClassLoader<SubtaskExecutor>> plugin_loader_;
   std::map<std::string, XmlRpc::XmlRpcValue> plugin_configs_;
 
   // Map of active subtask executors
-  std::unordered_map<int, boost::shared_ptr<SubtaskExecutorBase>> active_subtasks_;
+  std::unordered_map<int, boost::shared_ptr<SubtaskExecutor>> active_subtasks_;
 
   // Thread safety
   std::mutex mutex_;

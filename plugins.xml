@@ -1,8 +1,8 @@
 <library path="lib/libSubtaskExecutors">
-  <class type="iroc_mission_handler::executors::GimbalSubtaskExecutor" base_class_type="iroc_mission_handler::SubtaskExecutorBase">
+  <class name="iroc_mission_handler/GimbalSubtaskExecutor" type="iroc_mission_handler::executors::GimbalExecutor" base_class_type="iroc_mission_handler::SubtaskExecutor">
     <description>This is a gimbal subtask executor plugin.</description>
   </class>
-  <class type="iroc_mission_handler::executors::WaitSubtaskExecutor" base_class_type="iroc_mission_handler::SubtaskExecutorBase">
+  <class name="iroc_mission_handler/WaitSubtaskExecutor" type="iroc_mission_handler::executors::WaitExecutor" base_class_type="iroc_mission_handler::SubtaskExecutor">
     <description>This is a wait subtask executor plugin.</description>
   </class>
 </library>

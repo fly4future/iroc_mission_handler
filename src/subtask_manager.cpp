@@ -32,7 +32,7 @@ SubtaskManager::SubtaskManager(const CommonHandlers& common_handlers) : common_h
   }
 
   // | ----------------------- Initialize plugin loader ---------------------- |
-  plugin_loader_ = std::make_unique<pluginlib::ClassLoader<SubtaskExecutorBase>>("iroc_mission_handler", "iroc_mission_handler::SubtaskExecutorBase");
+  plugin_loader_ = std::make_unique<pluginlib::ClassLoader<SubtaskExecutor>>("iroc_mission_handler", "iroc_mission_handler::SubtaskExecutor");
 
   ROS_INFO("[SubtaskManager]: Initialized");
   is_initialized_ = true;
@@ -88,6 +88,7 @@ std::tuple<bool, std::string> SubtaskManager::startSubtask(const int id) {
   bool success = executor_ptr->start();
   if (!success) {
     ROS_ERROR("[SubtaskManager]: Failed to start subtask %d", id);
+    active_subtasks_.erase(it);
     return std::make_tuple(false, "Failed to start subtask");
   }
 
