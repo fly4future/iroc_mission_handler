@@ -222,6 +222,7 @@ void MissionHandler::onInit() {
   param_loader.loadParam("custom_config", custom_config_path);
   param_loader.loadParam("robot_name", robot_name_);
 
+  param_loader.addYamlFileFromParam("config");
   param_loader.addYamlFileFromParam("trajectory_generation_config");
 
   if (custom_config_path != "") {

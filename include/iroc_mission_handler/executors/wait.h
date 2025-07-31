@@ -19,7 +19,6 @@ class WaitExecutor : public SubtaskExecutor {
   WaitExecutor() = default;
   virtual ~WaitExecutor() = default;
 
-  bool validateParameters(const std::string& parameters) const override;
   bool initialize(const CommonHandlers& common_handlers, const std::string& parameters) override;
 
   bool start() override;

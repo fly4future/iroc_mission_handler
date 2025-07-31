@@ -4,8 +4,24 @@ namespace iroc_mission_handler {
 namespace executors {
 
 bool WaitExecutor::initialize(const CommonHandlers& common_handlers, const std::string& parameters) {
-  if (!validateParameters(parameters)) {
-    ROS_ERROR_STREAM("[WaitExecutor]: Invalid parameters: " << parameters);
+  // Load parameters
+  mrs_lib::ParamLoader param_loader(common_handlers.nh, "SubtaskManager");
+  param_loader.addYamlFileFromParam("plugin_config");
+
+  double min_duration = param_loader.loadParam2<double>("wait/min_duration", 1.0);
+  double max_duration = param_loader.loadParam2<double>("wait/max_duration", 300.0);
+  double frequency = param_loader.loadParam2<double>("wait/timer_rate", 10.0);
+
+  if (min_duration <= 0.0) {
+    ROS_ERROR("[WaitExecutor]: Invalid min_duration, must be greater than 0.0");
+    return false;
+  }
+  if (max_duration <= 0.0 || max_duration < min_duration) {
+    ROS_ERROR("[WaitExecutor]: Invalid max_duration, must be greater than 0.0 and greater than min_duration");
+    return false;
+  }
+  if (frequency <= 0.0) {
+    ROS_ERROR("[WaitExecutor]: Invalid timer_rate, must be greater than 0.0");
     return false;
   }
 
@@ -15,23 +31,19 @@ bool WaitExecutor::initialize(const CommonHandlers& common_handlers, const std::
     return false;
   }
 
-  if (duration_ <= 0.0) {
-    ROS_ERROR_STREAM("[WaitExecutor]: Duration must be positive: " << duration_);
+  // Check if duration is valid
+  if (duration_ < min_duration || duration_ > max_duration) {
+    ROS_ERROR_STREAM("[WaitExecutor]: Duration must be between " << min_duration << " and " << max_duration << " seconds, got: " << duration_);
     return false;
   }
 
-  // Create timer (will be started in start() method)
-  ros::Rate rate(10.0);
+  // Create timer (will be started in `start()` method)
+  ros::Rate rate(frequency);
   timer_ = common_handlers.nh.createTimer(rate, &WaitExecutor::timerCallback, this, false, false);
 
   setInitialized(true);
   ROS_DEBUG_STREAM("[WaitExecutor]: Initialized with duration: " << duration_ << " seconds");
   return true;
-}
-
-bool WaitExecutor::validateParameters(const std::string& parameters) const {
-  double test_duration;
-  return parseParams(parameters, test_duration) && test_duration > 0.0;
 }
 
 bool WaitExecutor::start() {

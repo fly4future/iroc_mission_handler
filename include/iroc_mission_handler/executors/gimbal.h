@@ -34,8 +34,6 @@ class GimbalExecutor : public SubtaskExecutor {
 
   bool isCompleted(double& progress) override;
 
-  bool validateParameters(const std::string& parameters) const override;
-
  private:
   ros::NodeHandle nh_;
   mrs_lib::SubscribeHandlerOptions sh_opts_;

@@ -22,7 +22,8 @@
 
     <node pkg="nodelet" type="nodelet" name="mission_handler" args="$(arg nodelet) iroc_mission_handler/MissionHandler $(arg nodelet_manager)" launch-prefix="$(arg launch_prefix_debug)" output="screen">
 
-      <rosparam command="load" file="$(find iroc_mission_handler)/config/config.yaml" />
+      <param name="config" value="$(find iroc_mission_handler)/config/config.yaml" />
+      <param name="plugin_config" value="$(find iroc_mission_handler)/config/plugins.yaml" />
       <param name="trajectory_generation_config" value="$(find mrs_uav_trajectory_generation)/config/public/trajectory_generation.yaml" />
 
       <param name="robot_name" value="$(arg UAV_NAME)" />

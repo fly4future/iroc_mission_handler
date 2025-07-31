@@ -4,11 +4,6 @@ namespace iroc_mission_handler {
 namespace executors {
 
 bool GimbalExecutor::initialize(const CommonHandlers& common_handlers, const std::string& parameters) {
-  if (!validateParameters(parameters)) {
-    ROS_ERROR_STREAM("[GimbalExecutor]: Invalid parameters: " << parameters);
-    return false;
-  }
-
   nh_ = common_handlers.nh;
   sh_opts_ = common_handlers.sh_opts;
   sh_opts_.autostart = false; // We will start manually
@@ -26,19 +21,14 @@ bool GimbalExecutor::initialize(const CommonHandlers& common_handlers, const std
   target_yaw_ = angles[2];
 
   // Initialize subscriber and service client
-  sh_current_orientation_ =
-      mrs_lib::SubscribeHandler<std_msgs::Float32MultiArray>(sh_opts_, "in/servo_camera/orientation", &GimbalExecutor::orientationCallback, this);
+  sh_current_orientation_ = mrs_lib::SubscribeHandler<std_msgs::Float32MultiArray>(sh_opts_, "in/servo_camera/orientation", // Remapped
+                                                                                   &GimbalExecutor::orientationCallback, this);
 
   sc_set_gimbal_orientation_ = nh_.serviceClient<mrs_msgs::Vec4>("svc/servo_camera/set_orientation");
 
   setInitialized(true);
   ROS_DEBUG_STREAM("[GimbalExecutor]: Initialized with target angles - Roll: " << target_roll_ << ", Pitch: " << target_pitch_ << ", Yaw: " << target_yaw_);
   return true;
-}
-
-bool GimbalExecutor::validateParameters(const std::string& parameters) const {
-  std::vector<double> test_angles;
-  return parseParams(parameters, test_angles) && test_angles.size() == 3;
 }
 
 bool GimbalExecutor::start() {

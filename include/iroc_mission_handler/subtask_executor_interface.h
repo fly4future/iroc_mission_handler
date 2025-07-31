@@ -1,6 +1,8 @@
 #pragma once
 
 #include <ros/ros.h>
+#include <mrs_lib/param_loader.h>
+
 #include "iroc_mission_handler/common_handlers.h"
 
 namespace iroc_mission_handler {
@@ -19,9 +21,8 @@ class SubtaskExecutor {
   /**
    * \brief Initialize the executor with ROS components
    *
-   * \param nh ROS NodeHandle for communication
-   * \param sh_opts SubscribeHandler options for subscribing to topics
-   * \param parameters String with task-specific parameters
+   * \param common_handlers Common ROS handlers (NodeHandle, SubscribeHandlerOptions, etc.)
+   * \param parameters String with task-specific runtime parameters
    *
    * \return True if initialization was successful
    */
@@ -49,15 +50,6 @@ class SubtaskExecutor {
    * \return True if the subtask was stopped successfully
    */
   virtual bool stop() = 0;
-
-  /**
-   * \brief Validate parameters before initialization
-   *
-   * \param parameters String with task-specific parameters
-   *
-   * \return True if parameters are valid
-   */
-  virtual bool validateParameters(const std::string& parameters) const = 0;
 
  protected:
   /**

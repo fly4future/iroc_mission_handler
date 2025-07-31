@@ -1,0 +1,3 @@
+wait:
+  timer_rate: 10.0 # [Hz]
+  max_duration: 300.0 # [s]

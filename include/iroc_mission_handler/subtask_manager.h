@@ -82,7 +82,7 @@ class SubtaskManager {
 
   // Plugin loader for subtask executors
   std::unique_ptr<pluginlib::ClassLoader<SubtaskExecutor>> plugin_loader_;
-  std::map<std::string, XmlRpc::XmlRpcValue> plugin_configs_;
+  std::map<std::string, std::string> plugin_addresses_;
 
   // Map of active subtask executors
   std::unordered_map<int, boost::shared_ptr<SubtaskExecutor>> active_subtasks_;
