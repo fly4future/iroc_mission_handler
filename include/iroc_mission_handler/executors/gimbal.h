@@ -21,9 +21,6 @@ namespace executors {
  */
 class GimbalExecutor : public SubtaskExecutor {
  public:
-  // Tolerance for orientation matching
-  static constexpr double GIMBAL_ORIENTATION_TOLERANCE = 0.01;
-
   GimbalExecutor() = default;
   virtual ~GimbalExecutor() = default;
 
@@ -41,7 +38,12 @@ class GimbalExecutor : public SubtaskExecutor {
   mrs_lib::SubscribeHandler<std_msgs::Float32MultiArray> sh_current_orientation_;
   ros::ServiceClient sc_set_gimbal_orientation_;
 
+  // Tolerance for orientation matching
+  double _orientation_tolerance_;
+  double _max_movement_time_; // This prevents infinite waiting if the gimbal does not reach the target orientation
+
   double progress_ = 0.0;
+  ros::Time start_time_;
   std::mutex mutex_;
 
   // Gimbal control parameters

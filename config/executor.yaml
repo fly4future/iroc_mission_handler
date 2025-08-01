@@ -1,0 +1,7 @@
+wait:
+  timer_rate: 10.0 # [Hz]
+  max_duration: 300.0 # [s]
+
+gimbal:
+  orientation_tolerance: 0.01 # [rad] - Tolerance for reaching target
+  max_movement_time: 10.0 # [s] - Maximum time to reach position

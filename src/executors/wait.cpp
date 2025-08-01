@@ -6,7 +6,7 @@ namespace executors {
 bool WaitExecutor::initialize(const CommonHandlers& common_handlers, const std::string& parameters) {
   // Load parameters
   mrs_lib::ParamLoader param_loader(common_handlers.nh, "SubtaskManager");
-  param_loader.addYamlFileFromParam("plugin_config");
+  param_loader.addYamlFileFromParam("executor_config");
 
   double min_duration = param_loader.loadParam2<double>("wait/min_duration", 1.0);
   double max_duration = param_loader.loadParam2<double>("wait/max_duration", 300.0);

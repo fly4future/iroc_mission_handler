@@ -1,12 +1,12 @@
 mission_handler:
   main_timer_rate: 100.0 # [Hz]
   feedback_timer_rate: 1.0 # [Hz]
-  available_executors:
-    - wait
-    - gimbal
-  # Add more subtasks as needed
-  subtask_executors:
-    wait:
-      address: "iroc_mission_handler/WaitSubtaskExecutor"
-    gimbal:
-      address: "iroc_mission_handler/GimbalSubtaskExecutor"
+  subtask_manager:
+    available_executors:
+      - wait
+      - gimbal
+    executors:
+      wait:
+        address: "iroc_mission_handler/WaitSubtaskExecutor"
+      gimbal:
+        address: "iroc_mission_handler/GimbalSubtaskExecutor"

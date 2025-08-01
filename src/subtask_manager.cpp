@@ -15,15 +15,18 @@ SubtaskManager::SubtaskManager(const CommonHandlers& common_handlers) : common_h
     param_loader.addYamlFile(custom_config_path);
   }
 
+  param_loader.setPrefix("mission_handler/subtask_manager/");
   std::vector<std::string> available_executors;
-  if (!param_loader.loadParam("mission_handler/available_executors", available_executors)) {
+  if (!param_loader.loadParam("available_executors", available_executors)) {
     ROS_ERROR("[SubtaskManager]: Failed to load subtask executor configurations");
+    ros::shutdown();
     return;
   }
 
   for (const auto& executor : available_executors) {
-    if (!param_loader.loadParam("mission_handler/subtask_executors/" + executor + "/address", plugin_addresses_[executor])) {
+    if (!param_loader.loadParam("executors/" + executor + "/address", plugin_addresses_[executor])) {
       ROS_ERROR("[SubtaskManager]: Failed to load address for subtask executor: %s", executor.c_str());
+      ros::shutdown();
       return;
     }
     ROS_DEBUG("[SubtaskManager]: Loaded subtask executor '%s' with address '%s'", executor.c_str(), plugin_addresses_[executor].c_str());

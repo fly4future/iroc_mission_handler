@@ -4,6 +4,13 @@ namespace iroc_mission_handler {
 namespace executors {
 
 bool GimbalExecutor::initialize(const CommonHandlers& common_handlers, const std::string& parameters) {
+  // Load parameters
+  mrs_lib::ParamLoader param_loader(common_handlers.nh, "SubtaskManager");
+  param_loader.addYamlFileFromParam("executor_config");
+
+  _orientation_tolerance_ = param_loader.loadParam2<double>("gimbal/orientation_tolerance", 0.01);
+  _max_movement_time_ = param_loader.loadParam2<double>("gimbal/max_movement_time", 30.0);
+
   nh_ = common_handlers.nh;
   sh_opts_ = common_handlers.sh_opts;
   sh_opts_.autostart = false; // We will start manually
@@ -48,7 +55,6 @@ bool GimbalExecutor::start() {
   srv.request.goal[0] = target_roll_;
   srv.request.goal[1] = target_pitch_;
   srv.request.goal[2] = target_yaw_;
-  srv.request.goal[3] = 0.0; // Reserved for future use
 
   if (!sc_set_gimbal_orientation_.call(srv)) {
     ROS_ERROR("[GimbalExecutor]: Failed to call gimbal orientation service");
@@ -61,7 +67,9 @@ bool GimbalExecutor::start() {
   }
 
   // Start orientation monitoring
+  std::scoped_lock lock(mutex_);
   sh_current_orientation_.start();
+  start_time_ = ros::Time::now();
   progress_ = 0.0;
 
   ROS_INFO_STREAM("[GimbalExecutor]: Started gimbal command - Roll: " << target_roll_ << ", Pitch: " << target_pitch_ << ", Yaw: " << target_yaw_);
@@ -96,6 +104,10 @@ void GimbalExecutor::orientationCallback(const std_msgs::Float32MultiArray::Cons
 
   if (progress_ >= 1.0) {
     ROS_DEBUG("[GimbalExecutor]: Already completed, stopping orientation monitoring");
+    sh_current_orientation_.stop();
+    return;
+  } else if (ros::Time::now() - start_time_ > ros::Duration(_max_movement_time_)) {
+    ROS_WARN("[GimbalExecutor]: Maximum movement time exceeded, stopping orientation monitoring");
     sh_current_orientation_.stop();
     return;
   }
@@ -134,9 +146,9 @@ void GimbalExecutor::orientationCallback(const std_msgs::Float32MultiArray::Cons
   progress_ = (roll_progress + pitch_progress + yaw_progress) / 3.0;
 
   // Check if target orientation is reached within tolerance
-  if (std::abs(current_roll - target_roll_) < GIMBAL_ORIENTATION_TOLERANCE && std::abs(current_pitch - target_pitch_) < GIMBAL_ORIENTATION_TOLERANCE &&
-      std::abs(current_yaw - target_yaw_) < GIMBAL_ORIENTATION_TOLERANCE) {
-
+  if (std::abs(current_roll - target_roll_) < _orientation_tolerance_ &&   // Roll
+      std::abs(current_pitch - target_pitch_) < _orientation_tolerance_ && // Pitch
+      std::abs(current_yaw - target_yaw_) < _orientation_tolerance_) {     // Yaw
     progress_ = 1.0;
     ROS_INFO("[GimbalExecutor]: Target orientation reached");
   }
