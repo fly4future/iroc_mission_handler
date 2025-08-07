@@ -67,11 +67,12 @@ bool GimbalExecutor::startImpl() {
 
   // Start orientation monitoring
   std::scoped_lock lock(mutex_);
-  sh_current_orientation_.start();
   start_time_ = ros::Time::now();
+  sh_current_orientation_.start();
   progress_ = 0.0;
 
-  ROS_INFO_STREAM("[GimbalExecutor]: Started gimbal command - Roll: " << target_roll_ << ", Pitch: " << target_pitch_ << ", Yaw: " << target_yaw_);
+  ROS_INFO_STREAM("[GimbalExecutor]: Started gimbal command - Roll: " << target_roll_ << ", Pitch: " << target_pitch_ << ", Yaw: " << target_yaw_
+                                                                      << ". Start time: " << start_time_.toSec());
   return true;
 }
 

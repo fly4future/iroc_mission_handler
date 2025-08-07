@@ -100,8 +100,7 @@ class SubtaskExecutor {
    * \return True if the subtask has completed
    */
   bool isCompleted(double& progress) {
-    if (!initialized_) {
-      ROS_ERROR("[SubtaskExecutor]: Executor not initialized");
+    if (!initialized_ || state_ == subtask_state_t::IDLE) {
       progress = 0.0;
       return false;
     }
