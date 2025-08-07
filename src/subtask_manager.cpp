@@ -94,7 +94,7 @@ bool SubtaskManager::createSubtasks(const std::vector<Subtask>& subtasks) {
           continue; // Skip this subtask if it is not critical
         }
       }
-      z active_subtasks_[id] = plugin_instance;
+      active_subtasks_[id] = plugin_instance;
     } catch (const pluginlib::PluginlibException& e) {
       if (subtask.stop_on_failure) {
         ROS_ERROR("[SubtaskManager]: Plugin creation failed for subtask type '%s': %s", subtask.type.c_str(), e.what());
@@ -168,7 +168,7 @@ bool SubtaskManager::startNextSubtask() {
   // Execute the subtask
   auto executor_ptr = it->second;
   if (!executor_ptr->hasStarted()) {
-    executor_ptr->start()
+    executor_ptr->start();
   }
 
   return true;
