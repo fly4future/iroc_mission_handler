@@ -26,7 +26,7 @@ bool WaitExecutor::initializeImpl(const CommonHandlers& common_handlers, const s
   }
 
   // Parse duration from parameters string
-  if (!parseParams(parameters, duration_) || duration_ <= 0.0) {
+  if (!parseParams(parameters, duration_)) {
     ROS_ERROR_STREAM("[WaitExecutor]: Failed to parse duration from parameters: " << parameters);
     return false;
   }

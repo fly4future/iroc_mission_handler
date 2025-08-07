@@ -84,18 +84,17 @@ bool SubtaskManager::createSubtasks(const std::vector<Subtask>& subtasks) {
         }
       }
 
-      active_subtasks_[id] = plugin_loader_->createInstance(it->second);
-
-      if (!active_subtasks_[id]->initialize(subtask, common_handlers_)) {
+      auto plugin_instance = plugin_loader_->createInstance(it->second);
+      if (!plugin_instance->initialize(subtask, common_handlers_)) {
         if (subtask.stop_on_failure) {
           ROS_ERROR("[SubtaskManager]: Failed to initialize subtask executor for type '%s' with ID %ld", subtask.type.c_str(), id);
           return false;
         } else {
           ROS_WARN("[SubtaskManager]: Failed to initialize subtask executor for type '%s' with ID %ld, skipping", subtask.type.c_str(), id);
-          active_subtasks_.erase(id);
           continue; // Skip this subtask if it is not critical
         }
       }
+      z active_subtasks_[id] = plugin_instance;
     } catch (const pluginlib::PluginlibException& e) {
       if (subtask.stop_on_failure) {
         ROS_ERROR("[SubtaskManager]: Plugin creation failed for subtask type '%s': %s", subtask.type.c_str(), e.what());
@@ -169,15 +168,7 @@ bool SubtaskManager::startNextSubtask() {
   // Execute the subtask
   auto executor_ptr = it->second;
   if (!executor_ptr->hasStarted()) {
-    if (!executor_ptr->start()) {
-      if (executor_ptr->shouldStopMissionOnFailure()) {
-        ROS_ERROR("[SubtaskManager]: Failed to start subtask executor for ID: %d", current_subtask_id_);
-        return false;
-      } else {
-        ROS_WARN("[SubtaskManager]: Failed to start subtask executor for ID: %d, skipping", current_subtask_id_);
-        active_subtasks_.erase(current_subtask_id_);
-      }
-    }
+    executor_ptr->start()
   }
 
   return true;

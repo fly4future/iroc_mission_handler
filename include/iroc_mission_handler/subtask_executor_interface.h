@@ -83,6 +83,7 @@ class SubtaskExecutor {
 
     if (!success) {
       ROS_ERROR("[SubtaskExecutor]: Failed to start subtask executor");
+      state_ = subtask_state_t::FAILED;
       return false;
     }
 
