@@ -11,7 +11,7 @@ SubtaskManager::SubtaskManager(const CommonHandlers& common_handlers) : common_h
 
   std::string custom_config_path;
   param_loader.loadParam("custom_config", custom_config_path);
-  if (custom_config_path != "") {
+  if (custom_config_path.empty()) {
     param_loader.addYamlFile(custom_config_path);
   }
 

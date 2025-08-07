@@ -37,7 +37,7 @@ class WaitExecutor : public SubtaskExecutor {
    * \brief Timer callback to check if the wait duration has elapsed
    * \param event Timer event
    */
-  void timerCallback(const ros::TimerEvent& event);
+  void timerCallback([[maybe_unused]] const ros::TimerEvent& event);
 };
 
 } // namespace executors

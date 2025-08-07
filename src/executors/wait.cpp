@@ -76,7 +76,7 @@ bool WaitExecutor::stop() {
   return true;
 }
 
-void WaitExecutor::timerCallback(const ros::TimerEvent& event) {
+void WaitExecutor::timerCallback([[maybe_unused]] const ros::TimerEvent& event) {
   elapsed_time_ = (ros::Time::now() - start_time_).toSec();
 
   if (elapsed_time_ >= duration_) {

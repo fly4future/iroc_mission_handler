@@ -206,11 +206,6 @@ class SubtaskExecutor {
    * \param progress Reference to store the progress value (0.0-1.0)
    *
    * \return True if the subtask has completed
-  /**
-   * \brief Check if the subtask has completed
-   *
-   * \param progress Reference to store the progress value (0.0-1.0)
-   * \return True if completed (either successfully or failed)
    */
   virtual bool checkCompletion(double& progress) = 0;
 
