@@ -34,97 +34,10 @@ SubtaskManager::SubtaskManager(const CommonHandlers& common_handlers) : common_h
 
   // | ----------------------- Initialize plugin loader ---------------------- |
   plugin_loader_ = std::make_unique<pluginlib::ClassLoader<SubtaskExecutor>>("iroc_mission_handler", "iroc_mission_handler::SubtaskExecutor");
-
-  ROS_INFO("[SubtaskManager]: Initialized");
   is_initialized_ = true;
 }
 
-bool SubtaskManager::createSubtask(const Subtask& subtask, int id) {
-  std::scoped_lock lock(mutex_);
-
-  if (!is_initialized_) {
-    ROS_ERROR("[SubtaskManager]: Not initialized, cannot create subtask");
-    return false;
-  }
-
-  if (id < 0) {
-    id = static_cast<int>(active_subtasks_.size());
-    ROS_DEBUG("[SubtaskManager]: No ID provided, using next available ID: %d", id);
-  }
-
-  try {
-    auto it = plugin_addresses_.find(subtask.type);
-    if (it == plugin_addresses_.end()) {
-      ROS_ERROR("[SubtaskManager]: Subtask type '%s' is not registered in plugin configurations", subtask.type.c_str());
-      return false;
-    }
-
-    active_subtasks_[id] = plugin_loader_->createInstance(it->second);
-
-    if (!active_subtasks_[id]->initialize(common_handlers_, subtask.parameters)) {
-      ROS_ERROR("[SubtaskManager]: Failed to initialize subtask executor for type '%s' with ID %d", subtask.type.c_str(), id);
-      active_subtasks_.erase(id);
-      return false;
-    }
-  } catch (const pluginlib::PluginlibException& e) {
-    ROS_ERROR("[SubtaskManager]: Exception while creating subtask for type '%s' with ID %d: %s", subtask.type.c_str(), id, e.what());
-    return false;
-  }
-
-  ROS_DEBUG("[SubtaskManager]: Created subtask executor for type: %s with ID: %d", subtask.type.c_str(), id);
-  return true;
-}
-
-std::tuple<bool, std::string> SubtaskManager::startSubtask(const int id) {
-  std::scoped_lock lock(mutex_);
-
-  auto it = active_subtasks_.find(id);
-  if (it == active_subtasks_.end()) {
-    ROS_WARN("[SubtaskManager]: Cannot start subtask, not found: %d", id);
-    return std::make_tuple(false, "Subtask not found");
-  }
-
-  auto& executor_ptr = it->second;
-  if (!executor_ptr) {
-    ROS_ERROR("[SubtaskManager]: Subtask executor is not initialized for ID: %d", id);
-    return std::make_tuple(false, "Subtask executor not initialized");
-  }
-
-  // Execute the subtask
-  bool success = executor_ptr->start();
-  if (!success) {
-    ROS_ERROR("[SubtaskManager]: Failed to start subtask %d", id);
-    active_subtasks_.erase(it);
-    return std::make_tuple(false, "Failed to start subtask");
-  }
-
-  ROS_INFO("[SubtaskManager]: Started subtask: %d", id);
-  return std::make_tuple(true, "Subtask started successfully with ID: " + std::to_string(id));
-}
-
-bool SubtaskManager::isSubtaskCompleted(const int id, double& progress) {
-  auto it = active_subtasks_.find(id);
-  if (it == active_subtasks_.end()) {
-    ROS_WARN("[SubtaskManager]: Subtask not found: %d", id);
-    return true; // Consider completed if not found
-  }
-
-  bool completed = it->second->isCompleted(progress);
-  if (completed) {
-    // Clean up completed subtask
-    active_subtasks_.erase(it);
-    ROS_DEBUG("[SubtaskManager]: Subtask completed and removed: %d, progress: %f", id, progress);
-  }
-
-  return completed;
-}
-
 bool SubtaskManager::areAllSubtasksCompleted() {
-  if (active_subtasks_.empty()) {
-    ROS_DEBUG("[SubtaskManager]: No active subtasks");
-    return true;
-  }
-
   for (const auto& [id, executor] : active_subtasks_) {
     double progress = 0.0;
     if (!executor->isCompleted(progress)) {
@@ -137,38 +50,197 @@ bool SubtaskManager::areAllSubtasksCompleted() {
   return true; // All subtasks are completed
 }
 
-bool SubtaskManager::stopSubtask(const int id) {
-  auto it = active_subtasks_.find(id);
-  if (it == active_subtasks_.end()) {
-    ROS_WARN("[SubtaskManager]: Cannot stop subtask, not found: %d", id);
-    return false;
+bool SubtaskManager::areCriticalSubtasksFailed() {
+  std::scoped_lock lock(mutex_);
+
+  for (const auto& [id, executor] : active_subtasks_) {
+    if (executor->isFailed() && executor->shouldStopMissionOnFailure()) {
+      ROS_ERROR("[SubtaskManager]: Critical subtask %d failed of type: %s.", id, executor->getType().c_str());
+      return true; // Found a critical subtask that failed
+    }
   }
 
-  bool success = it->second->stop();
-  if (!success) {
-    ROS_ERROR("[SubtaskManager]: Failed to stop subtask: %d", id);
-    return false;
-  }
-
-  active_subtasks_.erase(it);
-  ROS_INFO("[SubtaskManager]: Stopped subtask: %d", id);
-  return success;
+  return false;
 }
 
-void SubtaskManager::stopAllSubtasks() {
-  ROS_INFO("[SubtaskManager]: Stopping all %zu active subtasks", active_subtasks_.size());
+bool SubtaskManager::createSubtasks(const std::vector<Subtask>& subtasks) {
+  std::scoped_lock lock(mutex_);
 
-  for (auto& [id, executor] : active_subtasks_) {
-    bool success = executor->stop();
-    if (!success) {
-      ROS_ERROR("[SubtaskManager]: Failed to stop subtask: %d", id);
+  active_subtasks_.clear();
+  current_subtask_id_ = -1; // Reset current subtask ID
+
+  for (size_t id = 0; id < subtasks.size(); ++id) {
+    const auto& subtask = subtasks[id];
+
+    try {
+      auto it = plugin_addresses_.find(subtask.type);
+      if (it == plugin_addresses_.end()) {
+        if (subtask.stop_on_failure) {
+          ROS_ERROR("[SubtaskManager]: Subtask type '%s' is not registered in plugin configurations", subtask.type.c_str());
+          return false;
+        } else {
+          ROS_WARN("[SubtaskManager]: Subtask type '%s' is not registered in plugin configurations, skipping", subtask.type.c_str());
+          continue; // Skip this subtask if it is not critical
+        }
+      }
+
+      active_subtasks_[id] = plugin_loader_->createInstance(it->second);
+
+      if (!active_subtasks_[id]->initialize(subtask, common_handlers_)) {
+        if (subtask.stop_on_failure) {
+          ROS_ERROR("[SubtaskManager]: Failed to initialize subtask executor for type '%s' with ID %ld", subtask.type.c_str(), id);
+          return false;
+        } else {
+          ROS_WARN("[SubtaskManager]: Failed to initialize subtask executor for type '%s' with ID %ld, skipping", subtask.type.c_str(), id);
+          active_subtasks_.erase(id);
+          continue; // Skip this subtask if it is not critical
+        }
+      }
+    } catch (const pluginlib::PluginlibException& e) {
+      if (subtask.stop_on_failure) {
+        ROS_ERROR("[SubtaskManager]: Plugin creation failed for subtask type '%s': %s", subtask.type.c_str(), e.what());
+        return false;
+      } else {
+        ROS_WARN("[SubtaskManager]: Plugin creation failed for subtask type '%s': %s, skipping", subtask.type.c_str(), e.what());
+        continue; // Skip this subtask if it is not critical
+      }
+    }
+
+    ROS_DEBUG("[SubtaskManager]: Created subtask executor for type: %s with ID: %ld", subtask.type.c_str(), id);
+  }
+
+  return true;
+}
+
+bool SubtaskManager::isCurrentSubtaskCompleted(double& progress) {
+  auto it = active_subtasks_.find(current_subtask_id_);
+  if (it == active_subtasks_.end()) {
+    progress = 0.0; // No current subtask, consider progress as 0
+    return true;
+  }
+
+  if (!it->second->hasStarted()) {
+    ROS_DEBUG("[SubtaskManager]: Current subtask '%s' has not started yet", it->second->getType().c_str());
+    progress = 0.0; // Not started, progress is 0
+    return false;
+  }
+
+  if (!it->second->shouldWaitForCompletion()) {
+    ROS_DEBUG("[SubtaskManager]: Current subtask '%s' does not require waiting for completion", it->second->getType().c_str());
+    return true;
+  }
+
+  return it->second->isCompleted(progress);
+}
+
+bool SubtaskManager::startAllSubtasks() {
+  std::scoped_lock lock(mutex_);
+
+  for (const auto& [id, executor] : active_subtasks_) {
+    if (!executor->hasStarted()) {
+      if (!executor->start()) {
+        if (executor->shouldStopMissionOnFailure()) {
+          ROS_ERROR("[SubtaskManager]: Failed to start subtask executor for ID: %d", id);
+          return false;
+        } else {
+          ROS_WARN("[SubtaskManager]: Failed to start subtask executor for ID: %d, skipping", id);
+          continue; // Skip this subtask if it is not critical
+        }
+      }
+
+      ROS_DEBUG("[SubtaskManager]: Started subtask: %d", id);
+      current_subtask_id_ = id; // Update current subtask ID
+    }
+  }
+
+  return true;
+}
+
+bool SubtaskManager::startNextSubtask() {
+  std::scoped_lock lock(mutex_);
+
+  current_subtask_id_++;
+  auto it = active_subtasks_.find(current_subtask_id_);
+  if (it == active_subtasks_.end()) {
+    ROS_DEBUG("[SubtaskManager]: No more subtasks to start");
+    return false; // No more subtasks to start
+  }
+
+  // Execute the subtask
+  auto executor_ptr = it->second;
+  if (!executor_ptr->hasStarted()) {
+    if (!executor_ptr->start()) {
+      if (executor_ptr->shouldStopMissionOnFailure()) {
+        ROS_ERROR("[SubtaskManager]: Failed to start subtask executor for ID: %d", current_subtask_id_);
+        return false;
+      } else {
+        ROS_WARN("[SubtaskManager]: Failed to start subtask executor for ID: %d, skipping", current_subtask_id_);
+        active_subtasks_.erase(current_subtask_id_);
+      }
+    }
+  }
+
+  return true;
+}
+
+std::tuple<bool, std::string> SubtaskManager::validateSubtasks(const std::vector<Subtask>& subtasks, bool parallel_execution) {
+  std::scoped_lock lock(mutex_);
+
+  if (!is_initialized_) {
+    return std::make_tuple(false, "SubtaskManager not initialized");
+  }
+
+  std::stringstream error_messages;
+  bool has_errors = false;
+
+  // Validate each subtask in the waypoint
+  for (const auto& subtask : subtasks) {
+    auto it = plugin_addresses_.find(subtask.type);
+    if (it == plugin_addresses_.end()) {
+      error_messages << "Subtask type '" << subtask.type << "' is not registered in plugin configurations. ";
+      has_errors = true;
       continue;
     }
 
-    ROS_DEBUG("[SubtaskManager]: Stopped subtask: %d", id);
+    // Validate subtask parameters
+    if (subtask.type.empty()) {
+      error_messages << "Subtask type cannot be empty. ";
+      has_errors = true;
+    }
+
+    // Try to create a temporary executor to validate parameters (simplified)
+    try {
+      auto temp_executor = plugin_loader_->createInstance(it->second);
+      // Note: parameter validation will happen during initialize phase
+      // if (!temp_executor->validateParameters(subtask.parameters)) {
+      //   error_messages << "Invalid parameters '" << subtask.parameters << "' for subtask type '" << subtask.type << "'. ";
+      //   has_errors = true;
+      // }
+    } catch (const pluginlib::PluginlibException& e) {
+      error_messages << "Plugin creation failed for subtask type '" << subtask.type << "': " << e.what() << ". ";
+      has_errors = true;
+    }
   }
 
-  active_subtasks_.clear();
+  // Validate parallel execution logic
+  if (parallel_execution) {
+    std::unordered_set<std::string> seen;
+    for (const auto& subtask : subtasks) {
+      if (seen.count(subtask.type)) {
+        error_messages << "Subtask type '" << subtask.type << "' is duplicated in parallel execution. ";
+        has_errors = true;
+      } else {
+        seen.insert(subtask.type);
+      }
+    }
+  }
+
+  if (has_errors) {
+    return std::make_tuple(false, error_messages.str());
+  }
+
+  ROS_INFO("[SubtaskManager]: All waypoint subtasks validated successfully");
+  return std::make_tuple(true, "All subtasks validated successfully");
 }
 
 } // namespace iroc_mission_handler

@@ -3,7 +3,7 @@
 namespace iroc_mission_handler {
 namespace executors {
 
-bool GimbalExecutor::initialize(const CommonHandlers& common_handlers, const std::string& parameters) {
+bool GimbalExecutor::initializeImpl(const CommonHandlers& common_handlers, const std::string& parameters) {
   // Load parameters
   mrs_lib::ParamLoader param_loader(common_handlers.nh, "SubtaskManager");
   param_loader.addYamlFileFromParam("executor_config");
@@ -33,17 +33,11 @@ bool GimbalExecutor::initialize(const CommonHandlers& common_handlers, const std
 
   sc_set_gimbal_orientation_ = nh_.serviceClient<mrs_msgs::Vec4>("svc/servo_camera/set_orientation");
 
-  setInitialized(true);
   ROS_DEBUG_STREAM("[GimbalExecutor]: Initialized with target angles - Roll: " << target_roll_ << ", Pitch: " << target_pitch_ << ", Yaw: " << target_yaw_);
   return true;
 }
 
-bool GimbalExecutor::start() {
-  if (!isInitialized()) {
-    ROS_ERROR("[GimbalExecutor]: Executor not initialized");
-    return false;
-  }
-
+bool GimbalExecutor::startImpl() {
   // Wait for service to be available
   if (!sc_set_gimbal_orientation_.waitForExistence(ros::Duration(5.0))) {
     ROS_ERROR("[GimbalExecutor]: Gimbal orientation service not available");
@@ -62,7 +56,7 @@ bool GimbalExecutor::start() {
   }
 
   if (!srv.response.success) {
-    ROS_ERROR_STREAM("[GimbalExecutor]: Gimbal service rejected command: " << srv.response.message);
+    ROS_ERROR_STREAM("[GimbalExecutor]: Gimbal orientation service failed: " << srv.response.message);
     return false;
   }
 
@@ -76,24 +70,13 @@ bool GimbalExecutor::start() {
   return true;
 }
 
-bool GimbalExecutor::isCompleted(double& progress) {
-  if (!isInitialized()) {
-    ROS_ERROR("[GimbalExecutor]: Executor not initialized");
-    progress = 0.0;
-    return false;
-  }
-
+bool GimbalExecutor::checkCompletion(double& progress) {
   std::scoped_lock lock(mutex_);
   progress = progress_;
   return progress_ >= 1.0;
 }
 
 bool GimbalExecutor::stop() {
-  if (!isInitialized()) {
-    ROS_WARN("[GimbalExecutor]: Executor not initialized, nothing to stop");
-    return true;
-  }
-
   sh_current_orientation_.stop();
   ROS_INFO("[GimbalExecutor]: Stopped gimbal executor");
   return true;

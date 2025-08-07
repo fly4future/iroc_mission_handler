@@ -61,29 +61,33 @@ class MissionHandler : public nodelet::Nodelet {
   /**
    * \brief Struct to hold path segments.
    *
-   * This struct contains a path, a validity flag, and a vector of subtasks.
+   * This struct contains a path, a validity flag, a vector of subtasks, and execution mode.
    * - `path`: The path segment.
    * - `is_valid`: A boolean indicating whether the path segment is a valid movement path (true) or just heading changes (false).
    * - `subtasks`: A vector of subtasks that will be executed at the end of the path segment.
+   * - `parallel_execution`: Whether subtasks should be executed in parallel or sequentially.
    */
   struct path_segment_t {
     mrs_msgs::Path path;
     bool is_valid;
     std::vector<iroc_mission_handler::Subtask> subtasks;
+    bool parallel_execution = false;
   };
 
   /**
    * \brief Struct to hold trajectory information and track subtasks.
    *
-   * This struct contains a trajectory reference, a vector of trajectory indices, and a vector of subtasks.
+   * This struct contains a trajectory reference, a vector of trajectory indices, a vector of subtasks, and execution mode.
    * - `reference`: The trajectory reference.
    * - `idxs`: A vector of indices corresponding to the trajectory points indices (each index corresponds to a point in the trajectory).
    * - `subtasks`: A vector of subtasks associated with the trajectory.
+   * - `parallel_execution`: Whether subtasks should be executed in parallel or sequentially.
    */
   struct trajectory_t {
     mrs_msgs::TrajectoryReference reference;
     std::vector<long int> idxs;
     std::vector<iroc_mission_handler::Subtask> subtasks;
+    bool parallel_execution = false;
   };
 
   /**
@@ -185,7 +189,7 @@ class MissionHandler : public nodelet::Nodelet {
   void createSubtasks(const std::vector<iroc_mission_handler::Subtask>& subtasks);
 
   result_t validateTrajectory(const trajectory_t& trajectory);
-  std::vector<path_segment_t> segmentPath(const mrs_msgs::Path& msg, const std::vector<std::vector<Subtask>>& waypoint_subtasks = {});
+  std::vector<path_segment_t> segmentPath(const mrs_msgs::Path& msg, const std::vector<iroc_mission_handler::Waypoint>& waypoints);
   std::tuple<std::vector<mrs_msgs::Reference>, std::vector<long int>> generateHeadingTrajectory(const mrs_msgs::Path& path, double T);
   std::tuple<result_t, std::vector<trajectory_t>> generateTrajectoriesFromSegments(const std::vector<path_segment_t>& path_segments);
 
@@ -422,9 +426,10 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
 
         if (!trajectories_[current_trajectory_idx_].subtasks.empty()) {
           ROS_INFO("[MissionHandler]: Executing subtasks in the waypoint %d ", mission_waypoint_idx_);
-          createSubtasks(trajectories_[current_trajectory_idx_].subtasks);
+          subtask_manager_->createSubtasks(trajectories_[current_trajectory_idx_].subtasks);
 
           updateMissionState(mission_state_t::EXECUTING_SUBTASK);
+          break;
         }
 
         // Move to next trajectory
@@ -464,9 +469,42 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
     }
 
     case mission_state_t::EXECUTING_SUBTASK: {
+      // Execute the current subtask
+      if (trajectories_[current_trajectory_idx_].parallel_execution) {
+        subtask_manager_->startAllSubtasks();
+      } else {
+        double progress = 0.0;
+        if (subtask_manager_->isCurrentSubtaskCompleted(progress)) {
+          subtask_manager_->startNextSubtask();
+        } else {
+          ROS_DEBUG_STREAM("[MissionHandler]: Subtask is still running. Progress: " << progress * 100.0 << "%");
+        }
+      }
+
+      // Check if any critical subtasks have failed
+      if (subtask_manager_->areCriticalSubtasksFailed()) {
+        ROS_WARN_STREAM("[MissionHandler]: Critical subtask failed. Aborting mission.");
+        iroc_mission_handler::MissionResult action_server_result;
+        action_server_result.name = robot_name_;
+        action_server_result.success = false;
+        action_server_result.message = "Critical subtask failed.";
+        action_server_ptr_->setAborted(action_server_result);
+
+        updateMissionState(mission_state_t::IDLE);
+        resetMission();
+        return;
+      }
+
+      // Continue with the mission if all subtasks are completed
       if (subtask_manager_->areAllSubtasksCompleted()) {
+        ROS_INFO_STREAM("[MissionHandler]: All subtasks completed for trajectory " << current_trajectory_idx_);
+
+        // Move to next trajectory
+        current_trajectory_idx_++;
+        is_current_trajectory_finished_ = false;
         updateMissionState(mission_state_t::EXECUTING);
       }
+
       break;
     }
 
@@ -906,9 +944,16 @@ MissionHandler::result_t MissionHandler::createMission(const ActionServerGoal& a
   }
 
   for (const auto& point : action_server_goal.points) {
+    // Validate subtasks for each point
+    auto [success, error_message] = subtask_manager_->validateSubtasks(point.subtasks, point.parallel_execution);
+    if (!success) {
+      return {false, "Subtask validation failed for point: " + error_message};
+    }
+
     ROS_DEBUG("[MissionHandler]: Point: x:%f y:%f z:%f h:%f ", point.reference_point.position.x, point.reference_point.position.y,
               point.reference_point.position.z, point.reference_point.heading);
   }
+  ROS_INFO("[MissionHandler]: All subtasks validated successfully");
 
   std::string frame_id;
   switch (action_server_goal.frame_id) {
@@ -993,16 +1038,7 @@ MissionHandler::result_t MissionHandler::createMission(const ActionServerGoal& a
   msg_path.header.frame_id = transformed_array.header.frame_id;
 
   // Segmenting the path into segments based on subtasks and heading trajectories
-  std::vector<std::vector<iroc_mission_handler::Subtask>> subtasks;
-  subtasks.resize(msg_path.points.size());
-  for (size_t i = 0; i < action_server_goal.points.size(); i++) {
-    const auto& point = action_server_goal.points.at(i);
-    if (point.subtasks.empty()) {
-      continue;
-    }
-    subtasks.at(i) = point.subtasks;
-  }
-  std::vector<path_segment_t> path_segments = segmentPath(msg_path, subtasks);
+  std::vector<path_segment_t> path_segments = segmentPath(msg_path, action_server_goal.points);
 
   // Generating trajectory from the path segments
   auto [result, trajectories] = generateTrajectoriesFromSegments(path_segments);
@@ -1096,7 +1132,7 @@ MissionHandler::result_t MissionHandler::validateTrajectory(const trajectory_t& 
  * determine if a new segment should be started.
  *
  * \param msg The input path message containing reference points.
- * \param waypoint_subtasks A vector of subtasks associated with each waypoint (it must match the size of the path points).
+ * \param waypoints A vector of waypoints with their subtasks and execution flags.
  *
  * \return A vector of segmented paths.
  *
@@ -1124,15 +1160,16 @@ MissionHandler::result_t MissionHandler::validateTrajectory(const trajectory_t& 
  *   - P3 to P4: Valid segment (distance > 0.05m, new subtask)
  *   - P4 to P5: Valid segment (distance > 0.05m)
  */
-std::vector<MissionHandler::path_segment_t> MissionHandler::segmentPath(const mrs_msgs::Path& msg, const std::vector<std::vector<Subtask>>& waypoint_subtasks) {
+std::vector<MissionHandler::path_segment_t> MissionHandler::segmentPath(const mrs_msgs::Path& msg,
+                                                                        const std::vector<iroc_mission_handler::Waypoint>& waypoints) {
   // Input validation
   if (msg.points.empty()) {
     ROS_WARN("[MissionHandler]: Empty path provided to segmentPath.");
     return {};
   }
 
-  if (msg.points.size() != waypoint_subtasks.size()) {
-    ROS_WARN("[MissionHandler]: Number of subtasks (%zu) does not match number of points in the path (%zu).", waypoint_subtasks.size(), msg.points.size());
+  if (msg.points.size() != waypoints.size()) {
+    ROS_WARN("[MissionHandler]: Number of waypoints (%zu) does not match number of points in the path (%zu).", waypoints.size(), msg.points.size());
     return {};
   }
 
@@ -1172,14 +1209,16 @@ std::vector<MissionHandler::path_segment_t> MissionHandler::segmentPath(const mr
     // Add the current point to the segment
     current_segment.path.points.push_back(msg.points[i]);
 
-    // Check if there are subtasks for the current point that require segment break
-    if (!waypoint_subtasks.at(i).empty()) {
-      current_segment.subtasks = waypoint_subtasks.at(i);
+    // Check if there are subtasks for the current waypoint that require segment break
+    if (!waypoints.at(i).subtasks.empty()) {
+      current_segment.subtasks = waypoints.at(i).subtasks;
+      current_segment.parallel_execution = waypoints.at(i).parallel_execution;
       path_segments.push_back(current_segment);
 
       // Reset the current segment for the next points
       current_segment.path.points.clear();
       current_segment.subtasks.clear();
+      current_segment.parallel_execution = false;
 
       // Start a new segment with the current point
       current_segment.path.points.push_back(msg.points[i]);
@@ -1201,8 +1240,10 @@ std::vector<MissionHandler::path_segment_t> MissionHandler::segmentPath(const mr
   ROS_DEBUG("[MissionHandler]: Path segments: %zu", path_segments.size());
 
   for (size_t segment_idx = 0; segment_idx < path_segments.size(); ++segment_idx) {
-    ROS_DEBUG("[MissionHandler]: Segment %ld: %s", segment_idx + 1, path_segments[segment_idx].is_valid ? "Valid" : "Invalid");
-    for (const auto& point : path_segments[segment_idx].path.points) {
+    const auto& segment = path_segments[segment_idx];
+    ROS_DEBUG("[MissionHandler]: Segment %ld: %s, Subtasks: %zu, Parallel: %s", segment_idx + 1, segment.is_valid ? "Valid" : "Invalid",
+              segment.subtasks.size(), segment.parallel_execution ? "Yes" : "No");
+    for (const auto& point : segment.path.points) {
       ROS_DEBUG("[MissionHandler]: Point: %f, %f, %f Heading: %f", point.position.x, point.position.y, point.position.z, point.heading);
     }
   }
@@ -1298,6 +1339,7 @@ MissionHandler::generateTrajectoriesFromSegments(const std::vector<path_segment_
       trajectory.reference = current_trajectory;
       trajectory.idxs = current_trajectory_idxs;
       trajectory.subtasks = segment.subtasks;
+      trajectory.parallel_execution = segment.parallel_execution;
 
       trajectories.push_back(trajectory);
 
@@ -1414,9 +1456,11 @@ bool MissionHandler::replanMission() {
                                                              << ", waypoints " << trajectories_[current_trajectory_idx_].idxs.size() << ", points "
                                                              << trajectories_[current_trajectory_idx_].reference.points.size());
 
-  std::vector<std::vector<Subtask>> remaining_subtasks;
-  remaining_subtasks.resize(trajectories_[current_trajectory_idx_].idxs.size() - current_trajectory_waypoint_idx_);
-  remaining_subtasks.back() = trajectories_[current_trajectory_idx_].subtasks; // Copy the last subtask to the last point
+  // Create waypoints from the remaining points and subtasks
+  std::vector<iroc_mission_handler::Waypoint> remaining_waypoints;
+  remaining_waypoints.resize(trajectories_[current_trajectory_idx_].idxs.size() - current_trajectory_waypoint_idx_);
+  remaining_waypoints.back().subtasks = trajectories_[current_trajectory_idx_].subtasks;                     // Copy the last subtask to the last point
+  remaining_waypoints.back().parallel_execution = trajectories_[current_trajectory_idx_].parallel_execution; // Copy the parallel execution flag
 
   std::vector<mrs_msgs::Reference> remaining_points;
   for (size_t i = current_trajectory_waypoint_idx_; i < trajectories_[current_trajectory_idx_].idxs.size(); i++) {
@@ -1433,7 +1477,7 @@ bool MissionHandler::replanMission() {
   remaining_path.dont_prepend_current_state = false; // Use the current position for planning of the path
   remaining_path.header.frame_id = trajectories_[current_trajectory_idx_].reference.header.frame_id;
 
-  std::vector<path_segment_t> path_segments = segmentPath(remaining_path, remaining_subtasks);
+  std::vector<path_segment_t> path_segments = segmentPath(remaining_path, remaining_waypoints);
 
   // Generating trajectory from the path segments
   auto [result, recomputed_trajectories] = generateTrajectoriesFromSegments(path_segments);
@@ -1507,22 +1551,18 @@ MissionHandler::result_t MissionHandler::sendTrajectoryToController(const trajec
  * \param subtasks A vector of subtasks to be executed.
  */
 void MissionHandler::createSubtasks(const std::vector<iroc_mission_handler::Subtask>& subtasks) {
-  for (size_t i = 0; i < subtasks.size(); ++i) {
-    const auto& subtask = subtasks[i];
-    ROS_INFO_STREAM("[MissionHandler]: Creating subtask of type: " << subtask.type);
+  // Create all subtasks at once
+  bool success = subtask_manager_->createSubtasks(subtasks);
+  if (!success) {
+    ROS_WARN_STREAM("[MissionHandler]: Failed to create subtasks");
+    return;
+  }
 
-    // Use the subtask manager to execute the subtask
-    bool success = subtask_manager_->createSubtask(subtask, i);
-    if (!success) {
-      ROS_WARN_STREAM("[MissionHandler]: Failed to create subtask of type: " << subtask.type);
-      continue;
-    }
-
-    auto [start_success, start_message] = subtask_manager_->startSubtask(i);
-    if (!start_success) {
-      ROS_WARN_STREAM("[MissionHandler]: Failed to start subtask of type: " << subtask.type << ", message: " << start_message);
-      continue;
-    }
+  // Start all subtasks
+  success = subtask_manager_->startAllSubtasks();
+  if (!success) {
+    ROS_WARN_STREAM("[MissionHandler]: Failed to start subtasks");
+    return;
   }
 }
 //}

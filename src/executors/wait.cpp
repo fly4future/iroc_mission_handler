@@ -3,7 +3,7 @@
 namespace iroc_mission_handler {
 namespace executors {
 
-bool WaitExecutor::initialize(const CommonHandlers& common_handlers, const std::string& parameters) {
+bool WaitExecutor::initializeImpl(const CommonHandlers& common_handlers, const std::string& parameters) {
   // Load parameters
   mrs_lib::ParamLoader param_loader(common_handlers.nh, "SubtaskManager");
   param_loader.addYamlFileFromParam("executor_config");
@@ -26,7 +26,7 @@ bool WaitExecutor::initialize(const CommonHandlers& common_handlers, const std::
   }
 
   // Parse duration from parameters string
-  if (!parseParams(parameters, duration_)) {
+  if (!parseParams(parameters, duration_) || duration_ <= 0.0) {
     ROS_ERROR_STREAM("[WaitExecutor]: Failed to parse duration from parameters: " << parameters);
     return false;
   }
@@ -41,17 +41,11 @@ bool WaitExecutor::initialize(const CommonHandlers& common_handlers, const std::
   ros::Rate rate(frequency);
   timer_ = common_handlers.nh.createTimer(rate, &WaitExecutor::timerCallback, this, false, false);
 
-  setInitialized(true);
   ROS_DEBUG_STREAM("[WaitExecutor]: Initialized with duration: " << duration_ << " seconds");
   return true;
 }
 
-bool WaitExecutor::start() {
-  if (!isInitialized()) {
-    ROS_ERROR("[WaitExecutor]: Executor not initialized");
-    return false;
-  }
-
+bool WaitExecutor::startImpl() {
   start_time_ = ros::Time::now();
   elapsed_time_ = 0.0;
   timer_.start();
@@ -60,13 +54,7 @@ bool WaitExecutor::start() {
   return true;
 }
 
-bool WaitExecutor::isCompleted(double& progress) {
-  if (!isInitialized()) {
-    ROS_ERROR("[WaitExecutor]: Executor not initialized");
-    progress = 0.0;
-    return false;
-  }
-
+bool WaitExecutor::checkCompletion(double& progress) {
   if (duration_ <= 0.0) {
     ROS_ERROR("[WaitExecutor]: Duration is not set or invalid");
     progress = 0.0;
@@ -78,11 +66,6 @@ bool WaitExecutor::isCompleted(double& progress) {
 }
 
 bool WaitExecutor::stop() {
-  if (!isInitialized()) {
-    ROS_WARN("[WaitExecutor]: Executor not initialized, nothing to stop");
-    return true;
-  }
-
   if (timer_.hasStarted()) {
     timer_.stop();
     ROS_INFO("[WaitExecutor]: Stopped wait execution");

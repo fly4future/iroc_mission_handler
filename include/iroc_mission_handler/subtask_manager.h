@@ -27,35 +27,6 @@ class SubtaskManager {
   SubtaskManager(const CommonHandlers& common_handlers);
 
   /**
-   * \brief Create a subtask executor using the plugin system
-   *
-   * \param subtask The subtask definition containing type and parameters
-   * \param id Unique ID for this subtask instance (auto-generated if < 0)
-   *
-   * \return True if the executor was created successfully
-   */
-  bool createSubtask(const Subtask& subtask, int id = -1);
-
-  /**
-   * \brief Start execution of a subtask
-   *
-   * \param id The ID of the subtask to start
-   *
-   * \return Tuple of (success, message)
-   */
-  std::tuple<bool, std::string> startSubtask(const int id = 0);
-
-  /**
-   * \brief Check if a subtask has completed
-   *
-   * \param id The ID of the subtask to check
-   * \param progress Reference to store current progress (0.0-1.0)
-   *
-   * \return True if the subtask is completed
-   */
-  bool isSubtaskCompleted(const int id, double& progress);
-
-  /**
    * \brief Check if all active subtasks have completed
    *
    * \return True if all subtasks are completed or no subtasks are active
@@ -63,22 +34,59 @@ class SubtaskManager {
   bool areAllSubtasksCompleted();
 
   /**
-   * \brief Stop a specific subtask
+   * \brief Check if any critical subtasks have failed
    *
-   * \param id The ID of the subtask to stop
-   *
-   * \return True if the subtask was stopped successfully
+   * \return True if any critical subtask has failed
    */
-  bool stopSubtask(const int id);
+  bool areCriticalSubtasksFailed();
 
   /**
-   * \brief Stop all active subtasks
+   * \brief Create a subtask executor using the plugin system
+   *
+   * \param subtasks Vector of subtasks to create
+   *
+   * \return True if all non-critical subtasks were created successfully
    */
-  void stopAllSubtasks();
+  bool createSubtasks(const std::vector<Subtask>& subtasks);
+
+  /**
+   * \brief Check if a subtask has completed
+   *
+   * \param progress Reference to store current progress (0.0-1.0)
+   *
+   * \return True if the subtask is completed
+   */
+  bool isCurrentSubtaskCompleted(double& progress);
+
+  /**
+   * \brief Start all active subtasks
+   *
+   * \return True if all subtasks were started successfully
+   */
+  bool startAllSubtasks();
+
+  /**
+   * \brief Start the next subtask in the queue
+   *
+   * \return True if the next subtask was started successfully
+   */
+  bool startNextSubtask();
+
+  /**
+   * \brief Validate waypoint subtasks before mission execution
+   *
+   * \param subtasks Vector of subtasks to validate
+   *
+   * \return Tuple of (success, error_message)
+   */
+  std::tuple<bool, std::string> validateSubtasks(const std::vector<Subtask>& subtasks, bool parallel_execution = false);
 
  private:
   CommonHandlers common_handlers_;
+
   bool is_initialized_ = false;
+  bool has_started_subtasks_ = false;
+  int current_subtask_id_ = -1;
 
   // Plugin loader for subtask executors
   std::unique_ptr<pluginlib::ClassLoader<SubtaskExecutor>> plugin_loader_;

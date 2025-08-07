@@ -19,12 +19,12 @@ class WaitExecutor : public SubtaskExecutor {
   WaitExecutor() = default;
   virtual ~WaitExecutor() = default;
 
-  bool initialize(const CommonHandlers& common_handlers, const std::string& parameters) override;
-
-  bool start() override;
   bool stop() override;
 
-  bool isCompleted(double& progress) override;
+ protected:
+  bool initializeImpl(const CommonHandlers& common_handlers, const std::string& parameters) override;
+  bool startImpl() override;
+  bool checkCompletion(double& progress) override;
 
  private:
   ros::Timer timer_;
