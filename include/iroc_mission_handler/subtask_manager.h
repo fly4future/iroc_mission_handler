@@ -3,7 +3,6 @@
 #include <ros/ros.h>
 #include <pluginlib/class_loader.h>
 
-#include "iroc_mission_handler/common_handlers.h"
 #include "iroc_mission_handler/subtask_executor_interface.h"
 #include "iroc_mission_handler/Subtask.h"
 
