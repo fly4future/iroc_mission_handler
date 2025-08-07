@@ -89,7 +89,7 @@ void GimbalExecutor::orientationCallback(const std_msgs::Float32MultiArray::Cons
     ROS_DEBUG("[GimbalExecutor]: Already completed, stopping orientation monitoring");
     sh_current_orientation_.stop();
     return;
-  } else if (ros::Time::now() - start_time_ > ros::Duration(_max_movement_time_)) {
+  } else if ((ros::Time::now() - start_time_).toSec() > _max_movement_time_) {
     ROS_WARN("[GimbalExecutor]: Maximum movement time exceeded, stopping orientation monitoring");
     sh_current_orientation_.stop();
     return;
