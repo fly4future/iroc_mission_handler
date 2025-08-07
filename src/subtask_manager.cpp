@@ -2,10 +2,9 @@
 
 namespace iroc_mission_handler {
 
-SubtaskManager::SubtaskManager(const CommonHandlers& common_handlers) : common_handlers_(common_handlers) {
-
+SubtaskManager::SubtaskManager(ros::NodeHandle& nh) : nh_(nh) {
   // | ----------------------- Load parameters ---------------------- |
-  mrs_lib::ParamLoader param_loader(common_handlers.nh, "SubtaskManager");
+  mrs_lib::ParamLoader param_loader(nh_, "SubtaskManager");
 
   param_loader.addYamlFileFromParam("config");
 
@@ -85,7 +84,7 @@ bool SubtaskManager::createSubtasks(const std::vector<Subtask>& subtasks) {
       }
 
       auto plugin_instance = plugin_loader_->createInstance(it->second);
-      if (!plugin_instance->initialize(subtask, common_handlers_)) {
+      if (!plugin_instance->initialize(nh_, subtask)) {
         if (subtask.stop_on_failure) {
           ROS_ERROR("[SubtaskManager]: Failed to initialize subtask executor for type '%s' with ID %ld", subtask.type.c_str(), id);
           return false;
@@ -174,7 +173,7 @@ bool SubtaskManager::startNextSubtask() {
   return true;
 }
 
-std::tuple<bool, std::string> SubtaskManager::validateSubtasks(const std::vector<Subtask>& subtasks, bool parallel_execution) {
+std::tuple<bool, std::string> SubtaskManager::validateSubtasks(const std::vector<Subtask>& subtasks) {
   std::scoped_lock lock(mutex_);
 
   if (!is_initialized_) {
@@ -196,26 +195,13 @@ std::tuple<bool, std::string> SubtaskManager::validateSubtasks(const std::vector
     // Create a temporary executor to validate parameters
     try {
       auto temp_executor = plugin_loader_->createInstance(it->second);
-      if (!temp_executor->initialize(subtask, common_handlers_)) { // Validate parameters
+      if (!temp_executor->initialize(nh_, subtask)) { // Validate parameters
         error_messages << "Failed to initialize subtask executor for type '" << subtask.type << "'. Check parameters, received: " << subtask.parameters << ". ";
         has_errors = true;
       }
     } catch (const pluginlib::PluginlibException& e) {
       error_messages << "Plugin creation failed for subtask type '" << subtask.type << "': " << e.what() << ". ";
       has_errors = true;
-    }
-  }
-
-  // Validate parallel execution logic
-  if (parallel_execution) {
-    std::unordered_set<std::string> seen;
-    for (const auto& subtask : subtasks) {
-      if (seen.count(subtask.type)) {
-        error_messages << "Subtask type '" << subtask.type << "' is duplicated in parallel execution. ";
-        has_errors = true;
-      } else {
-        seen.insert(subtask.type);
-      }
     }
   }
 

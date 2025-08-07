@@ -2,8 +2,8 @@
 
 #include <ros/ros.h>
 #include <mrs_lib/param_loader.h>
+#include <mrs_lib/subscribe_handler.h>
 
-#include "iroc_mission_handler/common_handlers.h"
 #include "iroc_mission_handler/Subtask.h"
 #include "iroc_mission_handler/enums/subtask_state.h"
 
@@ -22,12 +22,12 @@ class SubtaskExecutor {
   /**
    * \brief Initialize the executor with ROS components
    *
-   * \param common_handlers Common ROS handlers (NodeHandle, SubscribeHandlerOptions, etc.)
+   * \param nh ROS NodeHandle
    * \param parameters String with task-specific runtime parameters
    *
    * \return True if initialization was successful
    */
-  bool initialize(const Subtask& subtask, const CommonHandlers& common_handlers) {
+  bool initialize(ros::NodeHandle& nh, const Subtask& subtask) {
     if (initialized_) {
       ROS_WARN("[SubtaskExecutor]: Already initialized");
       return true;
@@ -46,7 +46,7 @@ class SubtaskExecutor {
     }
 
     // Start initialization and parameter validation
-    if (!initializeImpl(common_handlers, subtask_->parameters)) {
+    if (!initializeImpl(nh, subtask_->parameters)) {
       ROS_ERROR("[SubtaskExecutor]: Failed to initialize derived class implementation");
       return false;
     }
@@ -186,13 +186,12 @@ class SubtaskExecutor {
   /**
    * \brief Initialize the executor with ROS components (to be implemented by derived classes)
    *
-   * \param subtask The subtask definition
-   * \param common_handlers Common ROS handlers
+   * \param nh NodeHandle for ROS communication
    * \param parameters String with task-specific runtime parameters
    *
    * \return True if initialization was successful
    */
-  virtual bool initializeImpl(const CommonHandlers& common_handlers, const std::string& parameters) = 0;
+  virtual bool initializeImpl(ros::NodeHandle& nh, const std::string& parameters) = 0;
 
   /**
    * \brief Start the subtask execution (to be implemented by derived classes)

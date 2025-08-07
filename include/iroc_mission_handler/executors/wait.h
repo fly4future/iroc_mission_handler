@@ -22,7 +22,7 @@ class WaitExecutor : public SubtaskExecutor {
   bool stop() override;
 
  protected:
-  bool initializeImpl(const CommonHandlers& common_handlers, const std::string& parameters) override;
+  bool initializeImpl(ros::NodeHandle& nh, const std::string& parameters) override;
   bool startImpl() override;
   bool checkCompletion(double& progress) override;
 

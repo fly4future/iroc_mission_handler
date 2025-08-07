@@ -22,9 +22,9 @@ class SubtaskManager {
   /**
    * \brief Constructor
    *
-   * \param common_handlers CommonHandlers object for managing ROS communication
+   * \param nh ROS NodeHandle
    */
-  SubtaskManager(const CommonHandlers& common_handlers);
+  SubtaskManager(ros::NodeHandle& nh);
 
   /**
    * \brief Check if all active subtasks have completed
@@ -79,10 +79,10 @@ class SubtaskManager {
    *
    * \return Tuple of (success, error_message)
    */
-  std::tuple<bool, std::string> validateSubtasks(const std::vector<Subtask>& subtasks, bool parallel_execution = false);
+  std::tuple<bool, std::string> validateSubtasks(const std::vector<Subtask>& subtasks);
 
  private:
-  CommonHandlers common_handlers_;
+  ros::NodeHandle nh_;
 
   bool is_initialized_ = false;
   bool has_started_subtasks_ = false;

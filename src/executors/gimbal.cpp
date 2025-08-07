@@ -3,17 +3,13 @@
 namespace iroc_mission_handler {
 namespace executors {
 
-bool GimbalExecutor::initializeImpl(const CommonHandlers& common_handlers, const std::string& parameters) {
+bool GimbalExecutor::initializeImpl(ros::NodeHandle& nh, const std::string& parameters) {
   // Load parameters
-  mrs_lib::ParamLoader param_loader(common_handlers.nh, "SubtaskManager");
+  mrs_lib::ParamLoader param_loader(nh, "SubtaskManager");
   param_loader.addYamlFileFromParam("executor_config");
 
   _orientation_tolerance_ = param_loader.loadParam2<double>("gimbal/orientation_tolerance", 0.01);
   _max_movement_time_ = param_loader.loadParam2<double>("gimbal/max_movement_time", 30.0);
-
-  nh_ = common_handlers.nh;
-  sh_opts_ = common_handlers.sh_opts;
-  sh_opts_.autostart = false; // We will start manually
 
   // Parse gimbal control parameters from the parameters string
   std::vector<double> angles;
@@ -28,10 +24,19 @@ bool GimbalExecutor::initializeImpl(const CommonHandlers& common_handlers, const
   target_yaw_ = angles[2];
 
   // Initialize subscriber and service client
-  sh_current_orientation_ = mrs_lib::SubscribeHandler<std_msgs::Float32MultiArray>(sh_opts_, "in/servo_camera/orientation", // Remapped
+  mrs_lib::SubscribeHandlerOptions sh_opts;
+  sh_opts.nh = nh;
+  sh_opts.node_name = "MissionHandler";
+  sh_opts.no_message_timeout = ros::Duration(5.0);
+  sh_opts.threadsafe = true;
+  sh_opts.autostart = false;
+  sh_opts.queue_size = 10;
+  sh_opts.transport_hints = ros::TransportHints().tcpNoDelay();
+
+  sh_current_orientation_ = mrs_lib::SubscribeHandler<std_msgs::Float32MultiArray>(sh_opts, "in/servo_camera/orientation", // Remapped
                                                                                    &GimbalExecutor::orientationCallback, this);
 
-  sc_set_gimbal_orientation_ = nh_.serviceClient<mrs_msgs::Vec4>("svc/servo_camera/set_orientation");
+  sc_set_gimbal_orientation_ = nh.serviceClient<mrs_msgs::Vec4>("svc/servo_camera/set_orientation");
 
   ROS_DEBUG_STREAM("[GimbalExecutor]: Initialized with target angles - Roll: " << target_roll_ << ", Pitch: " << target_pitch_ << ", Yaw: " << target_yaw_);
   return true;

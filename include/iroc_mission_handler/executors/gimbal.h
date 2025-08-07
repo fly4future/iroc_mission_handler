@@ -27,14 +27,11 @@ class GimbalExecutor : public SubtaskExecutor {
   bool stop() override;
 
  protected:
-  bool initializeImpl(const CommonHandlers& common_handlers, const std::string& parameters) override;
+  bool initializeImpl(ros::NodeHandle& nh, const std::string& parameters) override;
   bool startImpl() override;
   bool checkCompletion(double& progress) override;
 
  private:
-  ros::NodeHandle nh_;
-  mrs_lib::SubscribeHandlerOptions sh_opts_;
-
   mrs_lib::SubscribeHandler<std_msgs::Float32MultiArray> sh_current_orientation_;
   ros::ServiceClient sc_set_gimbal_orientation_;
 

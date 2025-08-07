@@ -3,9 +3,9 @@
 namespace iroc_mission_handler {
 namespace executors {
 
-bool WaitExecutor::initializeImpl(const CommonHandlers& common_handlers, const std::string& parameters) {
+bool WaitExecutor::initializeImpl(ros::NodeHandle& nh, const std::string& parameters) {
   // Load parameters
-  mrs_lib::ParamLoader param_loader(common_handlers.nh, "SubtaskManager");
+  mrs_lib::ParamLoader param_loader(nh, "SubtaskManager");
   param_loader.addYamlFileFromParam("executor_config");
 
   double min_duration = param_loader.loadParam2<double>("wait/min_duration", 1.0);
@@ -39,7 +39,7 @@ bool WaitExecutor::initializeImpl(const CommonHandlers& common_handlers, const s
 
   // Create timer (will be started in `start()` method)
   ros::Rate rate(frequency);
-  timer_ = common_handlers.nh.createTimer(rate, &WaitExecutor::timerCallback, this, false, false);
+  timer_ = nh.createTimer(rate, &WaitExecutor::timerCallback, this, false, false);
 
   ROS_DEBUG_STREAM("[WaitExecutor]: Initialized with duration: " << duration_ << " seconds");
   return true;

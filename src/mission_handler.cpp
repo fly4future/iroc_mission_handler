@@ -320,11 +320,7 @@ void MissionHandler::onInit() {
   action_server_ptr_->start();
 
   // | -------------------- subtask manager -------------------- |
-  CommonHandlers common_handlers = {
-      .nh = nh_,
-      .sh_opts = sh_opts,
-  };
-  subtask_manager_ = std::make_unique<SubtaskManager>(common_handlers);
+  subtask_manager_ = std::make_unique<SubtaskManager>(nh_);
 
   // | --------------------- finish the init -------------------- |
   ROS_INFO("[MissionHandler]: initialized");
@@ -945,9 +941,21 @@ MissionHandler::result_t MissionHandler::createMission(const ActionServerGoal& a
 
   for (const auto& point : action_server_goal.points) {
     // Validate subtasks for each point
-    auto [success, error_message] = subtask_manager_->validateSubtasks(point.subtasks, point.parallel_execution);
+    auto [success, error_message] = subtask_manager_->validateSubtasks(point.subtasks);
     if (!success) {
       return {false, "Subtask validation failed for point: " + error_message};
+    }
+
+    // Validate parallel execution logic
+    if (point.parallel_execution) {
+      std::unordered_set<std::string> seen;
+      for (const auto& subtask : point.subtasks) {
+        if (seen.count(subtask.type)) {
+          return {false, "Subtask type '" + subtask.type + "' is duplicated in parallel execution."};
+        } else {
+          seen.insert(subtask.type);
+        }
+      }
     }
 
     ROS_DEBUG("[MissionHandler]: Point: x:%f y:%f z:%f h:%f ", point.reference_point.position.x, point.reference_point.position.y,
