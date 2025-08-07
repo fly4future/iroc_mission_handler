@@ -193,20 +193,13 @@ std::tuple<bool, std::string> SubtaskManager::validateSubtasks(const std::vector
       continue;
     }
 
-    // Validate subtask parameters
-    if (subtask.type.empty()) {
-      error_messages << "Subtask type cannot be empty. ";
-      has_errors = true;
-    }
-
-    // Try to create a temporary executor to validate parameters (simplified)
+    // Create a temporary executor to validate parameters
     try {
       auto temp_executor = plugin_loader_->createInstance(it->second);
-      // Note: parameter validation will happen during initialize phase
-      // if (!temp_executor->validateParameters(subtask.parameters)) {
-      //   error_messages << "Invalid parameters '" << subtask.parameters << "' for subtask type '" << subtask.type << "'. ";
-      //   has_errors = true;
-      // }
+      if (!temp_executor->initialize(subtask, common_handlers_)) { // Validate parameters
+        error_messages << "Failed to initialize subtask executor for type '" << subtask.type << "'. Check parameters, received: " << subtask.parameters << ". ";
+        has_errors = true;
+      }
     } catch (const pluginlib::PluginlibException& e) {
       error_messages << "Plugin creation failed for subtask type '" << subtask.type << "': " << e.what() << ". ";
       has_errors = true;

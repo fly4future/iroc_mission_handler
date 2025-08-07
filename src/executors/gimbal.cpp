@@ -73,6 +73,11 @@ bool GimbalExecutor::startImpl() {
 bool GimbalExecutor::checkCompletion(double& progress) {
   std::scoped_lock lock(mutex_);
   progress = progress_;
+
+  if ((ros::Time::now() - start_time_).toSec() > _max_movement_time_) {
+    return true; // Consider it completed if max movement time exceeded
+  }
+
   return progress_ >= 1.0;
 }
 
