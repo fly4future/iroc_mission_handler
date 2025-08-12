@@ -752,8 +752,9 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::ControlManagerDi
       ROS_INFO("[MissionHandler]: Reached last waypoint in trajectory %d", current_trajectory_idx_);
       is_current_trajectory_finished_ = true;
       current_trajectory_waypoint_idx_ = 0;
-      return;
     }
+
+    return;
   }
 
   // | ----------------------- Update waypoint metrics ----------------------- |

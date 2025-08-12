@@ -116,6 +116,11 @@ class SubtaskExecutor {
                   subtask_->stop_on_failure ? "true" : "false");
       }
     }
+
+    if (state_ == subtask_state_t::FAILED) {
+      return true; // Return true even if failed, to allow checking progress
+    }
+
     return completed;
   }
 
