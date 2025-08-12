@@ -4,10 +4,18 @@ namespace iroc_mission_handler {
 namespace executors {
 
 bool WaitExecutor::initializeImpl(ros::NodeHandle& nh, const std::string& parameters) {
-  // Load parameters
   mrs_lib::ParamLoader param_loader(nh, "SubtaskManager");
   param_loader.addYamlFileFromParam("executor_config");
 
+  // Load custom configuration if provided
+  std::string custom_config_path;
+  param_loader.loadParam("custom_config", custom_config_path);
+  if (custom_config_path != "") {
+    param_loader.addYamlFile(custom_config_path);
+  }
+
+  // Load parameters
+  param_loader.setPrefix("subtask_executors/");
   double min_duration = param_loader.loadParam2<double>("wait/min_duration", 1.0);
   double max_duration = param_loader.loadParam2<double>("wait/max_duration", 300.0);
   double frequency = param_loader.loadParam2<double>("wait/timer_rate", 10.0);
