@@ -959,8 +959,8 @@ MissionHandler::result_t MissionHandler::createMission(const ActionServerGoal& a
       }
     }
 
-    ROS_DEBUG("[MissionHandler]: Point: x:%f y:%f z:%f h:%f ", point.reference_point.position.x, point.reference_point.position.y,
-              point.reference_point.position.z, point.reference_point.heading);
+    ROS_DEBUG("[MissionHandler]: Point: x:%f y:%f z:%f h:%f ", point.reference.position.x, point.reference.position.y, point.reference.position.z,
+              point.reference.heading);
   }
   ROS_INFO("[MissionHandler]: All subtasks validated successfully");
 
@@ -1003,7 +1003,7 @@ MissionHandler::result_t MissionHandler::createMission(const ActionServerGoal& a
   std::vector<double> height_points;
   if (action_server_goal.height_id == ActionServerGoal::HEIGHT_ID_AGL) {
     for (const auto& point : action_server_goal.points) {
-      height_points.push_back(point.reference_point.position.z);
+      height_points.push_back(point.reference.position.z);
     }
   }
 
@@ -1013,7 +1013,7 @@ MissionHandler::result_t MissionHandler::createMission(const ActionServerGoal& a
   goal_points_array.array.clear();
   goal_points_array.array.reserve(action_server_goal.points.size());
   for (const auto& point : action_server_goal.points) {
-    goal_points_array.array.push_back(point.reference_point);
+    goal_points_array.array.push_back(point.reference);
   }
 
   /* This could be replaced with TBD ControlManager Service "transformReferenceArray" */
