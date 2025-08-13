@@ -169,6 +169,7 @@ class MissionHandler : public nodelet::Nodelet {
   int current_trajectory_waypoint_idx_ = 0; // Index of the current waypoint in the current trajectory
 
   std::atomic_bool is_current_trajectory_finished_ = false;
+  std::atomic_bool is_trajectory_sent_ = false;
 
   // Waypoint information (which waypoint is currently being followed)
   int mission_waypoint_idx_ = 0; // Index of the current waypoint being followed
@@ -435,7 +436,7 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
       }
 
       // Send and start the trajectory
-      if (uav_state_.value() == uav_state_t::HOVER) {
+      if (uav_state_.value() == uav_state_t::HOVER && !is_trajectory_sent_) {
         ROS_INFO_STREAM("[MissionHandler]: Starting trajectory id " << current_trajectory_idx_ << ", total " << trajectories_.size());
         auto result = sendTrajectoryToController(trajectories_[current_trajectory_idx_]);
         if (!result.success) {
@@ -458,6 +459,7 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
           ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call mission start service: %s", start_res.message.c_str());
           updateMissionState(mission_state_t::MISSION_LOADED);
         }
+        is_trajectory_sent_ = true;
         break;
       }
 
@@ -732,6 +734,9 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::ControlManagerDi
     return;
   }
 
+  if (!is_trajectory_sent_) {
+    is_trajectory_sent_ = false;
+  }
   // Get current state
   int current_point_idx = diagnostics->tracker_status.trajectory_idx;
   trajectory_t& current_trajectory = trajectories_.at(current_trajectory_idx_);
