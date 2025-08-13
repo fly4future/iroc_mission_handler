@@ -1,4 +1,4 @@
-<library path="lib/libSubtaskExecutors">
+<library path="lib/libIROCMIssionHandler_BasicSubtaskExecutors">
   <class name="iroc_mission_handler/GimbalSubtaskExecutor" type="iroc_mission_handler::executors::GimbalExecutor" base_class_type="iroc_mission_handler::SubtaskExecutor">
     <description>This is a gimbal subtask executor plugin.</description>
   </class>
