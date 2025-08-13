@@ -264,50 +264,50 @@ void MissionHandler::onInit() {
 
   // | --------------------- service clients -------------------- |
   sc_takeoff_ = nh_.serviceClient<std_srvs::Trigger>("svc/takeoff");
-  ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/offboard\' -> \'%s\'", sc_takeoff_.getService().c_str());
+  ROS_INFO("[MissionHandler]: Created ServiceClient on service \'svc/offboard\' -> \'%s\'", sc_takeoff_.getService().c_str());
 
   sc_land_ = nh_.serviceClient<std_srvs::Trigger>("svc/land");
-  ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/land\' -> \'%s\'", sc_land_.getService().c_str());
+  ROS_INFO("[MissionHandler]: Created ServiceClient on service \'svc/land\' -> \'%s\'", sc_land_.getService().c_str());
 
   sc_land_home_ = nh_.serviceClient<std_srvs::Trigger>("svc/land_home");
-  ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/land_home\' -> \'%s\'", sc_land_home_.getService().c_str());
+  ROS_INFO("[MissionHandler]: Created ServiceClient on service \'svc/land_home\' -> \'%s\'", sc_land_home_.getService().c_str());
 
   sc_path_ = nh_.serviceClient<mrs_msgs::PathSrv>("svc/path");
-  ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/path\' -> \'%s\'", sc_path_.getService().c_str());
+  ROS_INFO("[MissionHandler]: Created ServiceClient on service \'svc/path\' -> \'%s\'", sc_path_.getService().c_str());
 
   sc_get_path_ = nh_.serviceClient<mrs_msgs::GetPathSrv>("svc/get_path");
-  ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/get_path\' -> \'%s\'", sc_get_path_.getService().c_str());
+  ROS_INFO("[MissionHandler]: Created ServiceClient on service \'svc/get_path\' -> \'%s\'", sc_get_path_.getService().c_str());
 
   sc_hover_ = nh_.serviceClient<std_srvs::Trigger>("svc/hover");
-  ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/hover\' -> \'%s\'", sc_hover_.getService().c_str());
+  ROS_INFO("[MissionHandler]: Created ServiceClient on service \'svc/hover\' -> \'%s\'", sc_hover_.getService().c_str());
 
   sc_mission_flying_to_start_ = nh_.serviceClient<std_srvs::Trigger>("svc/mission_flying_to_start");
-  ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/mission_flying_to_start\' -> \'%s\'", sc_mission_flying_to_start_.getService().c_str());
+  ROS_INFO("[MissionHandler]: Created ServiceClient on service \'svc/mission_flying_to_start\' -> \'%s\'", sc_mission_flying_to_start_.getService().c_str());
 
   sc_mission_start_ = nh_.serviceClient<std_srvs::Trigger>("svc/mission_start");
-  ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/mission_start\' -> \'%s\'", sc_mission_start_.getService().c_str());
+  ROS_INFO("[MissionHandler]: Created ServiceClient on service \'svc/mission_start\' -> \'%s\'", sc_mission_start_.getService().c_str());
 
   sc_mission_pause_ = nh_.serviceClient<std_srvs::Trigger>("svc/mission_pause");
-  ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/mission_pause\' -> \'%s\'", sc_mission_pause_.getService().c_str());
+  ROS_INFO("[MissionHandler]: Created ServiceClient on service \'svc/mission_pause\' -> \'%s\'", sc_mission_pause_.getService().c_str());
 
   sc_mission_validation_ = nh_.serviceClient<mrs_msgs::ValidateReferenceArray>("svc/mission_validation");
-  ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/mission_validation\' -> \'%s\'", sc_mission_validation_.getService().c_str());
+  ROS_INFO("[MissionHandler]: Created ServiceClient on service \'svc/mission_validation\' -> \'%s\'", sc_mission_validation_.getService().c_str());
 
   sc_trajectory_reference_ = nh_.serviceClient<mrs_msgs::TrajectoryReferenceSrv>("svc/trajectory_reference_out");
-  ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/trajectory_reference_out\' -> \'%s\'", sc_trajectory_reference_.getService().c_str());
+  ROS_INFO("[MissionHandler]: Created ServiceClient on service \'svc/trajectory_reference_out\' -> \'%s\'", sc_trajectory_reference_.getService().c_str());
 
   sc_transform_reference_ = nh_.serviceClient<mrs_msgs::TransformReferenceSrv>("svc/transform_reference");
-  ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/transform_reference\' -> \'%s\'", sc_transform_reference_.getService().c_str());
+  ROS_INFO("[MissionHandler]: Created ServiceClient on service \'svc/transform_reference\' -> \'%s\'", sc_transform_reference_.getService().c_str());
 
   sc_transform_reference_array_ = nh_.serviceClient<mrs_msgs::TransformReferenceArraySrv>("svc/transform_reference_array");
-  ROS_INFO("[IROCBridge]: Created ServiceClient on service \'svc/transform_reference_array\' -> \'%s\'", sc_transform_reference_.getService().c_str());
+  ROS_INFO("[MissionHandler]: Created ServiceClient on service \'svc/transform_reference_array\' -> \'%s\'", sc_transform_reference_.getService().c_str());
 
   // | --------------------- service servers -------------------- |
   ss_activation_ = nh_.advertiseService("svc_server/mission_activation", &MissionHandler::missionActivationServiceCallback, this);
-  ROS_INFO("[IROCBridge]: Created ServiceServer on service \'svc_server/mission_activation\' -> \'%s\'", ss_activation_.getService().c_str());
+  ROS_INFO("[MissionHandler]: Created ServiceServer on service \'svc_server/mission_activation\' -> \'%s\'", ss_activation_.getService().c_str());
 
   ss_pausing_ = nh_.advertiseService("svc_server/mission_pausing", &MissionHandler::missionPausingServiceCallback, this);
-  ROS_INFO("[IROCBridge]: Created ServiceServer on service \'svc_server/mission_pausing\' -> \'%s\'", ss_pausing_.getService().c_str());
+  ROS_INFO("[MissionHandler]: Created ServiceServer on service \'svc_server/mission_pausing\' -> \'%s\'", ss_pausing_.getService().c_str());
 
   // | ------------------------- timers ------------------------- |
   timer_main_ = nh_.createTimer(ros::Rate(main_timer_rate), &MissionHandler::timerMain, this);
