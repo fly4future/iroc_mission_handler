@@ -209,8 +209,9 @@ std::tuple<bool, std::string> SubtaskManager::validateSubtasks(const std::vector
     return std::make_tuple(false, error_messages.str());
   }
 
-  ROS_INFO("[SubtaskManager]: All waypoint subtasks validated successfully");
-  return std::make_tuple(true, "All subtasks validated successfully");
+  std::string success_message = "All waypoint subtasks validated successfully";
+  ROS_DEBUG("[SubtaskManager]: %s", success_message.c_str());
+  return std::make_tuple(true, success_message);
 }
 
 } // namespace iroc_mission_handler
