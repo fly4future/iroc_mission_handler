@@ -15,7 +15,7 @@ bool GimbalExecutor::initializeImpl(ros::NodeHandle& nh, const std::string& para
   }
 
   // Load parameters
-  param_loader.setPrefix("subtask_executors/");
+  param_loader.setPrefix("mission_handler/basic_subtask_executors/");
   _orientation_tolerance_ = param_loader.loadParam2<double>("gimbal/orientation_tolerance", 0.01);
   _max_movement_time_ = param_loader.loadParam2<double>("gimbal/max_movement_time", 30.0);
 

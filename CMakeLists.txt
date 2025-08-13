@@ -56,15 +56,15 @@ include_directories(
 ## --------------------------------------------------------------
 
 # Executors
-add_library(SubtaskExecutors
+add_library(IROCMIssionHandler_BasicSubtaskExecutors
   src/executors/gimbal.cpp
   src/executors/wait.cpp
 )
-add_dependencies(SubtaskExecutors
+add_dependencies(IROCMIssionHandler_BasicSubtaskExecutors
   ${catkin_EXPORTED_TARGETS}
   ${${PROJECT_NAME}_EXPORTED_TARGETS}
 )
-target_link_libraries(SubtaskExecutors
+target_link_libraries(IROCMIssionHandler_BasicSubtaskExecutors
   ${catkin_LIBRARIES}
 )
 
@@ -74,7 +74,7 @@ add_library(IROCMissionHandler
   src/subtask_manager.cpp
 )
 add_dependencies(IROCMissionHandler
-  SubtaskExecutors
+  IROCMIssionHandler_BasicSubtaskExecutors
   ${catkin_EXPORTED_TARGETS}
   ${${PROJECT_NAME}_EXPORTED_TARGETS}
 )

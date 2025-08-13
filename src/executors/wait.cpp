@@ -15,7 +15,7 @@ bool WaitExecutor::initializeImpl(ros::NodeHandle& nh, const std::string& parame
   }
 
   // Load parameters
-  param_loader.setPrefix("subtask_executors/");
+  param_loader.setPrefix("mission_handler/basic_subtask_executors/");
   double min_duration = param_loader.loadParam2<double>("wait/min_duration", 1.0);
   double max_duration = param_loader.loadParam2<double>("wait/max_duration", 300.0);
   double frequency = param_loader.loadParam2<double>("wait/timer_rate", 10.0);
