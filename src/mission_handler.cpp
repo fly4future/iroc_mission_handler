@@ -734,7 +734,8 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::ControlManagerDi
     return;
   }
 
-  if (!is_trajectory_sent_) {
+  // Restarting flag given that we will process the current trajectory
+  if (is_trajectory_sent_) {
     is_trajectory_sent_ = false;
   }
   // Get current state
