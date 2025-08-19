@@ -4,8 +4,8 @@ namespace iroc_mission_handler {
 namespace basic_executors {
 
 bool GazeboGimbalExecutor::initializeImpl(ros::NodeHandle& nh, const std::string& parameters) {
-
   mrs_lib::ParamLoader param_loader(nh, "SubtaskManager");
+
   // Load custom configuration if provided
   std::string custom_config_path;
   param_loader.loadParam("custom_config", custom_config_path);

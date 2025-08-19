@@ -6,13 +6,13 @@ SubtaskManager::SubtaskManager(ros::NodeHandle& nh) : nh_(nh) {
   // | ----------------------- Load parameters ---------------------- |
   mrs_lib::ParamLoader param_loader(nh_, "SubtaskManager");
 
-  param_loader.addYamlFileFromParam("config");
-
   std::string custom_config_path;
   param_loader.loadParam("custom_config", custom_config_path);
   if (!custom_config_path.empty()) {
     param_loader.addYamlFile(custom_config_path);
   }
+
+  param_loader.addYamlFileFromParam("config");
 
   param_loader.setPrefix("mission_handler/subtask_manager/");
   std::vector<std::string> available_executors;
@@ -32,7 +32,7 @@ SubtaskManager::SubtaskManager(ros::NodeHandle& nh) : nh_(nh) {
   }
 
   // | ----------------------- Initialize plugin loader ---------------------- |
-  plugin_loader_ = std::make_unique<pluginlib::ClassLoader<SubtaskExecutor>>("iroc_mission_handler", "iroc_mission_handler::SubtaskExecutor");
+  plugin_loader_  = std::make_unique<pluginlib::ClassLoader<SubtaskExecutor>>("iroc_mission_handler", "iroc_mission_handler::SubtaskExecutor");
   is_initialized_ = true;
 }
 

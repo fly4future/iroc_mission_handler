@@ -5,7 +5,6 @@ namespace basic_executors {
 
 bool WaitExecutor::initializeImpl(ros::NodeHandle& nh, const std::string& parameters) {
   mrs_lib::ParamLoader param_loader(nh, "SubtaskManager");
-  param_loader.addYamlFileFromParam("executor_config");
 
   // Load custom configuration if provided
   std::string custom_config_path;
@@ -13,6 +12,8 @@ bool WaitExecutor::initializeImpl(ros::NodeHandle& nh, const std::string& parame
   if (custom_config_path != "") {
     param_loader.addYamlFile(custom_config_path);
   }
+
+  param_loader.addYamlFileFromParam("executor_config");
 
   // Load parameters
   param_loader.setPrefix("mission_handler/subtask_executors/");

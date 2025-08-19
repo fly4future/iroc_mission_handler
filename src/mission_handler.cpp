@@ -99,14 +99,14 @@ class MissionHandler : public nodelet::Nodelet {
    */
   struct metrics_t {
     double remaining_distance = 0.0;
-    double eta = 0.0;
-    double progress = 0.0;
+    double eta                = 0.0;
+    double progress           = 0.0;
   };
 
   typedef mrs_robot_diagnostics::uav_state_t uav_state_t;
-  enum_helpers::enum_updater<uav_state_t> uav_state_ = {"UAV STATE", uav_state_t::UNKNOWN};
+  enum_helpers::enum_updater<uav_state_t> uav_state_         = {"UAV STATE", uav_state_t::UNKNOWN};
   enum_helpers::enum_updater<mission_state_t> mission_state_ = {"MISSION STATE", mission_state_t::IDLE};
-  mission_state_t previous_mission_state_ = mission_state_t::IDLE;
+  mission_state_t previous_mission_state_                    = mission_state_t::IDLE;
 
   std::string robot_name_;
   std::atomic_bool is_initialized_ = false;
@@ -165,11 +165,11 @@ class MissionHandler : public nodelet::Nodelet {
 
   // | --------------------- mission feedback and trajectory t-------------------- |
   std::vector<trajectory_t> trajectories_;
-  int current_trajectory_idx_ = 0;          // Index of the current trajectory being executed
+  int current_trajectory_idx_          = 0; // Index of the current trajectory being executed
   int current_trajectory_waypoint_idx_ = 0; // Index of the current waypoint in the current trajectory
 
   std::atomic_bool is_current_trajectory_finished_ = false;
-  std::atomic_bool is_trajectory_sent_ = false;
+  std::atomic_bool is_trajectory_sent_             = false;
 
   // Waypoint information (which waypoint is currently being followed)
   int mission_waypoint_idx_ = 0; // Index of the current waypoint being followed
@@ -222,23 +222,22 @@ void MissionHandler::onInit() {
   // Load configuration files
   mrs_lib::ParamLoader param_loader(nh_, "MissionHandler");
 
-  std::string custom_config_path;
-
-  param_loader.loadParam("custom_config", custom_config_path);
   param_loader.loadParam("robot_name", robot_name_);
 
-  param_loader.addYamlFileFromParam("config");
-  param_loader.addYamlFileFromParam("trajectory_generation_config");
-
+  std::string custom_config_path;
+  param_loader.loadParam("custom_config", custom_config_path);
   if (custom_config_path != "") {
     param_loader.addYamlFile(custom_config_path);
   }
 
+  param_loader.addYamlFileFromParam("config");
+  param_loader.addYamlFileFromParam("trajectory_generation_config");
+
   // Load parameters
-  const auto main_timer_rate = param_loader.loadParam2<double>("mission_handler/main_timer_rate");
+  const auto main_timer_rate     = param_loader.loadParam2<double>("mission_handler/main_timer_rate");
   const auto feedback_timer_rate = param_loader.loadParam2<double>("mission_handler/feedback_timer_rate");
 
-  _min_distance_threshold_ = param_loader.loadParam2<double>("mrs_uav_trajectory_generation/min_waypoint_distance");
+  _min_distance_threshold_     = param_loader.loadParam2<double>("mrs_uav_trajectory_generation/min_waypoint_distance");
   _trajectory_sampling_period_ = param_loader.loadParam2<double>("mrs_uav_trajectory_generation/sampling_dt");
 
   if (!param_loader.loadedSuccessfully()) {
@@ -250,16 +249,16 @@ void MissionHandler::onInit() {
   tim_mgr_ = std::make_shared<mrs_lib::TimeoutManager>(nh_, ros::Rate(1.0));
 
   mrs_lib::SubscribeHandlerOptions sh_opts;
-  sh_opts.nh = nh_;
-  sh_opts.node_name = "MissionHandler";
+  sh_opts.nh                 = nh_;
+  sh_opts.node_name          = "MissionHandler";
   sh_opts.no_message_timeout = ros::Duration(5.0);
-  sh_opts.timeout_manager = tim_mgr_;
-  sh_opts.threadsafe = true;
-  sh_opts.autostart = true;
-  sh_opts.queue_size = 10;
-  sh_opts.transport_hints = ros::TransportHints().tcpNoDelay();
+  sh_opts.timeout_manager    = tim_mgr_;
+  sh_opts.threadsafe         = true;
+  sh_opts.autostart          = true;
+  sh_opts.queue_size         = 10;
+  sh_opts.transport_hints    = ros::TransportHints().tcpNoDelay();
 
-  sh_uav_state_ = mrs_lib::SubscribeHandler<mrs_robot_diagnostics::UavState>(sh_opts, "in/uav_state");
+  sh_uav_state_            = mrs_lib::SubscribeHandler<mrs_robot_diagnostics::UavState>(sh_opts, "in/uav_state");
   sh_control_manager_diag_ = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(sh_opts, "control_manager_diagnostics_in",
                                                                                             &MissionHandler::controlManagerDiagCallback, this);
 
@@ -311,7 +310,7 @@ void MissionHandler::onInit() {
   ROS_INFO("[MissionHandler]: Created ServiceServer on service \'svc_server/mission_pausing\' -> \'%s\'", ss_pausing_.getService().c_str());
 
   // | ------------------------- timers ------------------------- |
-  timer_main_ = nh_.createTimer(ros::Rate(main_timer_rate), &MissionHandler::timerMain, this);
+  timer_main_     = nh_.createTimer(ros::Rate(main_timer_rate), &MissionHandler::timerMain, this);
   timer_feedback_ = nh_.createTimer(ros::Rate(feedback_timer_rate), &MissionHandler::timerFeedback, this);
 
   // | ------------------ action server methods ----------------- |
@@ -385,7 +384,7 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
   // Check for manual control during active missions
   if (uav_state_.value() == uav_state_t::MANUAL) {
     iroc_mission_handler::MissionResult action_server_result;
-    action_server_result.name = robot_name_;
+    action_server_result.name    = robot_name_;
     action_server_result.success = false;
     action_server_result.message = "Mission cancelled because drone is under manual control.";
 
@@ -398,197 +397,197 @@ void MissionHandler::timerMain([[maybe_unused]] const ros::TimerEvent& event) {
   }
 
   switch (mission_state_.value()) {
-    case mission_state_t::EXECUTING: {
-      if (current_trajectory_idx_ >= trajectories_.size()) {
-        if (uav_state_.value() == uav_state_t::HOVER) { // Wait for the UAV currently executing trajectory to finish
-          updateMissionState(mission_state_t::FINISHED);
-          ROS_WARN_STREAM("[MissionHandler]: No more trajectories to execute. Current trajectory index: " << current_trajectory_idx_);
-        }
-        break;
+  case mission_state_t::EXECUTING: {
+    if (current_trajectory_idx_ >= trajectories_.size()) {
+      if (uav_state_.value() == uav_state_t::HOVER) { // Wait for the UAV currently executing trajectory to finish
+        updateMissionState(mission_state_t::FINISHED);
+        ROS_WARN_STREAM("[MissionHandler]: No more trajectories to execute. Current trajectory index: " << current_trajectory_idx_);
       }
-
-      if (!mrs_robot_diagnostics::is_flying(uav_state_.value())) {
-        ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Calling takeoff");
-        auto takeoff_res = callService<std_srvs::Trigger>(sc_takeoff_);
-        if (!takeoff_res.success) {
-          ROS_ERROR_THROTTLE(1.0, "[MissionHandler]: %s", takeoff_res.message.c_str());
-          updateMissionState(mission_state_t::IDLE);
-        }
-        break;
-      }
-
-      // Check if the current trajectory is finished
-      if (is_current_trajectory_finished_) {
-        ROS_INFO_STREAM("[MissionHandler]: Finished tracking trajectory " << current_trajectory_idx_);
-
-        if (!trajectories_[current_trajectory_idx_].subtasks.empty()) {
-          ROS_INFO("[MissionHandler]: Executing subtasks in the waypoint %d ", mission_waypoint_idx_);
-          subtask_manager_->createSubtasks(trajectories_[current_trajectory_idx_].subtasks);
-
-          updateMissionState(mission_state_t::EXECUTING_SUBTASK);
-          break;
-        }
-
-        // Move to next trajectory
-        current_trajectory_idx_++;
-        is_current_trajectory_finished_ = false;
-        break;
-      }
-
-      // Send and start the trajectory
-      if (uav_state_.value() == uav_state_t::HOVER && !is_trajectory_sent_) {
-        ROS_INFO_STREAM("[MissionHandler]: Starting trajectory id " << current_trajectory_idx_ << ", total " << trajectories_.size());
-        auto result = sendTrajectoryToController(trajectories_[current_trajectory_idx_]);
-        if (!result.success) {
-          ROS_WARN_STREAM("[MissionHandler]: Failed to send trajectory: " << result.message);
-
-          iroc_mission_handler::MissionResult action_server_result;
-          action_server_result.name = robot_name_;
-          action_server_result.success = false;
-          action_server_result.message = result.message;
-          action_server_ptr_->setAborted(action_server_result);
-
-          current_trajectory_idx_ = 0;
-          updateMissionState(mission_state_t::IDLE);
-          resetMission();
-          return;
-        }
-
-        auto start_res = callService<std_srvs::Trigger>(sc_mission_start_);
-        if (!start_res.success) {
-          ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call mission start service: %s", start_res.message.c_str());
-          updateMissionState(mission_state_t::MISSION_LOADED);
-        }
-        is_trajectory_sent_ = true;
-        break;
-      }
-
       break;
     }
 
-    case mission_state_t::EXECUTING_SUBTASK: {
-      // Execute the current subtask
-      if (trajectories_[current_trajectory_idx_].parallel_execution) {
-        subtask_manager_->startAllSubtasks();
-      } else {
-        double progress = 0.0;
-        if (subtask_manager_->isCurrentSubtaskCompleted(progress)) {
-          subtask_manager_->startNextSubtask();
-        } else {
-          ROS_DEBUG_STREAM("[MissionHandler]: Subtask is still running. Progress: " << progress * 100.0 << "%");
-        }
+    if (!mrs_robot_diagnostics::is_flying(uav_state_.value())) {
+      ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Calling takeoff");
+      auto takeoff_res = callService<std_srvs::Trigger>(sc_takeoff_);
+      if (!takeoff_res.success) {
+        ROS_ERROR_THROTTLE(1.0, "[MissionHandler]: %s", takeoff_res.message.c_str());
+        updateMissionState(mission_state_t::IDLE);
+      }
+      break;
+    }
+
+    // Check if the current trajectory is finished
+    if (is_current_trajectory_finished_) {
+      ROS_INFO_STREAM("[MissionHandler]: Finished tracking trajectory " << current_trajectory_idx_);
+
+      if (!trajectories_[current_trajectory_idx_].subtasks.empty()) {
+        ROS_INFO("[MissionHandler]: Executing subtasks in the waypoint %d ", mission_waypoint_idx_);
+        subtask_manager_->createSubtasks(trajectories_[current_trajectory_idx_].subtasks);
+
+        updateMissionState(mission_state_t::EXECUTING_SUBTASK);
+        break;
       }
 
-      // Check if any critical subtasks have failed
-      if (subtask_manager_->areCriticalSubtasksFailed()) {
-        ROS_WARN_STREAM("[MissionHandler]: Critical subtask failed. Aborting mission.");
+      // Move to next trajectory
+      current_trajectory_idx_++;
+      is_current_trajectory_finished_ = false;
+      break;
+    }
+
+    // Send and start the trajectory
+    if (uav_state_.value() == uav_state_t::HOVER && !is_trajectory_sent_) {
+      ROS_INFO_STREAM("[MissionHandler]: Starting trajectory id " << current_trajectory_idx_ << ", total " << trajectories_.size());
+      auto result = sendTrajectoryToController(trajectories_[current_trajectory_idx_]);
+      if (!result.success) {
+        ROS_WARN_STREAM("[MissionHandler]: Failed to send trajectory: " << result.message);
+
         iroc_mission_handler::MissionResult action_server_result;
-        action_server_result.name = robot_name_;
+        action_server_result.name    = robot_name_;
         action_server_result.success = false;
-        action_server_result.message = "Critical subtask failed.";
+        action_server_result.message = result.message;
         action_server_ptr_->setAborted(action_server_result);
 
+        current_trajectory_idx_ = 0;
         updateMissionState(mission_state_t::IDLE);
         resetMission();
         return;
       }
 
-      // Continue with the mission if all subtasks are completed
-      if (subtask_manager_->areAllSubtasksCompleted()) {
-        ROS_INFO_STREAM("[MissionHandler]: All subtasks completed for trajectory " << current_trajectory_idx_);
-
-        // Move to next trajectory
-        current_trajectory_idx_++;
-        is_current_trajectory_finished_ = false;
-        updateMissionState(mission_state_t::EXECUTING);
+      auto start_res = callService<std_srvs::Trigger>(sc_mission_start_);
+      if (!start_res.success) {
+        ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call mission start service: %s", start_res.message.c_str());
+        updateMissionState(mission_state_t::MISSION_LOADED);
       }
-
+      is_trajectory_sent_ = true;
       break;
     }
 
-    case mission_state_t::FINISHED: {
-      switch (action_server_goal_.terminal_action) {
-        case ActionServerGoal::TERMINAL_ACTION_LAND: {
-          ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Executing terminal action. Calling land");
-          auto resp = callService<std_srvs::Trigger>(sc_land_);
-          if (!resp.success) {
-            ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call land service.");
-            return;
-          }
+    break;
+  }
 
-          updateMissionState(mission_state_t::LAND);
-          break;
-        }
-
-        case ActionServerGoal::TERMINAL_ACTION_RTH: {
-          ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Executing terminal action. Calling land home");
-          auto resp = callService<std_srvs::Trigger>(sc_land_home_);
-          if (!resp.success) {
-            ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call land home service.");
-            return;
-          }
-
-          updateMissionState(mission_state_t::RTH);
-          break;
-        }
-
-        default: {
-          iroc_mission_handler::MissionResult action_server_result;
-          action_server_result.name = robot_name_;
-          action_server_result.success = true;
-          action_server_result.message = "Mission finished";
-          ROS_INFO("[MissionHandler]: Mission finished.");
-          action_server_ptr_->setSucceeded(action_server_result);
-
-          updateMissionState(mission_state_t::IDLE);
-          break;
-        }
+  case mission_state_t::EXECUTING_SUBTASK: {
+    // Execute the current subtask
+    if (trajectories_[current_trajectory_idx_].parallel_execution) {
+      subtask_manager_->startAllSubtasks();
+    } else {
+      double progress = 0.0;
+      if (subtask_manager_->isCurrentSubtaskCompleted(progress)) {
+        subtask_manager_->startNextSubtask();
+      } else {
+        ROS_DEBUG_STREAM("[MissionHandler]: Subtask is still running. Progress: " << progress * 100.0 << "%");
       }
+    }
 
-      // Reset mission state and trajectory tracking
+    // Check if any critical subtasks have failed
+    if (subtask_manager_->areCriticalSubtasksFailed()) {
+      ROS_WARN_STREAM("[MissionHandler]: Critical subtask failed. Aborting mission.");
+      iroc_mission_handler::MissionResult action_server_result;
+      action_server_result.name    = robot_name_;
+      action_server_result.success = false;
+      action_server_result.message = "Critical subtask failed.";
+      action_server_ptr_->setAborted(action_server_result);
+
+      updateMissionState(mission_state_t::IDLE);
       resetMission();
-      break;
+      return;
     }
 
-    case mission_state_t::LAND: {
-      if (uav_state_.value() == uav_state_t::ARMED || uav_state_.value() == uav_state_t::DISARMED || uav_state_.value() == uav_state_t::OFFBOARD) {
-        ROS_INFO_STREAM("[MissionHandler]: Landing finished.");
+    // Continue with the mission if all subtasks are completed
+    if (subtask_manager_->areAllSubtasksCompleted()) {
+      ROS_INFO_STREAM("[MissionHandler]: All subtasks completed for trajectory " << current_trajectory_idx_);
 
-        iroc_mission_handler::MissionResult action_server_result;
-        if (previous_mission_state_ == mission_state_t::FINISHED) {
-          action_server_result.name = robot_name_;
-          action_server_result.success = true;
-          action_server_result.message = "Mission finished";
+      // Move to next trajectory
+      current_trajectory_idx_++;
+      is_current_trajectory_finished_ = false;
+      updateMissionState(mission_state_t::EXECUTING);
+    }
 
-          ROS_INFO("[MissionHandler]: Mission finished.");
-          action_server_ptr_->setSucceeded(action_server_result);
-        } else {
-          action_server_result.name = robot_name_;
-          action_server_result.success = false;
-          action_server_result.message = "Mission stopped due to landing.";
+    break;
+  }
 
-          ROS_WARN("[MissionHandler]: Mission stopped due to landing.");
-          action_server_ptr_->setAborted(action_server_result);
-        }
-
-        updateMissionState(mission_state_t::IDLE);
-        resetMission();
+  case mission_state_t::FINISHED: {
+    switch (action_server_goal_.terminal_action) {
+    case ActionServerGoal::TERMINAL_ACTION_LAND: {
+      ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Executing terminal action. Calling land");
+      auto resp = callService<std_srvs::Trigger>(sc_land_);
+      if (!resp.success) {
+        ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call land service.");
+        return;
       }
 
+      updateMissionState(mission_state_t::LAND);
       break;
     }
 
-    case mission_state_t::PAUSED_DUE_TO_RC_MODE: {
-      // mission continue if we are again not in RC_mode
-      if (uav_state_.value() != uav_state_t::RC_MODE) {
-        ROS_INFO("[MissionHandler]: RC mode disabled. Switching to previous mission mode");
-        updateMissionState(previous_mission_state_);
+    case ActionServerGoal::TERMINAL_ACTION_RTH: {
+      ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Executing terminal action. Calling land home");
+      auto resp = callService<std_srvs::Trigger>(sc_land_home_);
+      if (!resp.success) {
+        ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call land home service.");
+        return;
       }
+
+      updateMissionState(mission_state_t::RTH);
       break;
     }
 
-    default:
+    default: {
+      iroc_mission_handler::MissionResult action_server_result;
+      action_server_result.name    = robot_name_;
+      action_server_result.success = true;
+      action_server_result.message = "Mission finished";
+      ROS_INFO("[MissionHandler]: Mission finished.");
+      action_server_ptr_->setSucceeded(action_server_result);
+
+      updateMissionState(mission_state_t::IDLE);
       break;
+    }
+    }
+
+    // Reset mission state and trajectory tracking
+    resetMission();
+    break;
+  }
+
+  case mission_state_t::LAND: {
+    if (uav_state_.value() == uav_state_t::ARMED || uav_state_.value() == uav_state_t::DISARMED || uav_state_.value() == uav_state_t::OFFBOARD) {
+      ROS_INFO_STREAM("[MissionHandler]: Landing finished.");
+
+      iroc_mission_handler::MissionResult action_server_result;
+      if (previous_mission_state_ == mission_state_t::FINISHED) {
+        action_server_result.name    = robot_name_;
+        action_server_result.success = true;
+        action_server_result.message = "Mission finished";
+
+        ROS_INFO("[MissionHandler]: Mission finished.");
+        action_server_ptr_->setSucceeded(action_server_result);
+      } else {
+        action_server_result.name    = robot_name_;
+        action_server_result.success = false;
+        action_server_result.message = "Mission stopped due to landing.";
+
+        ROS_WARN("[MissionHandler]: Mission stopped due to landing.");
+        action_server_ptr_->setAborted(action_server_result);
+      }
+
+      updateMissionState(mission_state_t::IDLE);
+      resetMission();
+    }
+
+    break;
+  }
+
+  case mission_state_t::PAUSED_DUE_TO_RC_MODE: {
+    // mission continue if we are again not in RC_mode
+    if (uav_state_.value() != uav_state_t::RC_MODE) {
+      ROS_INFO("[MissionHandler]: RC mode disabled. Switching to previous mission mode");
+      updateMissionState(previous_mission_state_);
+    }
+    break;
+  }
+
+  default:
+    break;
   }
 }
 //}
@@ -618,44 +617,44 @@ bool MissionHandler::missionActivationServiceCallback(std_srvs::Trigger::Request
   }
 
   switch (mission_state_.value()) {
-    case mission_state_t::MISSION_LOADED: {
-      ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Already flying. Starting mission with first trajectory.");
-      is_current_trajectory_finished_ = false;
-      updateMissionState(mission_state_t::EXECUTING);
-      break;
-    }
+  case mission_state_t::MISSION_LOADED: {
+    ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Already flying. Starting mission with first trajectory.");
+    is_current_trajectory_finished_ = false;
+    updateMissionState(mission_state_t::EXECUTING);
+    break;
+  }
 
-    case mission_state_t::PAUSED: {
-      ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Replanning mission from current position");
-      const auto replan_res = replanMission();
-      if (!replan_res) {
-        ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to replan mission.");
-        res.success = false;
-        res.message = "failed to replan mission";
-        return true;
-      } else {
-        ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Replanning mission successfully.");
-        updateMissionState(mission_state_t::MISSION_LOADED);
-      }
-
-      ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Resuming mission with current trajectory.");
-      updateMissionState(mission_state_t::EXECUTING);
-      break;
-    }
-
-    case mission_state_t::PAUSED_DUE_TO_RC_MODE: {
+  case mission_state_t::PAUSED: {
+    ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Replanning mission from current position");
+    const auto replan_res = replanMission();
+    if (!replan_res) {
+      ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to replan mission.");
       res.success = false;
-      res.message = "Mission is paused due to active MRS Remote mode. Disable the mode to continue mission execution.";
-      ROS_WARN_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
+      res.message = "failed to replan mission";
       return true;
+    } else {
+      ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Replanning mission successfully.");
+      updateMissionState(mission_state_t::MISSION_LOADED);
     }
 
-    default: {
-      res.success = false;
-      res.message = "Mission is already activated.";
-      ROS_WARN_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
-      return true;
-    }
+    ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Resuming mission with current trajectory.");
+    updateMissionState(mission_state_t::EXECUTING);
+    break;
+  }
+
+  case mission_state_t::PAUSED_DUE_TO_RC_MODE: {
+    res.success = false;
+    res.message = "Mission is paused due to active MRS Remote mode. Disable the mode to continue mission execution.";
+    ROS_WARN_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
+    return true;
+  }
+
+  default: {
+    res.success = false;
+    res.message = "Mission is already activated.";
+    ROS_WARN_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
+    return true;
+  }
   }
 
   res.success = true;
@@ -677,34 +676,34 @@ bool MissionHandler::missionPausingServiceCallback(std_srvs::Trigger::Request& r
 
   mission_progress_before_pause_ = mission_metrics_.progress;
   switch (mission_state_.value()) {
-    case mission_state_t::MISSION_LOADED: {
-      ROS_INFO_STREAM("[MissionHandler]: Mission paused before execution.");
-      res.success = true;
-      res.message = "Mission paused before execution.";
-      updateMissionState(mission_state_t::PAUSED);
+  case mission_state_t::MISSION_LOADED: {
+    ROS_INFO_STREAM("[MissionHandler]: Mission paused before execution.");
+    res.success = true;
+    res.message = "Mission paused before execution.";
+    updateMissionState(mission_state_t::PAUSED);
+    break;
+  }
+
+  case mission_state_t::EXECUTING: {
+    ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Mission paused. Hover started.");
+    auto resp   = callService<std_srvs::Trigger>(sc_mission_pause_);
+    res.success = resp.success;
+    res.message = resp.message;
+    if (!resp.success) {
+      ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call stop trajectory tracking service.");
       break;
     }
 
-    case mission_state_t::EXECUTING: {
-      ROS_INFO_STREAM_THROTTLE(1.0, "[MissionHandler]: Mission paused. Hover started.");
-      auto resp = callService<std_srvs::Trigger>(sc_mission_pause_);
-      res.success = resp.success;
-      res.message = resp.message;
-      if (!resp.success) {
-        ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call stop trajectory tracking service.");
-        break;
-      }
+    updateMissionState(mission_state_t::PAUSED);
+    break;
+  }
 
-      updateMissionState(mission_state_t::PAUSED);
-      break;
-    }
-
-    default: {
-      res.success = false;
-      res.message = "Mission is in the state in which cannot be paused.";
-      ROS_WARN_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
-      break;
-    }
+  default: {
+    res.success = false;
+    res.message = "Mission is in the state in which cannot be paused.";
+    ROS_WARN_THROTTLE(1.0, "[MissionHandler]: %s", res.message.c_str());
+    break;
+  }
   }
 
   return true;
@@ -739,11 +738,11 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::ControlManagerDi
     is_trajectory_sent_ = false;
   }
   // Get current state
-  int current_point_idx = diagnostics->tracker_status.trajectory_idx;
+  int current_point_idx            = diagnostics->tracker_status.trajectory_idx;
   trajectory_t& current_trajectory = trajectories_.at(current_trajectory_idx_);
 
   int previous_waypoint_point_idx = current_trajectory_waypoint_idx_ > 0 ? current_trajectory.idxs[current_trajectory_waypoint_idx_ - 1] : 0;
-  int next_waypoint_point_idx = current_trajectory.idxs[current_trajectory_waypoint_idx_];
+  int next_waypoint_point_idx     = current_trajectory.idxs[current_trajectory_waypoint_idx_];
 
   // | ----------------------- Check if current waypoint is reached ----------------------- |
   if (current_point_idx >= current_trajectory.idxs[current_trajectory_waypoint_idx_]) {
@@ -756,7 +755,7 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::ControlManagerDi
     if (current_trajectory_waypoint_idx_ >= current_trajectory.idxs.size()) {
       // If we reached the last waypoint in the trajectory, mark it as finished and reset the trajectory waypoint index
       ROS_INFO("[MissionHandler]: Reached last waypoint in trajectory %d", current_trajectory_idx_);
-      is_current_trajectory_finished_ = true;
+      is_current_trajectory_finished_  = true;
       current_trajectory_waypoint_idx_ = 0;
     }
 
@@ -764,19 +763,19 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::ControlManagerDi
   }
 
   // | ----------------------- Update waypoint metrics ----------------------- |
-  const mrs_msgs::Reference current_position = current_trajectory.reference.points.at(current_point_idx);
+  const mrs_msgs::Reference current_position       = current_trajectory.reference.points.at(current_point_idx);
   const mrs_msgs::Reference next_waypoint_position = current_trajectory.reference.points.at(next_waypoint_point_idx);
 
   // Number of points in the current path segment (waypoint to next waypoint)
   const int number_of_points = next_waypoint_point_idx - previous_waypoint_point_idx;
-  double waypoint_progress = number_of_points > 0 ? (static_cast<double>(current_point_idx - previous_waypoint_point_idx) / number_of_points) * 100.0 : 0.0;
+  double waypoint_progress   = number_of_points > 0 ? (static_cast<double>(current_point_idx - previous_waypoint_point_idx) / number_of_points) * 100.0 : 0.0;
 
   waypoint_metrics_.remaining_distance = distance(current_position, next_waypoint_position);
-  waypoint_metrics_.eta = std::max(static_cast<double>(next_waypoint_point_idx - current_point_idx) * _trajectory_sampling_period_, 0.0);
-  waypoint_metrics_.progress = std::min(waypoint_progress, 100.0);
+  waypoint_metrics_.eta                = std::max(static_cast<double>(next_waypoint_point_idx - current_point_idx) * _trajectory_sampling_period_, 0.0);
+  waypoint_metrics_.progress           = std::min(waypoint_progress, 100.0);
 
   // | ----------------------- Update mission metrics ----------------------- |
-  double remaining_distance = 0.0;
+  double remaining_distance     = 0.0;
   unsigned int remaining_points = 0;
   unsigned int total_num_points = 0;
   for (size_t i = 0; i < trajectories_.size(); i++) {
@@ -791,7 +790,7 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::ControlManagerDi
       }
 
       const mrs_msgs::Reference start_position = trajectories_[i].reference.points.at(j);
-      const mrs_msgs::Reference end_position = trajectories_[i].reference.points.at(j + 1);
+      const mrs_msgs::Reference end_position   = trajectories_[i].reference.points.at(j + 1);
 
       remaining_distance += distance(start_position, end_position);
       remaining_points++;
@@ -800,9 +799,9 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::ControlManagerDi
   }
   double current_progress = static_cast<double>(total_num_points - remaining_points) / total_num_points * 100.0;
 
-  mission_metrics_.progress = std::min(mission_progress_before_pause_ + current_progress * (1.0 - (mission_progress_before_pause_ / 100.0)), 100.0);
+  mission_metrics_.progress           = std::min(mission_progress_before_pause_ + current_progress * (1.0 - (mission_progress_before_pause_ / 100.0)), 100.0);
   mission_metrics_.remaining_distance = remaining_distance;
-  mission_metrics_.eta = static_cast<double>(remaining_points) * _trajectory_sampling_period_;
+  mission_metrics_.eta                = static_cast<double>(remaining_points) * _trajectory_sampling_period_;
 
   ROS_DEBUG_STREAM_THROTTLE(1.0, "[MissionHandler]: Current waypoint metrics: \n"
                                      << "  Remaining distance: " << waypoint_metrics_.remaining_distance << "\n"
@@ -825,7 +824,7 @@ void MissionHandler::actionCallbackGoal() {
 
   if (!is_initialized_) {
     iroc_mission_handler::MissionResult action_server_result;
-    action_server_result.name = robot_name_;
+    action_server_result.name    = robot_name_;
     action_server_result.success = false;
     action_server_result.message = "Not initialized yet";
     ROS_WARN("[MissionHandler]: not initialized yet");
@@ -837,7 +836,7 @@ void MissionHandler::actionCallbackGoal() {
 
   if (!result.success) {
     iroc_mission_handler::MissionResult action_server_result;
-    action_server_result.name = robot_name_;
+    action_server_result.name    = robot_name_;
     action_server_result.success = false;
     action_server_result.message = result.message;
     ROS_WARN("[MissionHandler]: mission aborted");
@@ -857,7 +856,7 @@ void MissionHandler::actionCallbackPreempt() {
     if (action_server_ptr_->isNewGoalAvailable()) {
       ROS_INFO("[MissionHandler]: Preemption toggled for ActionServer.");
       iroc_mission_handler::MissionResult action_server_result;
-      action_server_result.name = robot_name_;
+      action_server_result.name    = robot_name_;
       action_server_result.success = false;
       action_server_result.message = "Preempted by client";
       ROS_WARN_STREAM("[MissionHandler]: " << action_server_result.message);
@@ -866,31 +865,31 @@ void MissionHandler::actionCallbackPreempt() {
     } else {
       ROS_INFO("[MissionHandler]: Cancel toggled for ActionServer.");
       switch (mission_state_.value()) {
-        case mission_state_t::EXECUTING: {
-          ROS_INFO_STREAM_THROTTLE(1.0, "Drone is in the movement -> Calling hover.");
-          auto resp = callService<std_srvs::Trigger>(sc_hover_);
-          if (!resp.success) {
-            ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call hover service.");
-          }
-          iroc_mission_handler::MissionResult action_server_result;
-          action_server_result.name = robot_name_;
-          action_server_result.success = false;
-          action_server_result.message = "Mission stopped.";
-          action_server_ptr_->setAborted(action_server_result);
-          ROS_INFO("[MissionHandler]: Mission stopped.");
-          updateMissionState(mission_state_t::IDLE);
-          break;
+      case mission_state_t::EXECUTING: {
+        ROS_INFO_STREAM_THROTTLE(1.0, "Drone is in the movement -> Calling hover.");
+        auto resp = callService<std_srvs::Trigger>(sc_hover_);
+        if (!resp.success) {
+          ROS_WARN_THROTTLE(1.0, "[MissionHandler]: Failed to call hover service.");
         }
+        iroc_mission_handler::MissionResult action_server_result;
+        action_server_result.name    = robot_name_;
+        action_server_result.success = false;
+        action_server_result.message = "Mission stopped.";
+        action_server_ptr_->setAborted(action_server_result);
+        ROS_INFO("[MissionHandler]: Mission stopped.");
+        updateMissionState(mission_state_t::IDLE);
+        break;
+      }
 
-        default:
-          iroc_mission_handler::MissionResult action_server_result;
-          action_server_result.name = robot_name_;
-          action_server_result.success = false;
-          action_server_result.message = "Mission stopped.";
-          action_server_ptr_->setAborted(action_server_result);
-          ROS_INFO("[MissionHandler]: Mission stopped.");
-          updateMissionState(mission_state_t::IDLE);
-          break;
+      default:
+        iroc_mission_handler::MissionResult action_server_result;
+        action_server_result.name    = robot_name_;
+        action_server_result.success = false;
+        action_server_result.message = "Mission stopped.";
+        action_server_ptr_->setAborted(action_server_result);
+        ROS_INFO("[MissionHandler]: Mission stopped.");
+        updateMissionState(mission_state_t::IDLE);
+        break;
       }
     }
   }
@@ -903,17 +902,17 @@ void MissionHandler::actionPublishFeedback() {
 
   if (action_server_ptr_->isActive()) {
     iroc_mission_handler::MissionFeedback action_server_feedback;
-    action_server_feedback.name = robot_name_;
+    action_server_feedback.name    = robot_name_;
     action_server_feedback.message = to_string(mission_state_.value());
 
-    action_server_feedback.goal_idx = mission_waypoint_idx_;
-    action_server_feedback.distance_to_closest_goal = waypoint_metrics_.remaining_distance;
+    action_server_feedback.goal_idx                    = mission_waypoint_idx_;
+    action_server_feedback.distance_to_closest_goal    = waypoint_metrics_.remaining_distance;
     action_server_feedback.goal_estimated_arrival_time = waypoint_metrics_.eta;
-    action_server_feedback.goal_progress = waypoint_metrics_.progress;
+    action_server_feedback.goal_progress               = waypoint_metrics_.progress;
 
-    action_server_feedback.distance_to_finish = mission_metrics_.remaining_distance;
+    action_server_feedback.distance_to_finish            = mission_metrics_.remaining_distance;
     action_server_feedback.finish_estimated_arrival_time = mission_metrics_.eta;
-    action_server_feedback.mission_progress = mission_metrics_.progress;
+    action_server_feedback.mission_progress              = mission_metrics_.progress;
 
     action_server_ptr_->publishFeedback(action_server_feedback);
   }
@@ -972,23 +971,23 @@ MissionHandler::result_t MissionHandler::createMission(const ActionServerGoal& a
 
   std::string frame_id;
   switch (action_server_goal.frame_id) {
-    case ActionServerGoal::FRAME_ID_LOCAL: {
-      frame_id = "local_origin";
-      break;
-    }
+  case ActionServerGoal::FRAME_ID_LOCAL: {
+    frame_id = "local_origin";
+    break;
+  }
 
-    case ActionServerGoal::FRAME_ID_LATLON: {
-      frame_id = "latlon_origin";
-      break;
-    }
+  case ActionServerGoal::FRAME_ID_LATLON: {
+    frame_id = "latlon_origin";
+    break;
+  }
 
-    case ActionServerGoal::FRAME_ID_FCU: {
-      frame_id = "fcu_untilted";
-      break;
-    }
+  case ActionServerGoal::FRAME_ID_FCU: {
+    frame_id = "fcu_untilted";
+    break;
+  }
 
-    default:
-      break;
+  default:
+    break;
   }
 
   if (sh_uav_state_.hasMsg()) {
@@ -1025,7 +1024,7 @@ MissionHandler::result_t MissionHandler::createMission(const ActionServerGoal& a
   /* This could be replaced with TBD ControlManager Service "transformReferenceArray" */
   mrs_msgs::TransformReferenceArraySrv transformSrv_reference_array;
   transformSrv_reference_array.request.to_frame_id = "";
-  transformSrv_reference_array.request.array = goal_points_array;
+  transformSrv_reference_array.request.array       = goal_points_array;
 
   auto [res, transformed_array] = transformReferenceArray(transformSrv_reference_array);
   if (!res) {
@@ -1045,12 +1044,12 @@ MissionHandler::result_t MissionHandler::createMission(const ActionServerGoal& a
   }
 
   mrs_msgs::Path msg_path;
-  msg_path.points = transformed_array.array;
-  msg_path.header.stamp = ros::Time::now();
-  msg_path.fly_now = false;
-  msg_path.use_heading = true;
+  msg_path.points                     = transformed_array.array;
+  msg_path.header.stamp               = ros::Time::now();
+  msg_path.fly_now                    = false;
+  msg_path.use_heading                = true;
   msg_path.dont_prepend_current_state = false; // do not use the current position for planning of the path
-  msg_path.header.frame_id = transformed_array.header.frame_id;
+  msg_path.header.frame_id            = transformed_array.header.frame_id;
 
   // Segmenting the path into segments based on subtasks and heading trajectories
   std::vector<path_segment_t> path_segments = segmentPath(msg_path, action_server_goal.points);
@@ -1099,7 +1098,7 @@ MissionHandler::result_t MissionHandler::validateTrajectory(const trajectory_t& 
   // Create a ReferenceArray from the trajectory points for sending to the validation service
   mrs_msgs::ReferenceArray waypointArray;
   waypointArray.header = trajectory.reference.header;
-  waypointArray.array = trajectory.reference.points;
+  waypointArray.array  = trajectory.reference.points;
 
   mrs_msgs::ValidateReferenceArray validateReferenceSrv;
   validateReferenceSrv.request.array = waypointArray;
@@ -1191,8 +1190,8 @@ std::vector<MissionHandler::path_segment_t> MissionHandler::segmentPath(const mr
   std::vector<path_segment_t> path_segments;
 
   path_segment_t current_segment;
-  current_segment.path.header = msg.header;
-  current_segment.path.fly_now = msg.fly_now;
+  current_segment.path.header      = msg.header;
+  current_segment.path.fly_now     = msg.fly_now;
   current_segment.path.use_heading = msg.use_heading;
 
   // Add the first point to start a segment
@@ -1226,7 +1225,7 @@ std::vector<MissionHandler::path_segment_t> MissionHandler::segmentPath(const mr
 
     // Check if there are subtasks for the current waypoint that require segment break
     if (!waypoints.at(i).subtasks.empty()) {
-      current_segment.subtasks = waypoints.at(i).subtasks;
+      current_segment.subtasks           = waypoints.at(i).subtasks;
       current_segment.parallel_execution = waypoints.at(i).parallel_execution;
       path_segments.push_back(current_segment);
 
@@ -1307,7 +1306,7 @@ MissionHandler::generateTrajectoriesFromSegments(const std::vector<path_segment_
     if (segment.is_valid) {
       mrs_msgs::GetPathSrv getPathSrv;
       getPathSrv.request.path = segment.path;
-      auto response = getPathSrv.response;
+      auto response           = getPathSrv.response;
 
       // Calling getPath service
       auto result = callService<mrs_msgs::GetPathSrv>(sc_get_path_, getPathSrv.request, response);
@@ -1317,17 +1316,17 @@ MissionHandler::generateTrajectoriesFromSegments(const std::vector<path_segment_
       }
 
       // Copy the header of the trajectory
-      current_trajectory.header = response.trajectory.header;
+      current_trajectory.header       = response.trajectory.header;
       current_trajectory.header.stamp = ros::Time::now();
-      current_trajectory.input_id = response.trajectory.input_id;
-      current_trajectory.use_heading = response.trajectory.use_heading;
-      current_trajectory.fly_now = response.trajectory.fly_now;
-      current_trajectory.loop = response.trajectory.loop;
-      current_trajectory.dt = response.trajectory.dt;
+      current_trajectory.input_id     = response.trajectory.input_id;
+      current_trajectory.use_heading  = response.trajectory.use_heading;
+      current_trajectory.fly_now      = response.trajectory.fly_now;
+      current_trajectory.loop         = response.trajectory.loop;
+      current_trajectory.dt           = response.trajectory.dt;
 
       // Save the trajectory points and indices from the response
       points_to_add = response.trajectory.points;
-      idxs_to_add = response.waypoint_trajectory_idxs;
+      idxs_to_add   = response.waypoint_trajectory_idxs;
     } else {
       std::tie(points_to_add, idxs_to_add) = generateHeadingTrajectory(segment.path, _trajectory_sampling_period_);
     }
@@ -1351,9 +1350,9 @@ MissionHandler::generateTrajectoriesFromSegments(const std::vector<path_segment_
     // the subtask if it is needed)
     if (segment.subtasks.size() > 0) {
       trajectory_t trajectory;
-      trajectory.reference = current_trajectory;
-      trajectory.idxs = current_trajectory_idxs;
-      trajectory.subtasks = segment.subtasks;
+      trajectory.reference          = current_trajectory;
+      trajectory.idxs               = current_trajectory_idxs;
+      trajectory.subtasks           = segment.subtasks;
       trajectory.parallel_execution = segment.parallel_execution;
 
       trajectories.push_back(trajectory);
@@ -1368,7 +1367,7 @@ MissionHandler::generateTrajectoriesFromSegments(const std::vector<path_segment_
   if (!current_trajectory.points.empty()) {
     trajectory_t trajectory;
     trajectory.reference = current_trajectory;
-    trajectory.idxs = current_trajectory_idxs;
+    trajectory.idxs      = current_trajectory_idxs;
 
     trajectories.push_back(trajectory);
   }
@@ -1401,7 +1400,7 @@ MissionHandler::generateTrajectoriesFromSegments(const std::vector<path_segment_
  * \return A tuple containing the generated trajectory and the indices of the trajectory points.
  */
 std::tuple<std::vector<mrs_msgs::Reference>, std::vector<long int>> MissionHandler::generateHeadingTrajectory(const mrs_msgs::Path& path, double T = 0.2) {
-  using radians = mrs_lib::geometry::radians;
+  using radians  = mrs_lib::geometry::radians;
   using sradians = mrs_lib::geometry::sradians;
 
   std::vector<mrs_msgs::Reference> trajectory;
@@ -1474,7 +1473,7 @@ bool MissionHandler::replanMission() {
   // Create waypoints from the remaining points and subtasks
   std::vector<iroc_mission_handler::Waypoint> remaining_waypoints;
   remaining_waypoints.resize(trajectories_[current_trajectory_idx_].idxs.size() - current_trajectory_waypoint_idx_);
-  remaining_waypoints.back().subtasks = trajectories_[current_trajectory_idx_].subtasks;                     // Copy the last subtask to the last point
+  remaining_waypoints.back().subtasks           = trajectories_[current_trajectory_idx_].subtasks;           // Copy the last subtask to the last point
   remaining_waypoints.back().parallel_execution = trajectories_[current_trajectory_idx_].parallel_execution; // Copy the parallel execution flag
 
   std::vector<mrs_msgs::Reference> remaining_points;
@@ -1485,12 +1484,12 @@ bool MissionHandler::replanMission() {
   }
 
   mrs_msgs::Path remaining_path;
-  remaining_path.points = remaining_points;
-  remaining_path.header.stamp = ros::Time::now();
-  remaining_path.fly_now = false;
-  remaining_path.use_heading = true;
+  remaining_path.points                     = remaining_points;
+  remaining_path.header.stamp               = ros::Time::now();
+  remaining_path.fly_now                    = false;
+  remaining_path.use_heading                = true;
   remaining_path.dont_prepend_current_state = false; // Use the current position for planning of the path
-  remaining_path.header.frame_id = trajectories_[current_trajectory_idx_].reference.header.frame_id;
+  remaining_path.header.frame_id            = trajectories_[current_trajectory_idx_].reference.header.frame_id;
 
   std::vector<path_segment_t> path_segments = segmentPath(remaining_path, remaining_waypoints);
 
@@ -1517,10 +1516,10 @@ bool MissionHandler::replanMission() {
   recomputed_trajectories.insert(recomputed_trajectories.end(), trajectories_.begin() + current_trajectory_idx_ + 1, trajectories_.end());
 
   // Setting the mission information
-  trajectories_ = recomputed_trajectories;
+  trajectories_                    = recomputed_trajectories;
   current_trajectory_waypoint_idx_ = 0; // Reset the goal index to the first goal
-  current_trajectory_idx_ = 0;          // Reset the current trajectory index to the first trajectory
-  is_current_trajectory_finished_ = false;
+  current_trajectory_idx_          = 0; // Reset the current trajectory index to the first trajectory
+  is_current_trajectory_finished_  = false;
 
   return true;
 }
@@ -1630,18 +1629,18 @@ void MissionHandler::updateMissionState(const mission_state_t& new_state) {
 void MissionHandler::resetMission() {
   std::scoped_lock lock(action_server_mutex_);
 
-  current_trajectory_idx_ = 0;
+  current_trajectory_idx_          = 0;
   current_trajectory_waypoint_idx_ = 0;
 
   mission_waypoint_idx_ = 0;
 
   waypoint_metrics_.remaining_distance = 0.0;
-  waypoint_metrics_.eta = 0.0;
-  waypoint_metrics_.progress = 0.0;
+  waypoint_metrics_.eta                = 0.0;
+  waypoint_metrics_.progress           = 0.0;
 
   mission_metrics_.remaining_distance = 0.0;
-  mission_metrics_.eta = 0.0;
-  mission_metrics_.progress = 0.0;
+  mission_metrics_.eta                = 0.0;
+  mission_metrics_.progress           = 0.0;
 
   is_current_trajectory_finished_ = false;
   trajectories_.clear();
