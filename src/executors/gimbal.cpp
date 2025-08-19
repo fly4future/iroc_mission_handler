@@ -4,15 +4,17 @@ namespace iroc_mission_handler {
 namespace executors {
 
 bool GimbalExecutor::initializeImpl(ros::NodeHandle& nh, const std::string& parameters) {
-  mrs_lib::ParamLoader param_loader(nh, "SubtaskManager");
-  param_loader.addYamlFileFromParam("executor_config");
 
+  mrs_lib::ParamLoader param_loader(nh, "SubtaskManager");
   // Load custom configuration if provided
   std::string custom_config_path;
   param_loader.loadParam("custom_config", custom_config_path);
   if (custom_config_path != "") {
     param_loader.addYamlFile(custom_config_path);
   }
+  
+   param_loader.addYamlFileFromParam("executor_config");
+
 
   // Load parameters
   param_loader.setPrefix("mission_handler/subtask_executors/");
