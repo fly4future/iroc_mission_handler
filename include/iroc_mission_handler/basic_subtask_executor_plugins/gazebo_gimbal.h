@@ -8,7 +8,7 @@
 #include "iroc_mission_handler/subtask_executor_interface.h"
 
 namespace iroc_mission_handler {
-namespace executors {
+namespace basic_executors {
 
 /**
  * \brief Gimbal subtask executor - controls a gimbal device
@@ -19,10 +19,10 @@ namespace executors {
  * Parameters format: "roll,pitch,yaw"
  * Example: "[0.0,1.57,0.707]" (roll=0, pitch=90°, yaw=45°)
  */
-class GimbalExecutor : public SubtaskExecutor {
+class GazeboGimbalExecutor : public SubtaskExecutor {
  public:
-  GimbalExecutor() = default;
-  virtual ~GimbalExecutor() = default;
+  GazeboGimbalExecutor()          = default;
+  virtual ~GazeboGimbalExecutor() = default;
 
   bool stop() override;
 
@@ -44,13 +44,13 @@ class GimbalExecutor : public SubtaskExecutor {
   std::mutex mutex_;
 
   // Gimbal control parameters
-  double target_roll_ = 0.0;
+  double target_roll_  = 0.0;
   double target_pitch_ = 0.0;
-  double target_yaw_ = 0.0;
+  double target_yaw_   = 0.0;
 
-  double initial_roll_ = 0.0;
+  double initial_roll_  = 0.0;
   double initial_pitch_ = 0.0;
-  double initial_yaw_ = 0.0;
+  double initial_yaw_   = 0.0;
 
   /**
    * \brief Callback for receiving current gimbal orientation
@@ -59,8 +59,8 @@ class GimbalExecutor : public SubtaskExecutor {
   void orientationCallback(const std_msgs::Float32MultiArray::ConstPtr msg);
 };
 
-} // namespace executors
+} // namespace basic_executors
 } // namespace iroc_mission_handler
 
 #include <pluginlib/class_list_macros.h>
-PLUGINLIB_EXPORT_CLASS(iroc_mission_handler::executors::GimbalExecutor, iroc_mission_handler::SubtaskExecutor)
+PLUGINLIB_EXPORT_CLASS(iroc_mission_handler::basic_executors::GazeboGimbalExecutor, iroc_mission_handler::SubtaskExecutor)

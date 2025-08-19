@@ -4,9 +4,9 @@ mission_handler:
   subtask_manager:
     available_executors:
       - wait
-      - gimbal
+      - gazebo_gimbal
     executors:
       wait:
         address: "iroc_mission_handler/WaitSubtaskExecutor"
-      gimbal:
-        address: "iroc_mission_handler/GimbalSubtaskExecutor"
+      gazebo_gimbal:
+        address: "iroc_mission_handler/GazeboGimbalSubtaskExecutor"

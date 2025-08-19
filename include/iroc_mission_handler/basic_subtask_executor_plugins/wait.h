@@ -3,7 +3,7 @@
 #include "iroc_mission_handler/subtask_executor_interface.h"
 
 namespace iroc_mission_handler {
-namespace executors {
+namespace basic_executors {
 
 /**
  * \brief Wait subtask executor - simply waits for a specified duration
@@ -16,7 +16,7 @@ namespace executors {
  */
 class WaitExecutor : public SubtaskExecutor {
  public:
-  WaitExecutor() = default;
+  WaitExecutor()          = default;
   virtual ~WaitExecutor() = default;
 
   bool stop() override;
@@ -30,7 +30,7 @@ class WaitExecutor : public SubtaskExecutor {
   ros::Timer timer_;
 
   ros::Time start_time_;
-  double duration_ = 0.0;
+  double duration_     = 0.0;
   double elapsed_time_ = 0.0;
 
   /**
@@ -40,8 +40,8 @@ class WaitExecutor : public SubtaskExecutor {
   void timerCallback(const ros::TimerEvent& event);
 };
 
-} // namespace executors
+} // namespace basic_executors
 } // namespace iroc_mission_handler
 
 #include <pluginlib/class_list_macros.h>
-PLUGINLIB_EXPORT_CLASS(iroc_mission_handler::executors::WaitExecutor, iroc_mission_handler::SubtaskExecutor)
+PLUGINLIB_EXPORT_CLASS(iroc_mission_handler::basic_executors::WaitExecutor, iroc_mission_handler::SubtaskExecutor)

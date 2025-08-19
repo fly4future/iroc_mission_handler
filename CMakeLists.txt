@@ -58,8 +58,8 @@ include_directories(
 
 # Executors
 add_library(IROCMIssionHandler_BasicSubtaskExecutors
-  src/executors/gimbal.cpp
-  src/executors/wait.cpp
+  src/basic_subtask_executor_plugins/gazebo_gimbal.cpp
+  src/basic_subtask_executor_plugins/wait.cpp
 )
 add_dependencies(IROCMIssionHandler_BasicSubtaskExecutors
   ${catkin_EXPORTED_TARGETS}

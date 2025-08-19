@@ -1,7 +1,7 @@
-#include "iroc_mission_handler/executors/wait.h"
+#include "iroc_mission_handler/basic_subtask_executor_plugins/wait.h"
 
 namespace iroc_mission_handler {
-namespace executors {
+namespace basic_executors {
 
 bool WaitExecutor::initializeImpl(ros::NodeHandle& nh, const std::string& parameters) {
   mrs_lib::ParamLoader param_loader(nh, "SubtaskManager");
@@ -18,7 +18,7 @@ bool WaitExecutor::initializeImpl(ros::NodeHandle& nh, const std::string& parame
   param_loader.setPrefix("mission_handler/subtask_executors/");
   double min_duration = param_loader.loadParam2<double>("wait/min_duration", 1.0);
   double max_duration = param_loader.loadParam2<double>("wait/max_duration", 300.0);
-  double frequency = param_loader.loadParam2<double>("wait/timer_rate", 10.0);
+  double frequency    = param_loader.loadParam2<double>("wait/timer_rate", 10.0);
 
   if (min_duration <= 0.0) {
     ROS_ERROR("[WaitExecutor]: Invalid min_duration, must be greater than 0.0");
@@ -54,7 +54,7 @@ bool WaitExecutor::initializeImpl(ros::NodeHandle& nh, const std::string& parame
 }
 
 bool WaitExecutor::startImpl() {
-  start_time_ = ros::Time::now();
+  start_time_   = ros::Time::now();
   elapsed_time_ = 0.0;
   timer_.start();
 
@@ -95,5 +95,5 @@ void WaitExecutor::timerCallback([[maybe_unused]] const ros::TimerEvent& event) 
   ROS_DEBUG_STREAM("[WaitExecutor]: Elapsed time: " << elapsed_time_ << "/" << duration_);
 }
 
-} // namespace executors
+} // namespace basic_executors
 } // namespace iroc_mission_handler
