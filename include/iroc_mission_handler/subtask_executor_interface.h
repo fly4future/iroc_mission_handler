@@ -227,6 +227,8 @@ class SubtaskExecutor {
       return true;
     } catch (const std::invalid_argument&) {
       return false;
+    } catch (const std::out_of_range&) {
+      return false;
     }
   }
 
@@ -235,6 +237,8 @@ class SubtaskExecutor {
       value = std::stod(str);
       return true;
     } catch (const std::invalid_argument&) {
+      return false;
+    } catch (const std::out_of_range&) {
       return false;
     }
   }
@@ -262,7 +266,7 @@ class SubtaskExecutor {
   }
 
  private:
-  bool initialized_ = false;
+  bool initialized_      = false;
   subtask_state_t state_ = subtask_state_t::IDLE;
   std::shared_ptr<Subtask> subtask_; // Pointer to the subtask this executor is handling
 
