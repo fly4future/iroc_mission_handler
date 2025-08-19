@@ -18,6 +18,7 @@ set(CATKIN_DEPENDENCIES
 
 set(LIBRARIES
   IROCMissionHandler
+  IROCMIssionHandler_BasicSubtaskExecutors
 )
 
 find_package(catkin REQUIRED COMPONENTS
@@ -74,7 +75,6 @@ add_library(IROCMissionHandler
   src/subtask_manager.cpp
 )
 add_dependencies(IROCMissionHandler
-  IROCMIssionHandler_BasicSubtaskExecutors
   ${catkin_EXPORTED_TARGETS}
   ${${PROJECT_NAME}_EXPORTED_TARGETS}
 )
