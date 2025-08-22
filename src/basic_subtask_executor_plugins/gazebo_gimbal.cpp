@@ -1,6 +1,7 @@
 #include "iroc_mission_handler/basic_subtask_executor_plugins/gazebo_gimbal.h"
 
 namespace iroc_mission_handler {
+namespace executors {
 namespace basic_executors {
 
 bool GazeboGimbalExecutor::initializeImpl(ros::NodeHandle& nh, const std::string& parameters) {
@@ -162,4 +163,5 @@ void GazeboGimbalExecutor::orientationCallback(const std_msgs::Float32MultiArray
 }
 
 } // namespace basic_executors
+} // namespace executors
 } // namespace iroc_mission_handler

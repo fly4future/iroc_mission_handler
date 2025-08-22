@@ -3,6 +3,7 @@
 #include "iroc_mission_handler/subtask_executor_interface.h"
 
 namespace iroc_mission_handler {
+namespace executors {
 namespace basic_executors {
 
 /**
@@ -41,7 +42,8 @@ class WaitExecutor : public SubtaskExecutor {
 };
 
 } // namespace basic_executors
+} // namespace executors
 } // namespace iroc_mission_handler
 
 #include <pluginlib/class_list_macros.h>
-PLUGINLIB_EXPORT_CLASS(iroc_mission_handler::basic_executors::WaitExecutor, iroc_mission_handler::SubtaskExecutor)
+PLUGINLIB_EXPORT_CLASS(iroc_mission_handler::executors::basic_executors::WaitExecutor, iroc_mission_handler::SubtaskExecutor)

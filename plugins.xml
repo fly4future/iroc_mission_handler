@@ -1,8 +1,8 @@
-<library path="lib/libIROCMIssionHandler_BasicSubtaskExecutors">
-  <class name="iroc_mission_handler/GimbalSubtaskExecutor" type="iroc_mission_handler::basic_executors::GazeboGimbalExecutor" base_class_type="iroc_mission_handler::SubtaskExecutor">
-    <description>This is a gimbal subtask executor plugin.</description>
+<library path="lib/libIROCMissionHandler_BasicSubtaskExecutors">
+  <class name="iroc_mission_handler/GazeboGimbalSubtaskExecutor" type="iroc_mission_handler::executors::basic_executors::GazeboGimbalExecutor" base_class_type="iroc_mission_handler::SubtaskExecutor">
+    <description>This is a gazebo gimbal subtask executor plugin.</description>
   </class>
-  <class name="iroc_mission_handler/WaitSubtaskExecutor" type="iroc_mission_handler::basic_executors::WaitExecutor" base_class_type="iroc_mission_handler::SubtaskExecutor">
+  <class name="iroc_mission_handler/WaitSubtaskExecutor" type="iroc_mission_handler::executors::basic_executors::WaitExecutor" base_class_type="iroc_mission_handler::SubtaskExecutor">
     <description>This is a wait subtask executor plugin.</description>
   </class>
 </library>
