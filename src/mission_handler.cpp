@@ -259,7 +259,7 @@ void MissionHandler::onInit() {
   sh_opts.transport_hints    = ros::TransportHints().tcpNoDelay();
 
   sh_uav_state_            = mrs_lib::SubscribeHandler<mrs_robot_diagnostics::UavState>(sh_opts, "in/uav_state");
-  sh_control_manager_diag_ = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(sh_opts, "control_manager_diagnostics_in",
+  sh_control_manager_diag_ = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(sh_opts, "in/control_manager_diagnostics",
                                                                                             &MissionHandler::controlManagerDiagCallback, this);
 
   // | --------------------- service clients -------------------- |
