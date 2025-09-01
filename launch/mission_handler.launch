@@ -23,6 +23,7 @@
     <node pkg="nodelet" type="nodelet" name="mission_handler" args="$(arg nodelet) iroc_mission_handler/MissionHandler $(arg nodelet_manager)" launch-prefix="$(arg launch_prefix_debug)" output="screen">
 
       <param name="config" value="$(find iroc_mission_handler)/config/config.yaml" />
+      <param name="executor_config" value="$(find iroc_mission_handler)/config/basic_subtask_executor_plugins.yaml" />
       <param name="trajectory_generation_config" value="$(find mrs_uav_trajectory_generation)/config/public/trajectory_generation.yaml" />
 
       <param name="robot_name" value="$(arg UAV_NAME)" />
@@ -31,10 +32,9 @@
       <param if="$(eval not arg('custom_config') == '' and arg('custom_config')[0] == '/')" name="custom_config" value="$(arg custom_config)" />
       <param if="$(eval not arg('custom_config') == '' and not arg('custom_config')[0] == '/')" name="custom_config" value="$(env PWD)/$(arg custom_config)" />
 
-      <!-- Subscribers -->
+      <!-- Subscribers and publishers -->
       <remap from="~in/uav_state" to="state_monitor/uav_state" />
-      <remap from="~in/servo_camera/orientation" to="servo_camera/orientation" />
-      <remap from="~control_manager_diagnostics_in" to="control_manager/diagnostics" />
+      <remap from="~in/control_manager_diagnostics" to="control_manager/diagnostics" />
 
       <!-- Service clients -->
       <remap from="~svc/takeoff" to="uav_manager/takeoff" />
@@ -55,6 +55,9 @@
       <!-- Service servers -->
       <remap from="~svc_server/mission_activation" to="~mission_activation" />
       <remap from="~svc_server/mission_pausing" to="~mission_pausing" />
+
+      <!-- remapping for basic_executors (if executor is not loaded, this to used) -->
+      <remap from="~in/servo_camera/orientation" to="servo_camera/orientation" />
 
     </node>
 

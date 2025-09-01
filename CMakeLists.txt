@@ -18,6 +18,7 @@ set(CATKIN_DEPENDENCIES
 
 set(LIBRARIES
   IROCMissionHandler
+  IROCMissionHandler_BasicSubtaskExecutors
 )
 
 find_package(catkin REQUIRED COMPONENTS
@@ -55,17 +56,28 @@ include_directories(
 ## |                            Build                           |
 ## --------------------------------------------------------------
 
-add_library(IROCMissionHandler
-  src/mission_handler.cpp
-  src/subtask_executors.cpp
-  src/subtask_manager.cpp
+# Executors
+add_library(IROCMissionHandler_BasicSubtaskExecutors
+  src/basic_subtask_executor_plugins/gazebo_gimbal.cpp
+  src/basic_subtask_executor_plugins/wait.cpp
+)
+add_dependencies(IROCMissionHandler_BasicSubtaskExecutors
+  ${catkin_EXPORTED_TARGETS}
+  ${${PROJECT_NAME}_EXPORTED_TARGETS}
+)
+target_link_libraries(IROCMissionHandler_BasicSubtaskExecutors
+  ${catkin_LIBRARIES}
 )
 
+# Mission Handler
+add_library(IROCMissionHandler
+  src/mission_handler.cpp
+  src/subtask_manager.cpp
+)
 add_dependencies(IROCMissionHandler
   ${catkin_EXPORTED_TARGETS}
   ${${PROJECT_NAME}_EXPORTED_TARGETS}
 )
-
 target_link_libraries(IROCMissionHandler
   ${catkin_LIBRARIES}
 )

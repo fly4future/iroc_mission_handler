@@ -1,2 +1,12 @@
-main_timer_rate: 100.0 # [Hz]
-feedback_timer_rate: 1.0 # [Hz]
+mission_handler:
+  main_timer_rate: 100.0 # [Hz]
+  feedback_timer_rate: 1.0 # [Hz]
+  subtask_manager:
+    available_executors:
+      - wait
+      - gazebo_gimbal
+    executors:
+      wait:
+        address: "iroc_mission_handler/WaitSubtaskExecutor"
+      gazebo_gimbal:
+        address: "iroc_mission_handler/GazeboGimbalSubtaskExecutor"

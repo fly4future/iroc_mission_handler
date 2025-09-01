@@ -1,4 +1,6 @@
-mrs_msgs/Reference reference_point
+# Position of the waypoint
+mrs_msgs/Reference reference
+
+# Subtasks information
 iroc_mission_handler/Subtask[] subtasks
-# bool wait_for_completion
-# bool parallel
+bool parallel_execution  # Whether subtasks can be executed in parallel

@@ -1,0 +1,167 @@
+#include "iroc_mission_handler/basic_subtask_executor_plugins/gazebo_gimbal.h"
+
+namespace iroc_mission_handler {
+namespace executors {
+namespace basic_executors {
+
+bool GazeboGimbalExecutor::initializeImpl(ros::NodeHandle& nh, const std::string& parameters) {
+  mrs_lib::ParamLoader param_loader(nh, "SubtaskManager");
+
+  // Load custom configuration if provided
+  std::string custom_config_path;
+  param_loader.loadParam("custom_config", custom_config_path);
+  if (custom_config_path != "") {
+    param_loader.addYamlFile(custom_config_path);
+  }
+
+  param_loader.addYamlFileFromParam("executor_config");
+
+  // Load parameters
+  param_loader.setPrefix("mission_handler/subtask_executors/");
+  _orientation_tolerance_ = param_loader.loadParam2<double>("gimbal/orientation_tolerance", 0.01);
+  _max_movement_time_     = param_loader.loadParam2<double>("gimbal/max_movement_time", 30.0);
+
+  // Parse gimbal control parameters from the parameters string
+  std::vector<double> angles;
+  if (!parseParams(parameters, angles) || angles.size() != 3) {
+    ROS_ERROR_STREAM("[GazeboGimbalExecutor]: Invalid parameters format: " << parameters);
+    return false;
+  }
+
+  // Set target angles
+  target_roll_  = angles[0];
+  target_pitch_ = angles[1];
+  target_yaw_   = angles[2];
+
+  // Initialize subscriber and service client
+  mrs_lib::SubscribeHandlerOptions sh_opts;
+  sh_opts.nh                 = nh;
+  sh_opts.node_name          = "MissionHandler";
+  sh_opts.no_message_timeout = ros::Duration(5.0);
+  sh_opts.threadsafe         = true;
+  sh_opts.autostart          = false;
+  sh_opts.queue_size         = 10;
+  sh_opts.transport_hints    = ros::TransportHints().tcpNoDelay();
+
+  sh_current_orientation_ = mrs_lib::SubscribeHandler<std_msgs::Float32MultiArray>(sh_opts, "in/servo_camera/orientation", // Remapped
+                                                                                   &GazeboGimbalExecutor::orientationCallback, this);
+
+  sc_set_gimbal_orientation_ = nh.serviceClient<mrs_msgs::Vec4>("svc/servo_camera/set_orientation");
+
+  ROS_DEBUG_STREAM("[GazeboGimbalExecutor]: Initialized with target angles - Roll: " << target_roll_ << ", Pitch: " << target_pitch_
+                                                                                     << ", Yaw: " << target_yaw_);
+  return true;
+}
+
+bool GazeboGimbalExecutor::startImpl() {
+  // Wait for service to be available
+  if (!sc_set_gimbal_orientation_.waitForExistence(ros::Duration(5.0))) {
+    ROS_ERROR("[GazeboGimbalExecutor]: Gimbal orientation service not available");
+    return false;
+  }
+
+  // Create and send gimbal command
+  mrs_msgs::Vec4 srv;
+  srv.request.goal[0] = target_roll_;
+  srv.request.goal[1] = target_pitch_;
+  srv.request.goal[2] = target_yaw_;
+
+  if (!sc_set_gimbal_orientation_.call(srv)) {
+    ROS_ERROR("[GazeboGimbalExecutor]: Failed to call gimbal orientation service");
+    return false;
+  }
+
+  if (!srv.response.success) {
+    ROS_ERROR_STREAM("[GazeboGimbalExecutor]: Gimbal orientation service failed: " << srv.response.message);
+    return false;
+  }
+
+  // Start orientation monitoring
+  std::scoped_lock lock(mutex_);
+  start_time_ = ros::Time::now();
+  sh_current_orientation_.start();
+  progress_ = 0.0;
+
+  ROS_INFO_STREAM("[GazeboGimbalExecutor]: Started gimbal command - Roll: " << target_roll_ << ", Pitch: " << target_pitch_ << ", Yaw: " << target_yaw_
+                                                                            << ". Start time: " << start_time_.toSec());
+  return true;
+}
+
+bool GazeboGimbalExecutor::checkCompletion(double& progress) {
+  std::scoped_lock lock(mutex_);
+  progress = progress_;
+
+  if ((ros::Time::now() - start_time_).toSec() > _max_movement_time_) {
+    return true; // Consider it completed if max movement time exceeded
+  }
+
+  return progress_ >= 1.0;
+}
+
+bool GazeboGimbalExecutor::stop() {
+  sh_current_orientation_.stop();
+  ROS_INFO("[GazeboGimbalExecutor]: Stopped gimbal executor");
+  return true;
+}
+
+void GazeboGimbalExecutor::orientationCallback(const std_msgs::Float32MultiArray::ConstPtr msg) {
+  std::scoped_lock lock(mutex_);
+
+  if (progress_ >= 1.0) {
+    ROS_DEBUG("[GazeboGimbalExecutor]: Already completed, stopping orientation monitoring");
+    sh_current_orientation_.stop();
+    return;
+  } else if ((ros::Time::now() - start_time_).toSec() > _max_movement_time_) {
+    ROS_WARN("[GazeboGimbalExecutor]: Maximum movement time exceeded, stopping orientation monitoring");
+    sh_current_orientation_.stop();
+    return;
+  }
+
+  if (msg->data.size() < 3) {
+    ROS_WARN("[GazeboGimbalExecutor]: Received incomplete orientation data");
+    return;
+  }
+
+  double current_roll  = msg->data[0];
+  double current_pitch = msg->data[1];
+  double current_yaw   = msg->data[2];
+
+  // Initialize starting position if this is the first callback
+  if (progress_ == 0.0) {
+    initial_roll_  = current_roll;
+    initial_pitch_ = current_pitch;
+    initial_yaw_   = current_yaw;
+  }
+
+  // Calculate progress for each axis
+  double roll_den  = std::abs(target_roll_ - initial_roll_);
+  double pitch_den = std::abs(target_pitch_ - initial_pitch_);
+  double yaw_den   = std::abs(target_yaw_ - initial_yaw_);
+
+  double roll_progress  = (roll_den > 1e-6) ? std::abs(current_roll - initial_roll_) / roll_den : 1.0;
+  double pitch_progress = (pitch_den > 1e-6) ? std::abs(current_pitch - initial_pitch_) / pitch_den : 1.0;
+  double yaw_progress   = (yaw_den > 1e-6) ? std::abs(current_yaw - initial_yaw_) / yaw_den : 1.0;
+
+  // Clamp progress values to [0, 1]
+  roll_progress  = std::min(roll_progress, 1.0);
+  pitch_progress = std::min(pitch_progress, 1.0);
+  yaw_progress   = std::min(yaw_progress, 1.0);
+
+  // Calculate overall progress as the average of individual axis progress
+  progress_ = (roll_progress + pitch_progress + yaw_progress) / 3.0;
+
+  // Check if target orientation is reached within tolerance
+  if (std::abs(current_roll - target_roll_) < _orientation_tolerance_ &&   // Roll
+      std::abs(current_pitch - target_pitch_) < _orientation_tolerance_ && // Pitch
+      std::abs(current_yaw - target_yaw_) < _orientation_tolerance_) {     // Yaw
+    progress_ = 1.0;
+    ROS_INFO("[GazeboGimbalExecutor]: Target orientation reached");
+  }
+
+  ROS_DEBUG_STREAM("[GazeboGimbalExecutor]: Current: [" << current_roll << ", " << current_pitch << ", " << current_yaw << "] Target: [" << target_roll_ << ", "
+                                                        << target_pitch_ << ", " << target_yaw_ << "] Progress: " << progress_);
+}
+
+} // namespace basic_executors
+} // namespace executors
+} // namespace iroc_mission_handler

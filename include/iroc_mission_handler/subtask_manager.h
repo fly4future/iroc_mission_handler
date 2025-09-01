@@ -1,58 +1,100 @@
 #pragma once
 
 #include <ros/ros.h>
-#include <mrs_lib/subscribe_handler.h>
+#include <pluginlib/class_loader.h>
+
+#include "iroc_mission_handler/subtask_executor_interface.h"
 #include "iroc_mission_handler/Subtask.h"
-#include "iroc_mission_handler/subtask_executors.h"
+
+#include <mutex>
 
 namespace iroc_mission_handler {
 
 /**
- * \brief Manager class for all subtask executors
+ * \brief Manager class for handling multiple subtask executors using plugins
+ *
+ * This class manages the lifecycle of subtask executors loaded as plugins.
+ * It provides functionality to create, start, monitor, and stop subtasks dynamically.
  */
 class SubtaskManager {
  public:
-  SubtaskManager(const ros::NodeHandle& nh, const mrs_lib::SubscribeHandlerOptions& sh_opts);
-
   /**
-   * \brief Execute a subtask
-   * \param subtask The subtask message to start
-   * \param id The index of the subtask
-   * \return A tuple containing success status and the subtask ID if successful or an error message if failed.
+   * \brief Constructor
+   *
+   * \param nh ROS NodeHandle
    */
-  std::tuple<bool, std::string> startSubtask(const Subtask& subtask, const int id = 0);
+  SubtaskManager(ros::NodeHandle& nh);
 
   /**
-   * \brief Check if a subtask has completed
-   * \param id The ID of the subtask to check
-   * \param progress Reference to store the progress value (0.0-1.0)
-   * \return True if the subtask has completed, false if still running
-   */
-  bool isSubtaskCompleted(const int id, double& progress);
-
-  /**
-   * \brief Check if all subtasks have completed
-   * \return True if all active subtasks are completed, false otherwise
+   * \brief Check if all active subtasks have completed
+   *
+   * \return True if all subtasks are completed or no subtasks are active
    */
   bool areAllSubtasksCompleted();
 
   /**
-   * \brief Stop a running subtask
-   * \param id The ID of the subtask to stop
-   * \return True if the subtask was stopped successfully
+   * \brief Check if any critical subtasks have failed
+   *
+   * \return True if any critical subtask has failed
    */
-  bool stopSubtask(const int id);
+  bool areCriticalSubtasksFailed();
 
   /**
-   * \brief Stop all running subtasks
+   * \brief Create a subtask executor using the plugin system
+   *
+   * \param subtasks Vector of subtasks to create
+   *
+   * \return True if all non-critical subtasks were created successfully
    */
-  void stopAllSubtasks();
+  bool createSubtasks(const std::vector<Subtask>& subtasks);
+
+  /**
+   * \brief Check if a subtask has completed
+   *
+   * \param progress Reference to store current progress (0.0-1.0)
+   *
+   * \return True if the subtask is completed
+   */
+  bool isCurrentSubtaskCompleted(double& progress);
+
+  /**
+   * \brief Start all active subtasks
+   *
+   * \return True if all subtasks were started successfully
+   */
+  bool startAllSubtasks();
+
+  /**
+   * \brief Start the next subtask in the queue
+   *
+   * \return True if the next subtask was started successfully
+   */
+  bool startNextSubtask();
+
+  /**
+   * \brief Validate waypoint subtasks before mission execution
+   *
+   * \param subtasks Vector of subtasks to validate
+   *
+   * \return Tuple of (success, error_message)
+   */
+  std::tuple<bool, std::string> validateSubtasks(const std::vector<Subtask>& subtasks);
 
  private:
   ros::NodeHandle nh_;
-  mrs_lib::SubscribeHandlerOptions sh_opts_;
-  bool is_initialized_ = false;
-  std::map<int, std::unique_ptr<SubtaskExecutorBase>> active_subtasks_;
-};
 
+  bool is_initialized_ = false;
+  bool has_started_subtasks_ = false;
+  int current_subtask_id_ = -1;
+
+  // Plugin loader for subtask executors
+  std::unique_ptr<pluginlib::ClassLoader<SubtaskExecutor>> plugin_loader_;
+  std::map<std::string, std::string> plugin_addresses_;
+
+  // Map of active subtask executors
+  std::unordered_map<int, boost::shared_ptr<SubtaskExecutor>> active_subtasks_;
+
+  // Thread safety
+  std::mutex mutex_;
+};
 } // namespace iroc_mission_handler
