@@ -12,12 +12,14 @@
                           (TAKEOFF)               \
                           (MISSION_LOADED)        \
                           (EXECUTING)             \
+                          (EXECUTING_SUBTASK)     \
+                          (FINISHED)              \
                           (PAUSED)                \
                           (PAUSED_DUE_TO_RC_MODE) \
                           (RTH)                   \
                           (LAND)                  \
 
-namespace mrs_mission_manager
+namespace iroc_mission_handler
 {
 
 #include <mrs_robot_diagnostics/enums/enum_macros.h>

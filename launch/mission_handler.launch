@@ -12,7 +12,7 @@
 
   <!-- will it run as standalone nodelet or using a nodelet manager? -->
   <arg name="standalone" default="true" />
-  <arg name="manager" default="$(arg UAV_NAME)_mission_manager_manager" />
+  <arg name="manager" default="$(arg UAV_NAME)_mission_handler_manager" />
   <arg unless="$(arg standalone)" name="nodelet" value="load"/>
   <arg     if="$(arg standalone)" name="nodelet" value="standalone"/>
   <arg unless="$(arg standalone)" name="nodelet_manager" value="$(arg manager)"/>
@@ -20,9 +20,11 @@
 
   <group ns="$(arg UAV_NAME)">
 
-    <node pkg="nodelet" type="nodelet" name="mission_manager" args="$(arg nodelet) mrs_mission_manager/MissionManager $(arg nodelet_manager)" launch-prefix="$(arg launch_prefix_debug)" output="screen">
+    <node pkg="nodelet" type="nodelet" name="mission_handler" args="$(arg nodelet) iroc_mission_handler/MissionHandler $(arg nodelet_manager)" launch-prefix="$(arg launch_prefix_debug)" output="screen">
 
-      <param name="config" value="$(find mrs_mission_manager)/config/config.yaml" />
+      <param name="config" value="$(find iroc_mission_handler)/config/config.yaml" />
+      <param name="trajectory_generation_config" value="$(find mrs_uav_trajectory_generation)/config/public/trajectory_generation.yaml" />
+
       <param name="robot_name" value="$(arg UAV_NAME)" />
 
       <param if="$(eval arg('custom_config') == '')" name="custom_config" value="" />
@@ -31,6 +33,7 @@
 
       <!-- Subscribers -->
       <remap from="~in/uav_state" to="state_monitor/uav_state" />
+      <remap from="~in/servo_camera/orientation" to="servo_camera/orientation" />
       <remap from="~control_manager_diagnostics_in" to="control_manager/diagnostics" />
 
       <!-- Service clients -->
@@ -47,6 +50,7 @@
       <remap from="~svc/trajectory_reference_out" to="control_manager/trajectory_reference" />
       <remap from="~svc/transform_reference" to="control_manager/transform_reference" />
       <remap from="~svc/transform_reference_array" to="control_manager/transform_reference_array" />
+      <remap from="~svc/servo_camera/set_orientation" to="servo_camera/set_orientation" />
 
       <!-- Service servers -->
       <remap from="~svc_server/mission_activation" to="~mission_activation" />

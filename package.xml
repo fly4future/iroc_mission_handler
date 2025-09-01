@@ -1,10 +1,10 @@
 <?xml version="1.0"?>
 <package format="2">
 
-  <name>mrs_mission_manager</name>
-  <version>1.0.0</version>
+  <name>iroc_mission_handler</name>
+  <version>1.0.1</version>
   <description>
-    mrs_mission_manager
+    iroc_mission_handler
   </description>
 
   <maintainer email="spurny@fly4future.com">Vojtech Spurny</maintainer>
@@ -20,8 +20,8 @@
   <depend>mrs_msgs</depend>
   <depend>std_srvs</depend>
   <depend>mrs_lib</depend>
-  <depend>genmsg</depend>
   <depend>actionlib_msgs</depend>
+  <depend>message_generation</depend>
   <depend>mrs_robot_diagnostics</depend>
 
   <export>

@@ -1,3 +1,2 @@
 main_timer_rate: 100.0 # [Hz]
 feedback_timer_rate: 1.0 # [Hz]
-correspondence_tolerance: 0.15  # Tolerance used to evaluate correspondence with path and trajectory points 

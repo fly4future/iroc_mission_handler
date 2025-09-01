@@ -6,7 +6,7 @@ attach: false
 tmux_options: -f /etc/ctu-mrs/tmux.conf
 # you can modify these
 pre_window: export UAV_NAME=uav1; export RUN_TYPE=simulation; export UAV_TYPE=x500
-startup_window: mission_manager
+startup_window: mission_handler
 windows:
   - roscore:
       layout: tiled
@@ -40,10 +40,10 @@ windows:
       layout: tiled
       panes:
         - waitForHw; roslaunch mrs_robot_diagnostics state_monitor.launch
-  - mission_manager:
+  - mission_handler:
       layout: tiled
       panes:
-        - waitForHw; roslaunch mrs_mission_manager mission_manager.launch
+        - waitForHw; roslaunch iroc_mission_handler mission_handler.launch
   - arm_and_offboard:
       layout: tiled
       panes:
@@ -52,11 +52,11 @@ windows:
   - mission_control:
       layout: tiled
       panes:
-        - history -s rosservice call /$UAV_NAME/mission_manager/mission_activation
+        - history -s rosservice call /$UAV_NAME/mission_handler/mission_activation
   - mission_test:
       layout: tiled
       panes:
-        - history -s roslaunch mrs_mission_manager client_test.launch
+        - history -s roslaunch iroc_mission_handler client_test.launch
   - rviz:
       layout: tiled
       panes:
@@ -66,7 +66,7 @@ windows:
   - pause:
       layout: tiled
       panes:
-        - history -s rosservice call /uav1/mission_manager/mission_pausing 
+        - history -s rosservice call /uav1/mission_handler/mission_pausing 
   - diag:
       layout: tiled
       panes:
