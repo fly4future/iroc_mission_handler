@@ -1,5 +1,0 @@
-<library path="lib/libIROCMissionHandler">
-  <class name="iroc_mission_handler/MissionHandler" type="iroc_mission_handler::MissionHandler" base_class_type="nodelet::Nodelet">
-    <description>Mission handler nodelet</description>
-  </class>
-</library>

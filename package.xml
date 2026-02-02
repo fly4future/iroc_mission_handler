@@ -1,32 +1,36 @@
 <?xml version="1.0"?>
-<package format="2">
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
 
   <name>iroc_mission_handler</name>
-  <version>1.0.1</version>
-  <description>
-    iroc_mission_handler
-  </description>
+  <version>2.0.0</version>
+  <description> iroc_mission_handler </description>
 
   <maintainer email="spurny@fly4future.com">Vojtech Spurny</maintainer>
-  <author email="spurny@fly4future.com">Vojtech Spurny</author>
+  <maintainer email="rivera@fly4future.com">Marlon Rivera</maintainer>
 
   <license>MIT</license>
 
-  <buildtool_depend>catkin</buildtool_depend>
+  <buildtool_depend>ament_cmake_ros</buildtool_depend>
+  <buildtool_depend>rosidl_default_generators</buildtool_depend>
 
-  <depend>cmake_modules</depend>
-  <depend>roscpp</depend>
-  <depend>nodelet</depend>
-  <depend>mrs_msgs</depend>
-  <depend>std_srvs</depend>
+  <depend>rclcpp</depend>
+  <depend>rclcpp_components</depend>
+  <depend>rclcpp_action</depend>
+  <depend>pluginlib</depend>
+  <depend>action_msgs</depend>
+  <depend>builtin_interfaces</depend>
+  <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
   <depend>mrs_lib</depend>
-  <depend>actionlib_msgs</depend>
-  <depend>message_generation</depend>
+  <depend>mrs_msgs</depend>
   <depend>mrs_robot_diagnostics</depend>
 
+  <exec_depend>rosidl_default_runtime</exec_depend>
+  <member_of_group>rosidl_interface_packages</member_of_group>
+
   <export>
-    <nodelet plugin="${prefix}/nodelets.xml" />
-    <iroc_mission_handler plugin="${prefix}/plugins.xml" />
+    <build_type>ament_cmake</build_type>
   </export>
 
 </package>
