@@ -1,10 +1,11 @@
 #pragma once
 
-#include <ros/ros.h>
-#include <pluginlib/class_loader.h>
+
+#include <rclcpp/rclcpp.hpp>
+#include <pluginlib/class_loader.hpp>
 
 #include "iroc_mission_handler/subtask_executor_interface.h"
-#include "iroc_mission_handler/Subtask.h"
+#include "iroc_mission_handler/msg/subtask.hpp"
 
 #include <mutex>
 

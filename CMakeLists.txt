@@ -135,6 +135,7 @@ target_link_libraries(IrocMissionHandler_IrocMissionHandler
 # Mission Handler
 add_library(IROCMissionHandler SHARED
   src/mission_handler.cpp
+  # src/subtask_manager.cpp
 )
 
 target_link_libraries(IROCMissionHandler
