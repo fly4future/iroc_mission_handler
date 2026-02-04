@@ -17,15 +17,18 @@ uint8 frame_id
 uint8 height_id
 iroc_mission_handler/Waypoint[] points
 uint8 terminal_action
+iroc_mission_handler/MissionGoal robot_goal
 ---
 # Define the result
 string name
 bool success
 string message
+iroc_mission_handler/MissionResult robot_result
 ---
 # Define a feedback message
 string name
 string message
+iroc_mission_handler/MissionFeedback robot_feedback
 
 # Next waypoint information
 uint16 goal_idx                     # Index of the next waypoint the drone is flying to

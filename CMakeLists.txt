@@ -63,6 +63,9 @@ endforeach()
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Subtask.msg"
   "msg/Waypoint.msg"
+  "msg/MissionGoal.msg"
+  "msg/MissionFeedback.msg"
+  "msg/MissionResult.msg"
   "action/Mission.action"
   DEPENDENCIES 
     builtin_interfaces 
