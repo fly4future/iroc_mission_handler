@@ -399,9 +399,9 @@ void MissionHandler::timerMain() {
   // Check for manual control during active missions
   if (uav_state_.value() == state_t::MANUAL) {
     auto result     = std::make_shared<Mission::Result>();
-    result->name    = robot_name_;
-    result->success = false;
-    result->message = "Mission cancelled because drone is under manual control.";
+    result->robot_result.name    = robot_name_;
+    result->robot_result.success = false;
+    result->robot_result.message = "Mission cancelled because drone is under manual control.";
 
     current_goal_handle_->abort(result);
     RCLCPP_INFO_STREAM(node_->get_logger(), "Mission cancelled because drone is under manual control.");
@@ -465,9 +465,9 @@ void MissionHandler::timerMain() {
         RCLCPP_WARN(node_->get_logger(), "Failed to send trajectory: %s", trajectory_result.message.c_str());
 
         auto mission_result     = std::make_shared<Mission::Result>();
-        mission_result->name    = robot_name_;
-        mission_result->success = false;
-        mission_result->message = trajectory_result.message;
+        mission_result->robot_result.name    = robot_name_;
+        mission_result->robot_result.success = false;
+        mission_result->robot_result.message = trajectory_result.message;
         current_goal_handle_->abort(mission_result);
 
         current_trajectory_idx_ = 0;
@@ -507,9 +507,9 @@ void MissionHandler::timerMain() {
     // if (subtask_manager_->areCriticalSubtasksFailed()) {
     //   RCLCPP_WARN(node_->get_logger(), " Critical subtask failed. Aborting mission.");
     //   auto mission_result     = std::make_shared<Mission::Result>();
-    //   mission_result->name    = robot_name_;
-    //   mission_result->success = false;
-    //   mission_result->message = "Critical subtask failed.";
+    //   mission_result->robot_result.name    = robot_name_;
+    //   mission_result->robot_result.success = false;
+    //   mission_result->robot_result.message = "Critical subtask failed.";
     //   current_goal_handle_->abort(mission_result);
     //
     //   updateMissionState(mission_state_t::IDLE);
@@ -531,7 +531,7 @@ void MissionHandler::timerMain() {
   }
 
   case mission_state_t::FINISHED: {
-    switch (current_goal_handle_->get_goal()->terminal_action) {
+    switch (current_goal_handle_->get_goal()->robot_goal.terminal_action) {
     case Mission::Goal::TERMINAL_ACTION_LAND: {
       RCLCPP_INFO(node_->get_logger(), "Executing terminal action. Calling land");
       auto request    = std::make_shared<std_srvs::srv::Trigger::Request>();
@@ -560,9 +560,9 @@ void MissionHandler::timerMain() {
 
     default: {
       auto mission_result     = std::make_shared<Mission::Result>();
-      mission_result->name    = robot_name_;
-      mission_result->success = true;
-      mission_result->message = "Mission finished.";
+      mission_result->robot_result.name    = robot_name_;
+      mission_result->robot_result.success = true;
+      mission_result->robot_result.message = "Mission finished.";
       current_goal_handle_->succeed(mission_result);
 
       updateMissionState(mission_state_t::IDLE);
@@ -583,16 +583,16 @@ void MissionHandler::timerMain() {
       auto mission_result = std::make_shared<Mission::Result>();
 
       if (previous_mission_state_ == mission_state_t::FINISHED) {
-        mission_result->name    = robot_name_;
-        mission_result->success = true;
-        mission_result->message = "Mission finished";
+        mission_result->robot_result.name    = robot_name_;
+        mission_result->robot_result.success = true;
+        mission_result->robot_result.message = "Mission finished";
 
         RCLCPP_INFO(node_->get_logger(), "Mission finished.");
         current_goal_handle_->succeed(mission_result);
       } else {
-        mission_result->name    = robot_name_;
-        mission_result->success = false;
-        mission_result->message = "Mission stopped due to landing.";
+        mission_result->robot_result.name    = robot_name_;
+        mission_result->robot_result.success = false;
+        mission_result->robot_result.message = "Mission stopped due to landing.";
 
         RCLCPP_WARN(node_->get_logger(), "Mission stopped due to landing.");
         current_goal_handle_->abort(mission_result);
@@ -866,8 +866,8 @@ rclcpp_action::CancelResponse MissionHandler::handle_cancel(const std::shared_pt
       }
 
       auto result     = std::make_shared<Mission::Result>();
-      result->success = false;
-      result->message = "Mission cancelled by client request.";
+      result->robot_result.success = false;
+      result->robot_result.message = "Mission cancelled by client request.";
       current_goal_handle_->abort(result);
       RCLCPP_INFO(node_->get_logger(), "Mission stopped by cancel request.");
       updateMissionState(mission_state_t::IDLE);
@@ -876,8 +876,8 @@ rclcpp_action::CancelResponse MissionHandler::handle_cancel(const std::shared_pt
     }
     default:
       auto result     = std::make_shared<Mission::Result>();
-      result->success = false;
-      result->message = "Mission cancelled by client request.";
+      result->robot_result.success = false;
+      result->robot_result.message = "Mission cancelled by client request.";
       current_goal_handle_->abort(result);
       RCLCPP_INFO(node_->get_logger(), "Mission stopped by cancel request.");
       updateMissionState(mission_state_t::IDLE);
@@ -896,15 +896,15 @@ void MissionHandler::actionPublishFeedback() {
 
   if (current_goal_handle_->is_active()) {
     auto feedback                           = std::make_shared<Mission::Feedback>();
-    feedback->name                          = robot_name_;
-    feedback->message                       = to_string(mission_state_.value());
-    feedback->goal_idx                      = mission_waypoint_idx_;
-    feedback->distance_to_closest_goal      = waypoint_metrics_.remaining_distance;
-    feedback->goal_estimated_arrival_time   = waypoint_metrics_.eta;
-    feedback->goal_progress                 = waypoint_metrics_.progress;
-    feedback->distance_to_finish            = mission_metrics_.remaining_distance;
-    feedback->finish_estimated_arrival_time = mission_metrics_.eta;
-    feedback->mission_progress              = mission_metrics_.progress;
+    feedback->robot_feedback.name                          = robot_name_;
+    feedback->robot_feedback.message                       = to_string(mission_state_.value());
+    feedback->robot_feedback.goal_idx                      = mission_waypoint_idx_;
+    feedback->robot_feedback.distance_to_closest_goal      = waypoint_metrics_.remaining_distance;
+    feedback->robot_feedback.goal_estimated_arrival_time   = waypoint_metrics_.eta;
+    feedback->robot_feedback.goal_progress                 = waypoint_metrics_.progress;
+    feedback->robot_feedback.distance_to_finish            = mission_metrics_.remaining_distance;
+    feedback->robot_feedback.finish_estimated_arrival_time = mission_metrics_.eta;
+    feedback->robot_feedback.mission_progress              = mission_metrics_.progress;
 
     current_goal_handle_->publish_feedback(feedback);
   }
@@ -915,27 +915,27 @@ MissionHandler::result_t MissionHandler::createMission(const std::shared_ptr<con
   std::stringstream ss;
 
   // Parameter validation
-  if (!(goal->frame_id == Mission::Goal::FRAME_ID_LOCAL || goal->frame_id == Mission::Goal::FRAME_ID_LATLON || goal->frame_id == Mission::Goal::FRAME_ID_FCU)) {
-    ss << "Unknown frame_id = \'" << int(goal->frame_id) << "\', use the predefined ones.";
+  if (!(goal->robot_goal.frame_id == Mission::Goal::FRAME_ID_LOCAL || goal->robot_goal.frame_id == Mission::Goal::FRAME_ID_LATLON || goal->robot_goal.frame_id == Mission::Goal::FRAME_ID_FCU)) {
+    ss << "Unknown frame_id = \'" << int(goal->robot_goal.frame_id) << "\', use the predefined ones.";
     RCLCPP_WARN(node_->get_logger(), "%s", ss.str().c_str());
     return {false, ss.str()};
   }
 
-  if (!(goal->height_id == Mission::Goal::HEIGHT_ID_AGL || goal->height_id == Mission::Goal::HEIGHT_ID_AMSL ||
-        goal->height_id == Mission::Goal::HEIGHT_ID_FCU)) {
-    ss << "Unknown height_id = \'" << int(goal->height_id) << "\', use the predefined ones.";
+  if (!(goal->robot_goal.height_id == Mission::Goal::HEIGHT_ID_AGL || goal->robot_goal.height_id == Mission::Goal::HEIGHT_ID_AMSL ||
+        goal->robot_goal.height_id == Mission::Goal::HEIGHT_ID_FCU)) {
+    ss << "Unknown height_id = \'" << int(goal->robot_goal.height_id) << "\', use the predefined ones.";
     RCLCPP_WARN(node_->get_logger(), "%s", ss.str().c_str());
     return {false, ss.str()};
   }
 
-  if (!(goal->terminal_action == Mission::Goal::TERMINAL_ACTION_NONE || goal->terminal_action == Mission::Goal::TERMINAL_ACTION_LAND ||
-        goal->terminal_action == Mission::Goal::TERMINAL_ACTION_RTH)) {
-    ss << "Unknown terminal_action = \'" << int(goal->terminal_action) << "\', use the predefined ones.";
+  if (!(goal->robot_goal.terminal_action == Mission::Goal::TERMINAL_ACTION_NONE || goal->robot_goal.terminal_action == Mission::Goal::TERMINAL_ACTION_LAND ||
+        goal->robot_goal.terminal_action == Mission::Goal::TERMINAL_ACTION_RTH)) {
+    ss << "Unknown terminal_action = \'" << int(goal->robot_goal.terminal_action) << "\', use the predefined ones.";
     RCLCPP_WARN(node_->get_logger(), "%s", ss.str().c_str());
     return {false, ss.str()};
   }
 
-  for (const auto &point : goal->points) {
+  for (const auto &point : goal->robot_goal.points) {
     // Validate subtasks for each point
     // TODO: implement subtask manager and use it to validate the subtasks
     // auto [success, error_message] = subtask_manager_->validateSubtasks(point.subtasks);
@@ -967,7 +967,7 @@ MissionHandler::result_t MissionHandler::createMission(const std::shared_ptr<con
   RCLCPP_INFO(node_->get_logger(), "All subtasks validated successfully");
 
   std::string frame_id;
-  switch (goal->frame_id) {
+  switch (goal->robot_goal.frame_id) {
   case Mission::Goal::FRAME_ID_LOCAL: {
     frame_id = "local_origin";
     break;
@@ -992,7 +992,7 @@ MissionHandler::result_t MissionHandler::createMission(const std::shared_ptr<con
   }
 
   // Reject mission if fcu_frame is set and uav not flying
-  if (goal->frame_id == Mission::Goal::FRAME_ID_FCU) {
+  if (goal->robot_goal.frame_id == Mission::Goal::FRAME_ID_FCU) {
     if (uav_state_.value() != state_t::HOVER) {
       ss << "FCU frame is set but uav is not in the air ";
       RCLCPP_WARN(node_->get_logger(), "%s", ss.str().c_str());
@@ -1003,8 +1003,8 @@ MissionHandler::result_t MissionHandler::createMission(const std::shared_ptr<con
   // Saving the AGL height points specified in the goal, this is needed as they will be
   // replaced after doing a transformation with latlon points
   std::vector<double> height_points;
-  if (goal->height_id == Mission::Goal::HEIGHT_ID_AGL) {
-    for (const auto &point : goal->points) {
+  if (goal->robot_goal.height_id == Mission::Goal::HEIGHT_ID_AGL) {
+    for (const auto &point : goal->robot_goal.points) {
       height_points.push_back(point.reference.position.z);
     }
   }
@@ -1013,8 +1013,8 @@ MissionHandler::result_t MissionHandler::createMission(const std::shared_ptr<con
   mrs_msgs::msg::ReferenceArray goal_points_array;
   goal_points_array.header.frame_id = frame_id;
   goal_points_array.array.clear();
-  goal_points_array.array.reserve(goal->points.size());
-  for (const auto &point : goal->points) {
+  goal_points_array.array.reserve(goal->robot_goal.points.size());
+  for (const auto &point : goal->robot_goal.points) {
     goal_points_array.array.push_back(point.reference);
   }
 
@@ -1031,7 +1031,7 @@ MissionHandler::result_t MissionHandler::createMission(const std::shared_ptr<con
     return {false, "Failed to call transform reference array service"};
   }
 
-  if (goal->height_id == Mission::Goal::HEIGHT_ID_AGL && goal->frame_id != Mission::Goal::FRAME_ID_FCU) {
+  if (goal->robot_goal.height_id == Mission::Goal::HEIGHT_ID_AGL && goal->robot_goal.frame_id != Mission::Goal::FRAME_ID_FCU) {
     // Replacing the height points after the transformation, as when receiving LATLON points the transformation also considers the height as AMSL.
     auto size = response->array.array.size();
     for (size_t i = 0; i < response->array.array.size(); i++) {
@@ -1053,7 +1053,7 @@ MissionHandler::result_t MissionHandler::createMission(const std::shared_ptr<con
   msg_path.header.frame_id            = response->array.header.frame_id;
 
   // Segmenting the path into segments based on subtasks and heading trajectories
-  std::vector<path_segment_t> path_segments = segmentPath(msg_path, goal->points);
+  std::vector<path_segment_t> path_segments = segmentPath(msg_path, goal->robot_goal.points);
 
   // Generating trajectory from the path segments
   auto [result, trajectories] = generateTrajectoriesFromSegments(path_segments);
