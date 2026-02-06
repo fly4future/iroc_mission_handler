@@ -286,35 +286,36 @@ void MissionHandler::initialize() {
   sh_opts.threadsafe         = true;
   sh_opts.autostart          = true;
 
-  sh_state_                = mrs_lib::SubscriberHandler<mrs_msgs::msg::State>(sh_opts, "in/uav_state");
-  sh_control_manager_diag_ = mrs_lib::SubscriberHandler<mrs_msgs::msg::ControlManagerDiagnostics>(sh_opts, "in/control_manager_diagnostics",
+  sh_state_                = mrs_lib::SubscriberHandler<mrs_msgs::msg::State>(sh_opts, "~/uav_state_in");
+  sh_control_manager_diag_ = mrs_lib::SubscriberHandler<mrs_msgs::msg::ControlManagerDiagnostics>(sh_opts, "~/control_manager_diagnostics_in",
                                                                                                   &MissionHandler::controlManagerDiagCallback, this);
 
   // | --------------------- service clients -------------------- |
-  sc_takeoff_                   = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "svc/takeoff");
-  sc_land_                      = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "svc/land");
-  sc_land_home_                 = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "svc/land_home");
-  sc_path_                      = mrs_lib::ServiceClientHandler<mrs_msgs::srv::PathSrv>(node_, "svc/path");
-  sc_get_path_                  = mrs_lib::ServiceClientHandler<mrs_msgs::srv::GetPathSrv>(node_, "svc/get_path");
-  sc_hover_                     = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "svc/hover");
-  sc_mission_flying_to_start_   = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "svc/mission_flying_to_start");
-  sc_mission_start_             = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "svc/mission_start");
-  sc_mission_pause_             = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "svc/mission_pause");
-  sc_mission_validation_        = mrs_lib::ServiceClientHandler<mrs_msgs::srv::ValidateReferenceArray>(node_, "svc/mission_validation");
-  sc_trajectory_reference_      = mrs_lib::ServiceClientHandler<mrs_msgs::srv::TrajectoryReferenceSrv>(node_, "svc/trajectory_reference_out");
-  sc_transform_reference_       = mrs_lib::ServiceClientHandler<mrs_msgs::srv::TransformReferenceSrv>(node_, "svc/transform_reference");
-  sc_transform_reference_array_ = mrs_lib::ServiceClientHandler<mrs_msgs::srv::TransformReferenceArraySrv>(node_, "svc/transform_reference_array");
+  sc_takeoff_                   = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/svc_takeoff_in");
+  sc_land_                      = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/svc_land_in");
+  sc_land_home_                 = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/svc_land_home_in");
+  sc_path_                      = mrs_lib::ServiceClientHandler<mrs_msgs::srv::PathSrv>(node_, "~/svc_path_in");
+  sc_get_path_                  = mrs_lib::ServiceClientHandler<mrs_msgs::srv::GetPathSrv>(node_, "~/svc_get_path_in");
+  sc_hover_                     = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/svc_hover_in");
+  sc_mission_flying_to_start_   = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/svc_mission_flying_to_start_in");
+  sc_mission_start_             = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/svc_mission_start_in");
+  sc_mission_pause_             = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/svc_mission_pause_in");
+  sc_mission_validation_        = mrs_lib::ServiceClientHandler<mrs_msgs::srv::ValidateReferenceArray>(node_, "~/svc_mission_validation_in");
+  sc_trajectory_reference_      = mrs_lib::ServiceClientHandler<mrs_msgs::srv::TrajectoryReferenceSrv>(node_, "~/svc_trajectory_reference_in");
+  sc_transform_reference_       = mrs_lib::ServiceClientHandler<mrs_msgs::srv::TransformReferenceSrv>(node_, "~/svc_transform_reference_in");
+  sc_transform_reference_array_ = mrs_lib::ServiceClientHandler<mrs_msgs::srv::TransformReferenceArraySrv>(node_, "~/svc_transform_reference_array_in");
+
 
   // | --------------------- service servers -------------------- |
   ss_activation_ = mrs_lib::ServiceServerHandler<std_srvs::srv::Trigger>(
-      node_, "svc_server/mission_activation",
+      node_, "~/svs_mission_activation_out",
       [this](std::shared_ptr<std_srvs::srv::Trigger::Request> request, std::shared_ptr<std_srvs::srv::Trigger::Response> response) {
         return missionActivationServiceCallback(request, response);
       },
       rclcpp::SystemDefaultsQoS(), cbkgrp_ss_);
 
   ss_pausing_ = mrs_lib::ServiceServerHandler<std_srvs::srv::Trigger>(
-      node_, "svc_server/mission_pausing",
+      node_, "~/svs_mission_pausing_out",
       [this](std::shared_ptr<std_srvs::srv::Trigger::Request> request, std::shared_ptr<std_srvs::srv::Trigger::Response> response) {
         return missionPausingServiceCallback(request, response);
       },
@@ -375,7 +376,7 @@ void MissionHandler::timerMain() {
   // |-----------------------------------------------------------|
   // |                   State machine logic                     |
   // |-----------------------------------------------------------|
-  if (!current_goal_handle_->is_active()) {
+  if (!current_goal_handle_ || !current_goal_handle_->is_active()) {
     return;
   }
 
@@ -398,7 +399,7 @@ void MissionHandler::timerMain() {
 
   // Check for manual control during active missions
   if (uav_state_.value() == state_t::MANUAL) {
-    auto result     = std::make_shared<Mission::Result>();
+    auto result                  = std::make_shared<Mission::Result>();
     result->robot_result.name    = robot_name_;
     result->robot_result.success = false;
     result->robot_result.message = "Mission cancelled because drone is under manual control.";
@@ -464,7 +465,7 @@ void MissionHandler::timerMain() {
       if (!trajectory_result.success) {
         RCLCPP_WARN(node_->get_logger(), "Failed to send trajectory: %s", trajectory_result.message.c_str());
 
-        auto mission_result     = std::make_shared<Mission::Result>();
+        auto mission_result                  = std::make_shared<Mission::Result>();
         mission_result->robot_result.name    = robot_name_;
         mission_result->robot_result.success = false;
         mission_result->robot_result.message = trajectory_result.message;
@@ -559,7 +560,7 @@ void MissionHandler::timerMain() {
     }
 
     default: {
-      auto mission_result     = std::make_shared<Mission::Result>();
+      auto mission_result                  = std::make_shared<Mission::Result>();
       mission_result->robot_result.name    = robot_name_;
       mission_result->robot_result.success = true;
       mission_result->robot_result.message = "Mission finished.";
@@ -633,7 +634,7 @@ bool MissionHandler::missionActivationServiceCallback([[maybe_unused]] const std
   std::scoped_lock lock(action_server_mutex_);
   RCLCPP_INFO_STREAM(node_->get_logger(), "Received mission activation request.");
 
-  if (!current_goal_handle_->is_active()) {
+  if (!current_goal_handle_ || !current_goal_handle_->is_active()) {
     response->success = false;
     response->message = "No active mission.";
     RCLCPP_WARN(node_->get_logger(), "No active mission.");
@@ -690,7 +691,7 @@ bool MissionHandler::missionPausingServiceCallback([[maybe_unused]] const std::s
                                                    const std::shared_ptr<std_srvs::srv::Trigger::Response> response) {
   std::scoped_lock lock(action_server_mutex_);
   RCLCPP_INFO_STREAM(node_->get_logger(), "Received mission pausing request.");
-  if (!current_goal_handle_->is_active()) {
+  if (!current_goal_handle_ || !current_goal_handle_->is_active()) {
     response->success = false;
     response->message = "No active mission.";
     RCLCPP_WARN(node_->get_logger(), "No active mission.");
@@ -865,7 +866,7 @@ rclcpp_action::CancelResponse MissionHandler::handle_cancel(const std::shared_pt
         RCLCPP_WARN(node_->get_logger(), "Failed to call hover service.");
       }
 
-      auto result     = std::make_shared<Mission::Result>();
+      auto result                  = std::make_shared<Mission::Result>();
       result->robot_result.success = false;
       result->robot_result.message = "Mission cancelled by client request.";
       current_goal_handle_->abort(result);
@@ -875,7 +876,7 @@ rclcpp_action::CancelResponse MissionHandler::handle_cancel(const std::shared_pt
       break;
     }
     default:
-      auto result     = std::make_shared<Mission::Result>();
+      auto result                  = std::make_shared<Mission::Result>();
       result->robot_result.success = false;
       result->robot_result.message = "Mission cancelled by client request.";
       current_goal_handle_->abort(result);
@@ -894,20 +895,22 @@ rclcpp_action::CancelResponse MissionHandler::handle_cancel(const std::shared_pt
 void MissionHandler::actionPublishFeedback() {
   std::scoped_lock lock(action_server_mutex_);
 
-  if (current_goal_handle_->is_active()) {
-    auto feedback                           = std::make_shared<Mission::Feedback>();
-    feedback->robot_feedback.name                          = robot_name_;
-    feedback->robot_feedback.message                       = to_string(mission_state_.value());
-    feedback->robot_feedback.goal_idx                      = mission_waypoint_idx_;
-    feedback->robot_feedback.distance_to_closest_goal      = waypoint_metrics_.remaining_distance;
-    feedback->robot_feedback.goal_estimated_arrival_time   = waypoint_metrics_.eta;
-    feedback->robot_feedback.goal_progress                 = waypoint_metrics_.progress;
-    feedback->robot_feedback.distance_to_finish            = mission_metrics_.remaining_distance;
-    feedback->robot_feedback.finish_estimated_arrival_time = mission_metrics_.eta;
-    feedback->robot_feedback.mission_progress              = mission_metrics_.progress;
-
-    current_goal_handle_->publish_feedback(feedback);
+  if (!current_goal_handle_ || !current_goal_handle_->is_active()) {
+    return;
   }
+
+  auto feedback                                          = std::make_shared<Mission::Feedback>();
+  feedback->robot_feedback.name                          = robot_name_;
+  feedback->robot_feedback.message                       = to_string(mission_state_.value());
+  feedback->robot_feedback.goal_idx                      = mission_waypoint_idx_;
+  feedback->robot_feedback.distance_to_closest_goal      = waypoint_metrics_.remaining_distance;
+  feedback->robot_feedback.goal_estimated_arrival_time   = waypoint_metrics_.eta;
+  feedback->robot_feedback.goal_progress                 = waypoint_metrics_.progress;
+  feedback->robot_feedback.distance_to_finish            = mission_metrics_.remaining_distance;
+  feedback->robot_feedback.finish_estimated_arrival_time = mission_metrics_.eta;
+  feedback->robot_feedback.mission_progress              = mission_metrics_.progress;
+
+  current_goal_handle_->publish_feedback(feedback);
 }
 
 // | -------------------- support functions ------------------- |
@@ -915,7 +918,8 @@ MissionHandler::result_t MissionHandler::createMission(const std::shared_ptr<con
   std::stringstream ss;
 
   // Parameter validation
-  if (!(goal->robot_goal.frame_id == Mission::Goal::FRAME_ID_LOCAL || goal->robot_goal.frame_id == Mission::Goal::FRAME_ID_LATLON || goal->robot_goal.frame_id == Mission::Goal::FRAME_ID_FCU)) {
+  if (!(goal->robot_goal.frame_id == Mission::Goal::FRAME_ID_LOCAL || goal->robot_goal.frame_id == Mission::Goal::FRAME_ID_LATLON ||
+        goal->robot_goal.frame_id == Mission::Goal::FRAME_ID_FCU)) {
     ss << "Unknown frame_id = \'" << int(goal->robot_goal.frame_id) << "\', use the predefined ones.";
     RCLCPP_WARN(node_->get_logger(), "%s", ss.str().c_str());
     return {false, ss.str()};
@@ -1021,7 +1025,7 @@ MissionHandler::result_t MissionHandler::createMission(const std::shared_ptr<con
   auto request  = std::make_shared<mrs_msgs::srv::TransformReferenceArraySrv::Request>();
   auto response = std::make_shared<mrs_msgs::srv::TransformReferenceArraySrv::Response>();
 
-  request->array = goal_points_array;
+  request->array       = goal_points_array;
   request->to_frame_id = "";
 
   auto service_result = callService<mrs_msgs::srv::TransformReferenceArraySrv>(sc_transform_reference_array_, request, response);
@@ -1098,7 +1102,7 @@ MissionHandler::result_t MissionHandler::validateTrajectory(const trajectory_t &
   waypointArray.header = trajectory.reference.header;
   waypointArray.array  = trajectory.reference.points;
 
-  auto request  = std::make_shared<mrs_msgs::srv::ValidateReferenceArray::Request>();
+  auto request   = std::make_shared<mrs_msgs::srv::ValidateReferenceArray::Request>();
   request->array = waypointArray;
 
   auto response = sc_mission_validation_.callSync(request);
@@ -1109,7 +1113,7 @@ MissionHandler::result_t MissionHandler::validateTrajectory(const trajectory_t &
   }
 
   const bool all_success = std::all_of(response.value()->success.begin(), response.value()->success.end(), [](bool v) { return v; });
-  
+
   if (all_success) {
     RCLCPP_INFO(node_->get_logger(), "Successfully called service with response \"%s\".", response.value()->message.c_str());
   } else {
@@ -1539,8 +1543,8 @@ bool MissionHandler::replanMission() {
  */
 MissionHandler::result_t MissionHandler::sendTrajectoryToController(const trajectory_t &trajectory) {
 
-  auto request  = std::make_shared<mrs_msgs::srv::TrajectoryReferenceSrv::Request>();
-  auto response = std::make_shared<mrs_msgs::srv::TrajectoryReferenceSrv::Response>();
+  auto request        = std::make_shared<mrs_msgs::srv::TrajectoryReferenceSrv::Request>();
+  auto response       = std::make_shared<mrs_msgs::srv::TrajectoryReferenceSrv::Response>();
   request->trajectory = trajectory.reference;
 
   auto service_response = callService<mrs_msgs::srv::TrajectoryReferenceSrv>(sc_trajectory_reference_, request, response);

@@ -110,31 +110,6 @@ target_link_libraries(IrocMissionHandler_IrocMissionHandler
 ## |                           Compile                          |
 ## --------------------------------------------------------------
 
-# ## | ------------ IROCFleetManager ------------ |
-#
-# add_library(IROCFleetManager SHARED
-#   src/fleet_manager.cpp
-#   # src/utils/json_var_parser.cpp
-# )
-#
-# target_link_libraries(IROCFleetManager
-#   PRIVATE
-#     iroc_fleet_manager::iroc_fleet_manager
-#     rclcpp::rclcpp
-#     rclcpp_action::rclcpp_action
-#     rclcpp_components::component
-#     pluginlib::pluginlib
-#     mrs_lib::mrs_lib
-#     mrs_robot_diagnostics::mrs_robot_diagnostics
-#     ${mrs_msgs_TARGETS}
-# )
-#
-# rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} "rosidl_typesupport_cpp")
-# target_link_libraries(IROCFleetManager PRIVATE ${cpp_typesupport_target})
-#
-# rclcpp_components_register_nodes(IROCFleetManager "iroc_fleet_manager::IROCFleetManager")
-# target_compile_definitions(IROCFleetManager PRIVATE USE_ROS_TIMER=${USE_ROS_TIMER})
-
 # Mission Handler
 add_library(IROCMissionHandler SHARED
   src/mission_handler.cpp
@@ -157,7 +132,7 @@ rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} "rosidl_typ
 
 target_link_libraries(IROCMissionHandler PRIVATE ${cpp_typesupport_target})
 
-rclcpp_components_register_nodes(IROCMissionHandler "iroc_mission_handler::IROCMissionHandler")
+rclcpp_components_register_nodes(IROCMissionHandler "iroc_mission_handler::MissionHandler")
 
 target_compile_definitions(IROCMissionHandler PRIVATE USE_ROS_TIMER=${USE_ROS_TIMER})
 
