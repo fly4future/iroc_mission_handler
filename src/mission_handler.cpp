@@ -122,9 +122,11 @@ private:
   };
 
   typedef mrs_robot_diagnostics::state_t state_t;
-  enum_helpers::enum_updater<state_t> uav_state_             = {"UAV STATE", state_t::UNKNOWN};
-  enum_helpers::enum_updater<mission_state_t> mission_state_ = {"MISSION STATE", mission_state_t::IDLE};
-  mission_state_t previous_mission_state_                    = mission_state_t::IDLE;
+  // enum_helpers::enum_updater<state_t> uav_state_             = {"UAV STATE", state_t::UNKNOWN};
+  enum_helpers::enum_updater<state_t> uav_state_;
+  // enum_helpers::enum_updater<mission_state_t> mission_state_ = {"MISSION STATE", mission_state_t::IDLE};
+  enum_helpers::enum_updater<mission_state_t> mission_state_;
+  mission_state_t previous_mission_state_ = mission_state_t::IDLE;
 
   std::string robot_name_;
   std::atomic_bool is_initialized_ = false;
@@ -232,7 +234,9 @@ private:
                        const std::shared_ptr<typename ServiceType::Response> &response);
 };
 
-MissionHandler::MissionHandler(rclcpp::NodeOptions options) : mrs_lib::Node("MissionHandler", options) {
+MissionHandler::MissionHandler(rclcpp::NodeOptions options)
+    : mrs_lib::Node("MissionHandler", options.enable_logger_service(true)), uav_state_(this_node_ptr()->get_logger(), "UAV STATE", state_t::UNKNOWN),
+      mission_state_(this_node_ptr()->get_logger(), "MISSION STATE", mission_state_t::IDLE) {
 
   node_  = this_node_ptr();
   clock_ = node_->get_clock();
@@ -291,19 +295,20 @@ void MissionHandler::initialize() {
                                                                                                   &MissionHandler::controlManagerDiagCallback, this);
 
   // | --------------------- service clients -------------------- |
-  sc_takeoff_                   = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/svc_takeoff_in");
-  sc_land_                      = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/svc_land_in");
-  sc_land_home_                 = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/svc_land_home_in");
-  sc_path_                      = mrs_lib::ServiceClientHandler<mrs_msgs::srv::PathSrv>(node_, "~/svc_path_in");
-  sc_get_path_                  = mrs_lib::ServiceClientHandler<mrs_msgs::srv::GetPathSrv>(node_, "~/svc_get_path_in");
-  sc_hover_                     = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/svc_hover_in");
-  sc_mission_flying_to_start_   = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/svc_mission_flying_to_start_in");
-  sc_mission_start_             = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/svc_mission_start_in");
-  sc_mission_pause_             = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/svc_mission_pause_in");
-  sc_mission_validation_        = mrs_lib::ServiceClientHandler<mrs_msgs::srv::ValidateReferenceArray>(node_, "~/svc_mission_validation_in");
-  sc_trajectory_reference_      = mrs_lib::ServiceClientHandler<mrs_msgs::srv::TrajectoryReferenceSrv>(node_, "~/svc_trajectory_reference_in");
-  sc_transform_reference_       = mrs_lib::ServiceClientHandler<mrs_msgs::srv::TransformReferenceSrv>(node_, "~/svc_transform_reference_in");
-  sc_transform_reference_array_ = mrs_lib::ServiceClientHandler<mrs_msgs::srv::TransformReferenceArraySrv>(node_, "~/svc_transform_reference_array_in");
+  sc_takeoff_                 = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/svc_takeoff_in", cbkgrp_sc_);
+  sc_land_                    = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/svc_land_in", cbkgrp_sc_);
+  sc_land_home_               = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/svc_land_home_in", cbkgrp_sc_);
+  sc_path_                    = mrs_lib::ServiceClientHandler<mrs_msgs::srv::PathSrv>(node_, "~/svc_path_in", cbkgrp_sc_);
+  sc_get_path_                = mrs_lib::ServiceClientHandler<mrs_msgs::srv::GetPathSrv>(node_, "~/svc_get_path_in", cbkgrp_sc_);
+  sc_hover_                   = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/svc_hover_in", cbkgrp_sc_);
+  sc_mission_flying_to_start_ = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/svc_mission_flying_to_start_in", cbkgrp_sc_);
+  sc_mission_start_           = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/svc_mission_start_in", cbkgrp_sc_);
+  sc_mission_pause_           = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/svc_mission_pause_in", cbkgrp_sc_);
+  sc_mission_validation_      = mrs_lib::ServiceClientHandler<mrs_msgs::srv::ValidateReferenceArray>(node_, "~/svc_mission_validation_in", cbkgrp_sc_);
+  sc_trajectory_reference_    = mrs_lib::ServiceClientHandler<mrs_msgs::srv::TrajectoryReferenceSrv>(node_, "~/svc_trajectory_reference_in", cbkgrp_sc_);
+  sc_transform_reference_     = mrs_lib::ServiceClientHandler<mrs_msgs::srv::TransformReferenceSrv>(node_, "~/svc_transform_reference_in", cbkgrp_sc_);
+  sc_transform_reference_array_ =
+      mrs_lib::ServiceClientHandler<mrs_msgs::srv::TransformReferenceArraySrv>(node_, "~/svc_transform_reference_array_in", cbkgrp_sc_);
 
 
   // | --------------------- service servers -------------------- |
@@ -831,6 +836,16 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::msg::ControlMana
 
 // | ---------------------- action server callbacks --------------------- |
 
+/*!
+ * Handles and processes goals from action clients.
+ *
+ * Workflow:
+ * 1. Calls virtual methods defined in child classes to get goals for each robot
+ * 2. Ensures all missions follow the MissionRobotGoal message structure
+ *    required by Mission Handler
+ *
+ * @param goal The incoming goal from the action client
+ */
 rclcpp_action::GoalResponse MissionHandler::handle_goal(const rclcpp_action::GoalUUID &uuid, std::shared_ptr<const Mission::Goal> goal) {
   RCLCPP_INFO(node_->get_logger(), "Received goal request with ID %s", rclcpp_action::to_string(uuid).c_str());
 
@@ -839,16 +854,38 @@ rclcpp_action::GoalResponse MissionHandler::handle_goal(const rclcpp_action::Goa
     return rclcpp_action::GoalResponse::REJECT;
   }
 
+  RCLCPP_INFO(node_->get_logger(), "Accepting goal.");
+  return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+}
+
+void MissionHandler::handle_accepted(const std::shared_ptr<GoalHandleMission> goal_handle) {
+
+  if (!is_initialized_) {
+    RCLCPP_WARN(node_->get_logger(), "Not initialized yet, rejecting goal.");
+    return;
+  }
+
+  auto goal = goal_handle->get_goal();
+
   // Create mission from the goal
   const auto result = createMission(goal);
 
   if (!result.success) {
     RCLCPP_WARN(node_->get_logger(), "Failed to create mission from goal with message: %s", result.message.c_str());
-    return rclcpp_action::GoalResponse::REJECT;
+    auto result_msg                  = std::make_shared<Mission::Result>();
+    result_msg->robot_result.name    = robot_name_;
+    result_msg->robot_result.success = false;
+    result_msg->robot_result.message = "Failed to create mission from goal: " + result.message;
+    goal_handle->abort(result_msg);
+    return;
   }
+  RCLCPP_INFO(node_->get_logger(), "Mission created successfully from goal.");
 
+  {
+    std::scoped_lock lock(action_server_mutex_);
+    current_goal_handle_ = goal_handle;
+  }
   updateMissionState(mission_state_t::MISSION_LOADED);
-  return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
 }
 
 rclcpp_action::CancelResponse MissionHandler::handle_cancel(const std::shared_ptr<GoalHandleMission> goal_handle) {
@@ -1018,6 +1055,7 @@ MissionHandler::result_t MissionHandler::createMission(const std::shared_ptr<con
   goal_points_array.header.frame_id = frame_id;
   goal_points_array.array.clear();
   goal_points_array.array.reserve(goal->robot_goal.points.size());
+
   for (const auto &point : goal->robot_goal.points) {
     goal_points_array.array.push_back(point.reference);
   }
@@ -1629,23 +1667,21 @@ void MissionHandler::resetMission() {
 template <typename ServiceType>
 MissionHandler::result_t MissionHandler::callService(mrs_lib::ServiceClientHandler<ServiceType> &sc,
                                                      const std::shared_ptr<typename ServiceType::Request> &request) {
-  // typename ServiceType::Response res;
 
   auto response = sc.callSync(request);
 
   if (response) {
     if (response.value()->success) {
-      // TODO add getService() to mrs_lib ServiceClientHandler
       RCLCPP_INFO_STREAM_THROTTLE(node_->get_logger(), *clock_, 1000,
-                                  "Called service  << sc.getService() <<  with response \"" << response.value()->message << "\".");
+                                  "Called service " << sc.getService() << "  with response \"" << response.value()->message << "\".");
       return {true, response.value()->message};
     } else {
       RCLCPP_WARN_STREAM_THROTTLE(node_->get_logger(), *clock_, 1000,
-                                  "Called service << sc.getService() <<  with response \"" << response.value()->message << "\".");
+                                  "Called service " << sc.getService() << "with response \"" << response.value()->message << "\".");
       return {false, response.value()->message};
     }
   } else {
-    const std::string msg = "Failed to call service  + sc.getService() .";
+    const std::string msg = std::string("Failed to call service ") + sc.getService() + ".";
     RCLCPP_WARN_STREAM_THROTTLE(node_->get_logger(), *clock_, 1000, msg);
     return {false, msg};
   }

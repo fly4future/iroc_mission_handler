@@ -28,7 +28,7 @@ def expand_to_pwd_if_relative(arg_name: str):
     cfg = LaunchConfiguration(arg_name)
     return IfElseSubstitution(
         condition=PythonExpression(['"', cfg, '" != "" and not "', cfg, '".startswith("/")'
-        ]),
+                                    ]),
         if_value=PathJoinSubstitution([EnvironmentVariable("PWD"), cfg]),
         else_value=cfg,
     )
@@ -81,8 +81,10 @@ def launch_setup(context, *args, **kwargs):
     ]
 
     default_config = os.path.join(pkg_share, "config", "config.yaml")
-    default_executor_config = os.path.join(pkg_share, "config", "basic_subtask_executor_plugins.yaml")
-    default_trajectory_config = os.path.join(mrs_traj_gen_share, "config", "public", "trajectory_generation.yaml")
+    default_executor_config = os.path.join(
+        pkg_share, "config", "basic_subtask_executor_plugins.yaml")
+    default_trajectory_config = os.path.join(
+        mrs_traj_gen_share, "config", "public", "trajectory_generation.yaml")
 
     final_config = custom_config if custom_config else default_config
     final_executor_config = executor_config if executor_config else default_executor_config
@@ -95,8 +97,8 @@ def launch_setup(context, *args, **kwargs):
         package="rclcpp_components",
         executable="component_container_mt",
         output="screen",
-        # arguments=['--ros-args', '--log-level', LaunchConfiguration('log_level')],
-        prefix=['debug_roslaunch ' + os.ttyname(sys.stdout.fileno())],
+        arguments=['--ros-args', '--log-level', LaunchConfiguration('log_level')],
+        # prefix=['debug_roslaunch ' + os.ttyname(sys.stdout.fileno())],
         composable_node_descriptions=[
             ComposableNode(
                 package="iroc_mission_handler",
@@ -106,9 +108,9 @@ def launch_setup(context, *args, **kwargs):
                 parameters=[
                     {"robot_name": robot_name},
                     {"config": default_config},
-                    {"custom_config": final_config}, 
-                    {"executor_config": final_executor_config}, 
-                    {"trajectory_generation_config": final_trajectory_config}, 
+                    {"custom_config": final_config},
+                    {"executor_config": final_executor_config},
+                    {"trajectory_generation_config": final_trajectory_config},
                     {"use_sim_time": use_sim_time},
                 ],
                 remappings=static_remappings,
@@ -121,6 +123,11 @@ def launch_setup(context, *args, **kwargs):
 
 def generate_launch_description():
     return LaunchDescription([
+        DeclareLaunchArgument(
+            "log_level",
+            default_value="info",
+            description="Logging level (debug, info, warn, error, fatal)",
+        ),
         DeclareLaunchArgument(
             "robot_name",
             default_value=os.getenv("UAV_NAME", "uav1"),
@@ -158,6 +165,8 @@ def generate_launch_description():
 
         OpaqueFunction(function=launch_setup),
     ])
+
+
 
 
 
