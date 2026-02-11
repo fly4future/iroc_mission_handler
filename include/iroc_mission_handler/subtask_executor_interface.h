@@ -1,14 +1,14 @@
 #pragma once
 
-
 #include <rclcpp/rclcpp.hpp>
 #include <mrs_lib/param_loader.h>
 #include <mrs_lib/subscriber_handler.h>
 
-#include "iroc_mission_handler/Subtask.h"
+#include "iroc_mission_handler/msg/subtask.hpp"
 #include "iroc_mission_handler/enums/subtask_state.h"
 
-namespace iroc_mission_handler {
+namespace iroc_mission_handler
+{
 
 /**
  * \brief Abstract base class for all subtask executors
@@ -18,7 +18,7 @@ namespace iroc_mission_handler {
  * of different executor types at runtime.
  */
 class SubtaskExecutor {
- public:
+public:
   virtual ~SubtaskExecutor() = default;
   /**
    * \brief Initialize the executor with ROS components
@@ -28,32 +28,36 @@ class SubtaskExecutor {
    *
    * \return True if initialization was successful
    */
-  bool initialize(ros::NodeHandle& nh, const Subtask& subtask) {
+  bool initialize(rclcpp::Node::SharedPtr node, const iroc_mission_handler::msg::Subtask &subtask) {
+
     if (initialized_) {
-      ROS_WARN("[SubtaskExecutor]: Already initialized");
+      RCLCPP_WARN(node->get_logger(), "[SubtaskExecutor]: Already initialized");
       return true;
     }
 
+    node_  = node;
+    clock_ = node->get_clock();
+
     // Subtask validation
-    subtask_ = std::make_shared<Subtask>(subtask);
+    subtask_ = std::make_shared<iroc_mission_handler::msg::Subtask>(subtask);
     if (!subtask_) {
-      ROS_ERROR("[SubtaskExecutor]: Failed to create subtask instance");
+      RCLCPP_WARN(node->get_logger(), "[SubtaskExecutor]: Invalid subtask configuration");
       return false;
     }
 
     if (!validateSubtaskConfig(*subtask_)) {
-      ROS_ERROR("[SubtaskExecutor]: Invalid subtask configuration");
+      RCLCPP_WARN(node->get_logger(), "[SubtaskExecutor]: Subtask type: %s, parameters: %s", subtask_->type.c_str(), subtask_->parameters.c_str());
       return false;
     }
 
     // Start initialization and parameter validation
-    if (!initializeImpl(nh, subtask_->parameters)) {
-      ROS_ERROR("[SubtaskExecutor]: Failed to initialize derived class implementation");
+    if (!initializeImpl(node, subtask_->parameters)) {
+      RCLCPP_WARN(node->get_logger(), "[SubtaskExecutor]: Subtask type: %s, parameters: %s", subtask_->type.c_str(), subtask_->parameters.c_str());
       return false;
     }
 
     initialized_ = true;
-    ROS_INFO("[SubtaskExecutor]: Initialization completed successfully");
+    RCLCPP_INFO(node->get_logger(), "[SubtaskExecutor]: Subtask type: %s, parameters: %s", subtask_->type.c_str(), subtask_->parameters.c_str());
     return true;
   }
 
@@ -64,32 +68,37 @@ class SubtaskExecutor {
    */
   bool start() {
     if (!initialized_) {
-      ROS_ERROR("[SubtaskExecutor]: Executor not initialized");
+      RCLCPP_WARN(node_->get_logger(), "[SubtaskExecutor]: Executor not initialized for subtask type: %s, parameters: %s", subtask_->type.c_str(),
+                  subtask_->parameters.c_str());
       return false;
     }
 
     // Check if the executor is in a valid state to start
     if (state_ != subtask_state_t::IDLE && state_ != subtask_state_t::FAILED) {
-      ROS_WARN("[SubtaskExecutor]: Cannot start, executor is not in IDLE or FAILED state");
+      RCLCPP_WARN(node_->get_logger(), "[SubtaskExecutor]: Cannot start executor is in either FAILED or IDLE state for subtask type: %s, parameters: %s",
+                  subtask_->type.c_str(), subtask_->parameters.c_str());
       return false;
     }
 
     // Retry logic
     bool success = startImpl();
     for (uint8_t attempt = 1; attempt <= subtask_->max_retries && !success; ++attempt) {
-      ros::Duration(subtask_->retry_delay).sleep(); // Wait before retrying
-      ROS_WARN("[SubtaskExecutor]: Retry %d/%d for subtask '%s'", attempt, subtask_->max_retries, subtask_->type.c_str());
+      clock_->sleep_for(std::chrono::duration<double>(subtask_->retry_delay));
+
+      RCLCPP_WARN(node_->get_logger(), "[SubtaskExecutor]: Retry %d/%d for subtask type: %s, parameters: %s", attempt, subtask_->max_retries,
+                  subtask_->type.c_str(), subtask_->parameters.c_str());
       success = startImpl();
     }
 
     if (!success) {
-      ROS_ERROR("[SubtaskExecutor]: Failed to start subtask executor");
+      RCLCPP_WARN(node_->get_logger(), "[SubtaskExecutor]: Failed to start subtask type: %s, parameters: %s after %d attempts", subtask_->type.c_str(),
+                  subtask_->parameters.c_str(), subtask_->max_retries);
       state_ = subtask_state_t::FAILED;
       return false;
     }
 
     state_ = subtask_state_t::RUNNING;
-    ROS_INFO("[SubtaskExecutor]: Subtask started successfully");
+    RCLCPP_INFO(node_->get_logger(), "[SubtaskExecutor]: Subtask type: %s, parameters: %s", subtask_->type.c_str(), subtask_->parameters.c_str());
     return true;
   }
 
@@ -100,7 +109,7 @@ class SubtaskExecutor {
    *
    * \return True if the subtask has completed
    */
-  bool isCompleted(double& progress) {
+  bool isCompleted(double &progress) {
     if (!initialized_ || state_ == subtask_state_t::IDLE) {
       progress = 0.0;
       return false;
@@ -110,11 +119,10 @@ class SubtaskExecutor {
     if (completed) {
       if (progress >= 1.0) {
         state_ = subtask_state_t::COMPLETED;
-        ROS_INFO("[SubtaskExecutor]: Subtask completed successfully");
+        RCLCPP_INFO(node_->get_logger(), "[SubtaskExecutor]: Subtask type: %s, parameters: %s", subtask_->type.c_str(), subtask_->parameters.c_str());
       } else {
         state_ = subtask_state_t::FAILED;
-        ROS_ERROR("[SubtaskExecutor]: Subtask '%s' failed with progress: %f, stop_on_failure: %s", subtask_->type.c_str(), progress,
-                  subtask_->stop_on_failure ? "true" : "false");
+        RCLCPP_WARN(node_->get_logger(), "[SubtaskExecutor]: Subtask type: %s, parameters: %s", subtask_->type.c_str(), subtask_->parameters.c_str());
       }
     }
 
@@ -187,7 +195,7 @@ class SubtaskExecutor {
     return subtask_->type;
   }
 
- protected:
+protected:
   /**
    * \brief Initialize the executor with ROS components (to be implemented by derived classes)
    *
@@ -196,7 +204,7 @@ class SubtaskExecutor {
    *
    * \return True if initialization was successful
    */
-  virtual bool initializeImpl(ros::NodeHandle& nh, const std::string& parameters) = 0;
+  virtual bool initializeImpl(rclcpp::Node::SharedPtr node, const std::string &parameters) = 0;
 
   /**
    * \brief Start the subtask execution (to be implemented by derived classes)
@@ -212,7 +220,7 @@ class SubtaskExecutor {
    *
    * \return True if the subtask has completed
    */
-  virtual bool checkCompletion(double& progress) = 0;
+  virtual bool checkCompletion(double &progress) = 0;
 
   /**
    * \brief Helper function to parse a number from a string
@@ -222,30 +230,34 @@ class SubtaskExecutor {
    *
    * \return True if parsing was successful, false otherwise
    */
-  bool parseParams(const std::string& str, int& value) const {
+  bool parseParams(const std::string &str, int &value) const {
     try {
       value = std::stoi(str);
       return true;
-    } catch (const std::invalid_argument&) {
+    }
+    catch (const std::invalid_argument &) {
       return false;
-    } catch (const std::out_of_range&) {
+    }
+    catch (const std::out_of_range &) {
       return false;
     }
   }
 
-  bool parseParams(const std::string& str, double& value) const {
+  bool parseParams(const std::string &str, double &value) const {
     try {
       value = std::stod(str);
       return true;
-    } catch (const std::invalid_argument&) {
+    }
+    catch (const std::invalid_argument &) {
       return false;
-    } catch (const std::out_of_range&) {
+    }
+    catch (const std::out_of_range &) {
       return false;
     }
   }
 
   template <typename T>
-  bool parseParams(const std::string& str, std::vector<T>& vec) const {
+  bool parseParams(const std::string &str, std::vector<T> &vec) const {
     vec.clear();
 
     std::string cleaned_str = str;
@@ -258,7 +270,7 @@ class SubtaskExecutor {
     while (std::getline(ss, item, ',')) {
       T value;
       if (!parseParams(item, value)) {
-        ROS_ERROR_STREAM("[SubtaskExecutorBase]: Failed to parse parameter: " << item);
+        RCLCPP_WARN_STREAM(node_->get_logger(), "[SubtaskExecutor]: Failed to parse parameter: " << item);
         return false;
       }
       vec.push_back(value);
@@ -266,26 +278,32 @@ class SubtaskExecutor {
     return true;
   }
 
- private:
+private:
+  rclcpp::Node::SharedPtr node_;
+  rclcpp::Clock::SharedPtr clock_;
+
   bool initialized_      = false;
   subtask_state_t state_ = subtask_state_t::IDLE;
-  std::shared_ptr<Subtask> subtask_; // Pointer to the subtask this executor is handling
+  std::shared_ptr<iroc_mission_handler::msg::Subtask> subtask_; // Pointer to the subtask this executor is handling
 
   /**
    * \brief Validate subtask configuration
    */
-  bool validateSubtaskConfig(const Subtask& subtask) const {
+  bool validateSubtaskConfig(const iroc_mission_handler::msg::Subtask &subtask) const {
     if (subtask.max_retries > 10) {
-      ROS_WARN("[SubtaskExecutor]: Max retries (%d) is unusually high", subtask.max_retries);
+      RCLCPP_WARN_STREAM(node_->get_logger(), "[SubtaskExecutor]: Max retries (" << subtask.max_retries << ") is unusually high for subtask type: "
+                                                                                 << subtask.type << ", parameters: " << subtask.parameters);
     }
 
     if (subtask.retry_delay < 0.0) {
-      ROS_ERROR("[SubtaskExecutor]: Retry delay cannot be negative: %f", subtask.retry_delay);
+      RCLCPP_WARN_STREAM(node_->get_logger(), "[SubtaskExecutor]: Retry delay cannot be negative: " << subtask.retry_delay << " for subtask type: "
+                                                                                                    << subtask.type << ", parameters: " << subtask.parameters);
       return false;
     }
 
     if (subtask.retry_delay > 60.0) {
-      ROS_WARN("[SubtaskExecutor]: Retry delay (%f) is unusually long", subtask.retry_delay);
+      RCLCPP_WARN_STREAM(node_->get_logger(), "[SubtaskExecutor]: Retry delay (" << subtask.retry_delay << ") is unusually long for subtask type: "
+                                                                                 << subtask.type << ", parameters: " << subtask.parameters);
     }
 
     return true;

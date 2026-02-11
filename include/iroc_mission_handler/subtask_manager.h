@@ -24,7 +24,7 @@ class SubtaskManager {
    *
    * \param nh ROS NodeHandle
    */
-  SubtaskManager(ros::NodeHandle& nh);
+  SubtaskManager(rclcpp::Node::SharedPtr node);
 
   /**
    * \brief Check if all active subtasks have completed
@@ -47,7 +47,7 @@ class SubtaskManager {
    *
    * \return True if all non-critical subtasks were created successfully
    */
-  bool createSubtasks(const std::vector<Subtask>& subtasks);
+  bool createSubtasks(const std::vector<iroc_mission_handler::msg::Subtask>& subtasks);
 
   /**
    * \brief Check if a subtask has completed
@@ -79,10 +79,10 @@ class SubtaskManager {
    *
    * \return Tuple of (success, error_message)
    */
-  std::tuple<bool, std::string> validateSubtasks(const std::vector<Subtask>& subtasks);
+  std::tuple<bool, std::string> validateSubtasks(const std::vector<iroc_mission_handler::msg::Subtask>& subtasks);
 
  private:
-  ros::NodeHandle nh_;
+  rclcpp::Node::SharedPtr node_;
 
   bool is_initialized_ = false;
   bool has_started_subtasks_ = false;
@@ -93,7 +93,7 @@ class SubtaskManager {
   std::map<std::string, std::string> plugin_addresses_;
 
   // Map of active subtask executors
-  std::unordered_map<int, boost::shared_ptr<SubtaskExecutor>> active_subtasks_;
+  std::unordered_map<int, std::shared_ptr<SubtaskExecutor>> active_subtasks_;
 
   // Thread safety
   std::mutex mutex_;

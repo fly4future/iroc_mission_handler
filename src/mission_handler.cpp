@@ -42,7 +42,7 @@
 
 #include <iroc_mission_handler/action/mission.hpp>
 #include "iroc_mission_handler/enums/mission_state.h"
-// #include "iroc_mission_handler/subtask_manager.h"
+#include "iroc_mission_handler/subtask_manager.h"
 
 namespace iroc_mission_handler
 {
@@ -135,7 +135,7 @@ private:
 
   // | -------------------- subtask management ------------------- |
   // TODO: implement subtask manager and use it to manage the execution of subtasks
-  // std::unique_ptr<SubtaskManager> subtask_manager_;
+  std::unique_ptr<SubtaskManager> subtask_manager_;
 
   // | ---------------------- ROS subscribers --------------------- |
   std::shared_ptr<mrs_lib::TimeoutManager> tim_mgr_;
@@ -213,8 +213,7 @@ private:
 
   // Trajectory management functions
   result_t sendTrajectoryToController(const trajectory_t &trajectory);
-  // TODO implement subtask creation and management
-  // void createSubtasks(const std::vector<iroc_mission_handler::Subtask> &subtasks);
+  void createSubtasks(const std::vector<iroc_mission_handler::msg::Subtask> &subtasks);
 
   result_t validateTrajectory(const trajectory_t &trajectory);
   std::vector<path_segment_t> segmentPath(const mrs_msgs::msg::Path &msg, const std::vector<iroc_mission_handler::msg::Waypoint> &waypoints);
@@ -347,8 +346,7 @@ void MissionHandler::initialize() {
       rcl_action_server_get_default_options(), cbkgrp_action_);
 
   // | -------------------- subtask manager -------------------- |
-  // TODO: implement subtask manager and use it to manage the execution of subtasks
-  // subtask_manager_ = std::make_unique<SubtaskManager>(node_);
+  subtask_manager_ = std::make_unique<SubtaskManager>(node_);
 
   RCLCPP_INFO(node_->get_logger(), "initialized");
   RCLCPP_INFO(node_->get_logger(), "--------------------");
@@ -451,7 +449,7 @@ void MissionHandler::timerMain() {
           RCLCPP_INFO_STREAM(node_->get_logger(), "- " << subtask.type);
 
         RCLCPP_INFO_STREAM(node_->get_logger(), "Executing subtasks in the waypoint: " << mission_waypoint_idx_);
-        // subtask_manager_->createSubtasks(trajectories_[current_trajectory_idx_].subtasks);
+        subtask_manager_->createSubtasks(trajectories_[current_trajectory_idx_].subtasks);
 
         updateMissionState(mission_state_t::EXECUTING_SUBTASK);
         break;
@@ -498,40 +496,40 @@ void MissionHandler::timerMain() {
   case mission_state_t::EXECUTING_SUBTASK: {
     // Execute the current subtask
     if (trajectories_[current_trajectory_idx_].parallel_execution) {
-      // subtask_manager_->startAllSubtasks();
+      subtask_manager_->startAllSubtasks();
     } else {
 
       double progress = 0.0;
-      // if (subtask_manager_->isCurrentSubtaskCompleted(progress)) {
-      //   subtask_manager_->startNextSubtask();
-      // } else {
-      //   RCLCPP_DEBUG_STREAM(node_->get_logger(), "Subtask is still running. Progress: " << progress * 100.0 << "%");
-      // }
+      if (subtask_manager_->isCurrentSubtaskCompleted(progress)) {
+        subtask_manager_->startNextSubtask();
+      } else {
+        RCLCPP_DEBUG_STREAM(node_->get_logger(), "Subtask is still running. Progress: " << progress * 100.0 << "%");
+      }
     }
 
     // Check if any critical subtasks have failed
-    // if (subtask_manager_->areCriticalSubtasksFailed()) {
-    //   RCLCPP_WARN(node_->get_logger(), " Critical subtask failed. Aborting mission.");
-    //   auto mission_result     = std::make_shared<Mission::Result>();
-    //   mission_result->robot_result.name    = robot_name_;
-    //   mission_result->robot_result.success = false;
-    //   mission_result->robot_result.message = "Critical subtask failed.";
-    //   current_goal_handle_->abort(mission_result);
-    //
-    //   updateMissionState(mission_state_t::IDLE);
-    //   resetMission();
-    //   return;
-    // }
+    if (subtask_manager_->areCriticalSubtasksFailed()) {
+      RCLCPP_WARN(node_->get_logger(), " Critical subtask failed. Aborting mission.");
+      auto mission_result     = std::make_shared<Mission::Result>();
+      mission_result->robot_result.name    = robot_name_;
+      mission_result->robot_result.success = false;
+      mission_result->robot_result.message = "Critical subtask failed.";
+      current_goal_handle_->abort(mission_result);
+
+      updateMissionState(mission_state_t::IDLE);
+      resetMission();
+      return;
+    }
 
     // Continue with the mission if all subtasks are completed
-    // if (subtask_manager_->areAllSubtasksCompleted()) {
-    //   RCLCPP_INFO_STREAM(node_->get_logger(), "All subtasks completed for trajectory " << current_trajectory_idx_);
-    //
-    //   // Move to next trajectory
-    //   current_trajectory_idx_++;
-    //   is_current_trajectory_finished_ = false;
-    //   updateMissionState(mission_state_t::EXECUTING);
-    // }
+    if (subtask_manager_->areAllSubtasksCompleted()) {
+      RCLCPP_INFO_STREAM(node_->get_logger(), "All subtasks completed for trajectory " << current_trajectory_idx_);
+
+      // Move to next trajectory
+      current_trajectory_idx_++;
+      is_current_trajectory_finished_ = false;
+      updateMissionState(mission_state_t::EXECUTING);
+    }
 
     break;
   }
@@ -978,11 +976,10 @@ MissionHandler::result_t MissionHandler::createMission(const std::shared_ptr<con
 
   for (const auto &point : goal->robot_goal.points) {
     // Validate subtasks for each point
-    // TODO: implement subtask manager and use it to validate the subtasks
-    // auto [success, error_message] = subtask_manager_->validateSubtasks(point.subtasks);
-    // if (!success) {
-    //   return {false, "Subtask validation failed for point: " + error_message};
-    // }
+    auto [success, error_message] = subtask_manager_->validateSubtasks(point.subtasks);
+    if (!success) {
+      return {false, "Subtask validation failed for point: " + error_message};
+    }
 
     // Validate parallel execution logic
     if (point.parallel_execution) {
@@ -1607,23 +1604,23 @@ MissionHandler::result_t MissionHandler::sendTrajectoryToController(const trajec
  * \param subtasks A vector of subtasks to be executed.
  */
 // TODO implement the execution of subtasks, for now it just logs the subtasks that should be executed
-/*
-void MissionHandler::createSubtasks(const std::vector<iroc_mission_handler::Subtask> &subtasks) {
+
+void MissionHandler::createSubtasks(const std::vector<iroc_mission_handler::msg::Subtask> &subtasks) {
   // Create all subtasks at once
   bool success = subtask_manager_->createSubtasks(subtasks);
   if (!success) {
-    ROS_WARN_STREAM("[MissionHandler]: Failed to create subtasks");
+    RCLCPP_WARN_STREAM(node_->get_logger(), "Failed to create subtasks");
     return;
   }
 
   // Start all subtasks
   success = subtask_manager_->startAllSubtasks();
   if (!success) {
-    ROS_WARN_STREAM("[MissionHandler]: Failed to start subtasks");
+    RCLCPP_WARN_STREAM(node_->get_logger(), "Failed to start subtasks");
     return;
   }
 }
-*/
+
 
 double MissionHandler::distance(const mrs_msgs::msg::Reference &waypoint_1, const mrs_msgs::msg::Reference &waypoint_2) {
   using vec3_t = mrs_lib::geometry::vec_t<3>;
@@ -1695,19 +1692,18 @@ MissionHandler::result_t MissionHandler::callService(mrs_lib::ServiceClientHandl
 
   if (temp_response) {
     if (temp_response.value()->success) {
-      // TODO add getService() to mrs_lib ServiceClientHandler
       RCLCPP_INFO_STREAM_THROTTLE(node_->get_logger(), *clock_, 1000,
-                                  "Called service  << sc.getService() <<  with response \"" << temp_response.value()->message << "\".");
+                                  "Called service " << sc.getService() << "  with response \"" << temp_response.value()->message << "\".");
       *response = *(temp_response.value());
       return {true, temp_response.value()->message};
     } else {
       RCLCPP_WARN_STREAM_THROTTLE(node_->get_logger(), *clock_, 1000,
-                                  "Called service << sc.getService() <<  with response \"" << temp_response.value()->message << "\".");
+                                  "Called service " << sc.getService() << "with response \"" << temp_response.value()->message << "\".");
       *response = *(temp_response.value());
       return {false, temp_response.value()->message};
     }
   } else {
-    const std::string msg = "Failed to call service  + sc.getService() .";
+    const std::string msg = std::string("Failed to call service ") + sc.getService() + ".";
     RCLCPP_WARN_STREAM_THROTTLE(node_->get_logger(), *clock_, 1000, msg);
     return {false, msg};
   }
