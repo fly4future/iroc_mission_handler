@@ -77,6 +77,8 @@ def launch_setup(context, *args, **kwargs):
         # Service servers
         ("~/svs_mission_activation_out", "~/mission_activation"),
         ("~/svs_mission_pausing_out", "~/mission_pausing"),
+        ("~/svs_upload_mission_out", "~/upload_mission"),
+        ("~/svs_unload_mission_out", "~/unload_mission"),
 
     ]
 
