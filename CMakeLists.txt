@@ -67,11 +67,13 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/MissionFeedback.msg"
   "msg/MissionResult.msg"
   "action/Mission.action"
-  DEPENDENCIES 
-    builtin_interfaces 
-    std_msgs 
-    geometry_msgs 
-    mrs_msgs 
+  "srv/UploadMissionSrv.srv"
+  "srv/UnloadMissionSrv.srv"
+  DEPENDENCIES
+    builtin_interfaces
+    std_msgs
+    geometry_msgs
+    mrs_msgs
 )
 
 ## --------------------------------------------------------------

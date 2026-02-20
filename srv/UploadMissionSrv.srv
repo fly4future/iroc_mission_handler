@@ -1,0 +1,4 @@
+iroc_mission_handler/MissionGoal robot_goal
+---
+bool success
+string message

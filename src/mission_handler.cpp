@@ -41,6 +41,8 @@
 #include <mutex>
 
 #include <iroc_mission_handler/action/mission.hpp>
+#include <iroc_mission_handler/srv/upload_mission_srv.hpp>
+#include <iroc_mission_handler/srv/unload_mission_srv.hpp>
 #include "iroc_mission_handler/enums/mission_state.h"
 #include "iroc_mission_handler/subtask_manager.h"
 
@@ -162,11 +164,19 @@ private:
 
   mrs_lib::ServiceServerHandler<std_srvs::srv::Trigger> ss_activation_;
   mrs_lib::ServiceServerHandler<std_srvs::srv::Trigger> ss_pausing_;
+  mrs_lib::ServiceServerHandler<iroc_mission_handler::srv::UploadMissionSrv> ss_upload_mission_;
+  mrs_lib::ServiceServerHandler<iroc_mission_handler::srv::UnloadMissionSrv> ss_unload_mission_;
+
+  std::atomic<bool> is_mission_staged_{false};
 
   bool missionActivationServiceCallback(const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
                                         const std::shared_ptr<std_srvs::srv::Trigger::Response> response);
   bool missionPausingServiceCallback(const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
                                      const std::shared_ptr<std_srvs::srv::Trigger::Response> response);
+  bool uploadMissionServiceCallback(const std::shared_ptr<iroc_mission_handler::srv::UploadMissionSrv::Request> request,
+                                    const std::shared_ptr<iroc_mission_handler::srv::UploadMissionSrv::Response> response);
+  bool unloadMissionServiceCallback(const std::shared_ptr<iroc_mission_handler::srv::UnloadMissionSrv::Request> request,
+                                    const std::shared_ptr<iroc_mission_handler::srv::UnloadMissionSrv::Response> response);
 
   // | ----------------------- main timer ----------------------- |
   std::shared_ptr<TimerType> timer_main_;
@@ -323,6 +333,18 @@ void MissionHandler::initialize() {
       [this](std::shared_ptr<std_srvs::srv::Trigger::Request> request, std::shared_ptr<std_srvs::srv::Trigger::Response> response) {
         return missionPausingServiceCallback(request, response);
       },
+      rclcpp::SystemDefaultsQoS(), cbkgrp_ss_);
+
+  ss_upload_mission_ = mrs_lib::ServiceServerHandler<iroc_mission_handler::srv::UploadMissionSrv>(
+      node_, "~/svs_upload_mission_out",
+      [this](std::shared_ptr<iroc_mission_handler::srv::UploadMissionSrv::Request> request,
+             std::shared_ptr<iroc_mission_handler::srv::UploadMissionSrv::Response> response) { return uploadMissionServiceCallback(request, response); },
+      rclcpp::SystemDefaultsQoS(), cbkgrp_ss_);
+
+  ss_unload_mission_ = mrs_lib::ServiceServerHandler<iroc_mission_handler::srv::UnloadMissionSrv>(
+      node_, "~/svs_unload_mission_out",
+      [this](std::shared_ptr<iroc_mission_handler::srv::UnloadMissionSrv::Request> request,
+             std::shared_ptr<iroc_mission_handler::srv::UnloadMissionSrv::Response> response) { return unloadMissionServiceCallback(request, response); },
       rclcpp::SystemDefaultsQoS(), cbkgrp_ss_);
 
   // | ------------------------- timers ------------------------- |
@@ -510,7 +532,7 @@ void MissionHandler::timerMain() {
     // Check if any critical subtasks have failed
     if (subtask_manager_->areCriticalSubtasksFailed()) {
       RCLCPP_WARN(node_->get_logger(), " Critical subtask failed. Aborting mission.");
-      auto mission_result     = std::make_shared<Mission::Result>();
+      auto mission_result                  = std::make_shared<Mission::Result>();
       mission_result->robot_result.name    = robot_name_;
       mission_result->robot_result.success = false;
       mission_result->robot_result.message = "Critical subtask failed.";
@@ -736,6 +758,77 @@ bool MissionHandler::missionPausingServiceCallback([[maybe_unused]] const std::s
   return true;
 }
 
+bool MissionHandler::uploadMissionServiceCallback(const std::shared_ptr<iroc_mission_handler::srv::UploadMissionSrv::Request> request,
+                                                  const std::shared_ptr<iroc_mission_handler::srv::UploadMissionSrv::Response> response) {
+  std::scoped_lock lock(action_server_mutex_);
+  RCLCPP_INFO_STREAM(node_->get_logger(), "Received upload mission request.");
+
+  if (!is_initialized_) {
+    response->success = false;
+    response->message = "Not initialized";
+    return true;
+  }
+
+  if (mission_state_.value() != mission_state_t::IDLE) {
+    response->success = false;
+    std::stringstream ss;
+    ss << "Robot is not IDLE, current state: " << to_string(mission_state_.value());
+    response->message = ss.str();
+    RCLCPP_WARN_STREAM(node_->get_logger(), "Upload rejected: " << response->message);
+    return true;
+  }
+
+  // Build a synthetic action goal from the service request
+  auto synthetic_goal        = std::make_shared<Mission::Goal>();
+  synthetic_goal->robot_goal = request->robot_goal;
+
+  const auto result = createMission(synthetic_goal);
+
+  if (!result.success) {
+    response->success = false;
+    response->message = result.message;
+    RCLCPP_WARN_STREAM(node_->get_logger(), "Upload failed: " << result.message);
+    return true;
+  }
+
+  is_mission_staged_ = true;
+  updateMissionState(mission_state_t::MISSION_LOADED);
+
+  response->success = true;
+  response->message = result.message;
+  RCLCPP_INFO_STREAM(node_->get_logger(), "Mission staged successfully: " << result.message);
+  return true;
+}
+
+bool MissionHandler::unloadMissionServiceCallback([[maybe_unused]] const std::shared_ptr<iroc_mission_handler::srv::UnloadMissionSrv::Request> request,
+                                                  const std::shared_ptr<iroc_mission_handler::srv::UnloadMissionSrv::Response> response) {
+  std::scoped_lock lock(action_server_mutex_);
+  RCLCPP_INFO_STREAM(node_->get_logger(), "Received unload mission request.");
+
+  if (!is_mission_staged_) {
+    response->success = false;
+    response->message = "No staged mission to unload";
+    RCLCPP_WARN(node_->get_logger(), "Unload rejected: no staged mission.");
+    return true;
+  }
+
+  if (current_goal_handle_ && current_goal_handle_->is_active()) {
+    response->success = false;
+    response->message = "Action is currently executing, cannot unload";
+    RCLCPP_WARN(node_->get_logger(), "Unload rejected: action executing.");
+    return true;
+  }
+
+  resetMission();
+  is_mission_staged_ = false;
+  updateMissionState(mission_state_t::IDLE);
+
+  response->success = true;
+  response->message = "Mission unloaded successfully";
+  RCLCPP_INFO(node_->get_logger(), "Mission unloaded successfully.");
+  return true;
+}
+
 // | ----------------- msg callback ---------------- |
 /**
  * \brief Callback function for ControlManagerDiagnostics messages.
@@ -863,10 +956,27 @@ void MissionHandler::handle_accepted(const std::shared_ptr<GoalHandleMission> go
     return;
   }
 
+  // Fast-path: mission was pre-validated via upload service — skip createMission()
+  if (is_mission_staged_) {
+    {
+      std::scoped_lock lock(action_server_mutex_);
+      is_mission_staged_   = false;
+      current_goal_handle_ = goal_handle;
+    }
+    RCLCPP_INFO(node_->get_logger(), "Fast-path: using pre-staged mission.");
+    return;
+  }
+
   auto goal = goal_handle->get_goal();
 
-  // Create mission from the goal
-  const auto result = createMission(goal);
+  // Slow-path: serialize createMission() under the same mutex as the upload path to
+  // prevent a data race if an action arrives concurrently with an upload service call.
+  result_t result;
+  {
+    std::scoped_lock lock(action_server_mutex_);
+    result               = createMission(goal);
+    current_goal_handle_ = goal_handle;
+  }
 
   if (!result.success) {
     RCLCPP_WARN(node_->get_logger(), "Failed to create mission from goal with message: %s", result.message.c_str());
@@ -878,11 +988,6 @@ void MissionHandler::handle_accepted(const std::shared_ptr<GoalHandleMission> go
     return;
   }
   RCLCPP_INFO(node_->get_logger(), "Mission created successfully from goal.");
-
-  {
-    std::scoped_lock lock(action_server_mutex_);
-    current_goal_handle_ = goal_handle;
-  }
   updateMissionState(mission_state_t::MISSION_LOADED);
 }
 
