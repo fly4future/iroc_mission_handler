@@ -758,7 +758,7 @@ bool MissionHandler::missionPausingServiceCallback([[maybe_unused]] const std::s
   return true;
 }
 
-bool MissionHandler::uploadMissionServiceCallback([[maybe_unused]] const std::shared_ptr<iroc_mission_handler::srv::UploadMissionSrv::Request> request,
+bool MissionHandler::uploadMissionServiceCallback(const std::shared_ptr<iroc_mission_handler::srv::UploadMissionSrv::Request> request,
                                                   const std::shared_ptr<iroc_mission_handler::srv::UploadMissionSrv::Response> response) {
   std::scoped_lock lock(action_server_mutex_);
   RCLCPP_INFO_STREAM(node_->get_logger(), "Received upload mission request.");
@@ -958,9 +958,9 @@ void MissionHandler::handle_accepted(const std::shared_ptr<GoalHandleMission> go
 
   // Fast-path: mission was pre-validated via upload service — skip createMission()
   if (is_mission_staged_) {
-    is_mission_staged_ = false;
     {
       std::scoped_lock lock(action_server_mutex_);
+      is_mission_staged_   = false;
       current_goal_handle_ = goal_handle;
     }
     RCLCPP_INFO(node_->get_logger(), "Fast-path: using pre-staged mission.");
@@ -969,8 +969,14 @@ void MissionHandler::handle_accepted(const std::shared_ptr<GoalHandleMission> go
 
   auto goal = goal_handle->get_goal();
 
-  // Slow-path: create mission from the goal
-  const auto result = createMission(goal);
+  // Slow-path: serialize createMission() under the same mutex as the upload path to
+  // prevent a data race if an action arrives concurrently with an upload service call.
+  result_t result;
+  {
+    std::scoped_lock lock(action_server_mutex_);
+    result               = createMission(goal);
+    current_goal_handle_ = goal_handle;
+  }
 
   if (!result.success) {
     RCLCPP_WARN(node_->get_logger(), "Failed to create mission from goal with message: %s", result.message.c_str());
@@ -982,11 +988,6 @@ void MissionHandler::handle_accepted(const std::shared_ptr<GoalHandleMission> go
     return;
   }
   RCLCPP_INFO(node_->get_logger(), "Mission created successfully from goal.");
-
-  {
-    std::scoped_lock lock(action_server_mutex_);
-    current_goal_handle_ = goal_handle;
-  }
   updateMissionState(mission_state_t::MISSION_LOADED);
 }
 
