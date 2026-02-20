@@ -1,7 +1,8 @@
 #pragma once
 
-#include <std_msgs/Float32MultiArray.h>
-#include <mrs_msgs/Vec4.h>
+#include <std_msgs/msg/float32_multi_array.hpp>
+#include <mrs_msgs/srv/vec4.hpp>
+#include <mrs_lib/service_client_handler.h>
 
 #include <mutex>
 
@@ -28,21 +29,23 @@ class GazeboGimbalExecutor : public SubtaskExecutor {
   bool stop() override;
 
  protected:
-  bool initializeImpl(ros::NodeHandle& nh, const std::string& parameters) override;
+  bool initializeImpl(rclcpp::Node::SharedPtr node, const std::string& parameters) override;
   bool startImpl() override;
   bool checkCompletion(double& progress) override;
 
  private:
-  mrs_lib::SubscribeHandler<std_msgs::Float32MultiArray> sh_current_orientation_;
-  ros::ServiceClient sc_set_gimbal_orientation_;
+  rclcpp::Node::SharedPtr node_;
+
+  mrs_lib::SubscriberHandler<std_msgs::msg::Float32MultiArray> sh_current_orientation_;
+  mrs_lib::ServiceClientHandler<mrs_msgs::srv::Vec4>           sc_set_gimbal_orientation_;
 
   // Tolerance for orientation matching
   double _orientation_tolerance_;
   double _max_movement_time_; // This prevents infinite waiting if the gimbal does not reach the target orientation
 
-  double progress_ = 0.0;
-  ros::Time start_time_;
-  std::mutex mutex_;
+  double       progress_ = 0.0;
+  rclcpp::Time start_time_;
+  std::mutex   mutex_;
 
   // Gimbal control parameters
   double target_roll_  = 0.0;
@@ -57,12 +60,9 @@ class GazeboGimbalExecutor : public SubtaskExecutor {
    * \brief Callback for receiving current gimbal orientation
    * \param msg The received message containing the current orientation
    */
-  void orientationCallback(const std_msgs::Float32MultiArray::ConstPtr msg);
+  void orientationCallback(std_msgs::msg::Float32MultiArray::ConstSharedPtr msg);
 };
 
 } // namespace basic_executors
 } // namespace executors
 } // namespace iroc_mission_handler
-
-#include <pluginlib/class_list_macros.h>
-PLUGINLIB_EXPORT_CLASS(iroc_mission_handler::executors::basic_executors::GazeboGimbalExecutor, iroc_mission_handler::SubtaskExecutor)

@@ -23,27 +23,25 @@ class WaitExecutor : public SubtaskExecutor {
   bool stop() override;
 
  protected:
-  bool initializeImpl(ros::NodeHandle& nh, const std::string& parameters) override;
+  bool initializeImpl(rclcpp::Node::SharedPtr node, const std::string& parameters) override;
   bool startImpl() override;
   bool checkCompletion(double& progress) override;
 
  private:
-  ros::Timer timer_;
+  rclcpp::Node::SharedPtr     node_;
+  rclcpp::TimerBase::SharedPtr timer_;
+  std::chrono::nanoseconds     timer_period_;
 
-  ros::Time start_time_;
-  double duration_     = 0.0;
-  double elapsed_time_ = 0.0;
+  rclcpp::Time start_time_;
+  double       duration_     = 0.0;
+  double       elapsed_time_ = 0.0;
 
   /**
    * \brief Timer callback to check if the wait duration has elapsed
-   * \param event Timer event
    */
-  void timerCallback(const ros::TimerEvent& event);
+  void timerCallback();
 };
 
 } // namespace basic_executors
 } // namespace executors
 } // namespace iroc_mission_handler
-
-#include <pluginlib/class_list_macros.h>
-PLUGINLIB_EXPORT_CLASS(iroc_mission_handler::executors::basic_executors::WaitExecutor, iroc_mission_handler::SubtaskExecutor)

@@ -48,8 +48,7 @@ set(DEPENDENCIES
 
 set(LIBRARIES
   IROCMissionHandler
-  # TODO to update later 
-  # IROCMissionHandler_BasicSubtaskExecutors
+  IROCMissionHandler_BasicSubtaskExecutors
 )
 
 foreach(DEP IN LISTS DEPENDENCIES)
@@ -138,19 +137,22 @@ rclcpp_components_register_nodes(IROCMissionHandler "iroc_mission_handler::Missi
 target_compile_definitions(IROCMissionHandler PRIVATE USE_ROS_TIMER=${USE_ROS_TIMER})
 
 
-# TODO to update later
-# # Executors
-# add_library(IROCMissionHandler_BasicSubtaskExecutors
-#   src/basic_subtask_executor_plugins/gazebo_gimbal.cpp
-#   src/basic_subtask_executor_plugins/wait.cpp
-# )
-# add_dependencies(IROCMissionHandler_BasicSubtaskExecutors
-#   ${catkin_EXPORTED_TARGETS}
-#   ${${PROJECT_NAME}_EXPORTED_TARGETS}
-# )
-# target_link_libraries(IROCMissionHandler_BasicSubtaskExecutors
-#   ${catkin_LIBRARIES}
-# )
+# Executors (subtask plugin library)
+add_library(IROCMissionHandler_BasicSubtaskExecutors SHARED
+  src/basic_subtask_executor_plugins/gazebo_gimbal.cpp
+  src/basic_subtask_executor_plugins/wait.cpp
+)
+target_link_libraries(IROCMissionHandler_BasicSubtaskExecutors
+  PRIVATE
+    iroc_mission_handler::iroc_mission_handler
+    rclcpp::rclcpp
+    pluginlib::pluginlib
+    mrs_lib::mrs_lib
+    mrs_robot_diagnostics::mrs_robot_diagnostics
+    ${mrs_msgs_TARGETS}
+    ${std_msgs_TARGETS}
+    ${cpp_typesupport_target}
+)
 
 
 ## --------------------------------------------------------------
@@ -178,6 +180,11 @@ install(
   DESTINATION share/${PROJECT_NAME}
 )
 
+install(
+  FILES plugins.xml
+  DESTINATION share/${PROJECT_NAME}
+)
+
 ## --------------------------------------------------------------
 ## |                           Export                           |
 ## --------------------------------------------------------------
@@ -197,5 +204,7 @@ ament_export_libraries(
 ament_export_dependencies(
   ${DEPENDENCIES}
 )
+
+pluginlib_export_plugin_description_file(iroc_mission_handler plugins.xml)
 
 ament_package()

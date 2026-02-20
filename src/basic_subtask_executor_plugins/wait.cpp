@@ -1,16 +1,20 @@
 #include "iroc_mission_handler/basic_subtask_executor_plugins/wait.h"
 
+#include <pluginlib/class_list_macros.hpp>
+PLUGINLIB_EXPORT_CLASS(iroc_mission_handler::executors::basic_executors::WaitExecutor, iroc_mission_handler::SubtaskExecutor)
+
 namespace iroc_mission_handler {
 namespace executors {
 namespace basic_executors {
 
-bool WaitExecutor::initializeImpl(ros::NodeHandle& nh, const std::string& parameters) {
-  mrs_lib::ParamLoader param_loader(nh, "SubtaskManager");
+bool WaitExecutor::initializeImpl(rclcpp::Node::SharedPtr node, const std::string& parameters) {
+  node_ = node;
+  mrs_lib::ParamLoader param_loader(node_, "WaitExecutor");
 
   // Load custom configuration if provided
   std::string custom_config_path;
-  param_loader.loadParam("custom_config", custom_config_path);
-  if (custom_config_path != "") {
+  param_loader.loadParam("custom_config", custom_config_path, std::string(""));
+  if (!custom_config_path.empty()) {
     param_loader.addYamlFile(custom_config_path);
   }
 
@@ -23,50 +27,49 @@ bool WaitExecutor::initializeImpl(ros::NodeHandle& nh, const std::string& parame
   double frequency    = param_loader.loadParam2<double>("wait/timer_rate", 10.0);
 
   if (min_duration <= 0.0) {
-    ROS_ERROR("[WaitExecutor]: Invalid min_duration, must be greater than 0.0");
+    RCLCPP_ERROR(node_->get_logger(), "[WaitExecutor]: Invalid min_duration, must be greater than 0.0");
     return false;
   }
   if (max_duration <= 0.0 || max_duration < min_duration) {
-    ROS_ERROR("[WaitExecutor]: Invalid max_duration, must be greater than 0.0 and greater than min_duration");
+    RCLCPP_ERROR(node_->get_logger(), "[WaitExecutor]: Invalid max_duration, must be greater than 0.0 and greater than min_duration");
     return false;
   }
   if (frequency <= 0.0) {
-    ROS_ERROR("[WaitExecutor]: Invalid timer_rate, must be greater than 0.0");
+    RCLCPP_ERROR(node_->get_logger(), "[WaitExecutor]: Invalid timer_rate, must be greater than 0.0");
     return false;
   }
 
   // Parse duration from parameters string
   if (!parseParams(parameters, duration_)) {
-    ROS_ERROR_STREAM("[WaitExecutor]: Failed to parse duration from parameters: " << parameters);
+    RCLCPP_ERROR_STREAM(node_->get_logger(), "[WaitExecutor]: Failed to parse duration from parameters: " << parameters);
     return false;
   }
 
   // Check if duration is valid
   if (duration_ < min_duration || duration_ > max_duration) {
-    ROS_ERROR_STREAM("[WaitExecutor]: Duration must be between " << min_duration << " and " << max_duration << " seconds, got: " << duration_);
+    RCLCPP_ERROR_STREAM(node_->get_logger(), "[WaitExecutor]: Duration must be between " << min_duration << " and " << max_duration << " seconds, got: " << duration_);
     return false;
   }
 
-  // Create timer (will be started in `start()` method)
-  ros::Rate rate(frequency);
-  timer_ = nh.createTimer(rate, &WaitExecutor::timerCallback, this, false, false);
+  // Store timer period for later use in startImpl()
+  timer_period_ = std::chrono::nanoseconds(static_cast<int64_t>(1e9 / frequency));
 
-  ROS_DEBUG_STREAM("[WaitExecutor]: Initialized with duration: " << duration_ << " seconds");
+  RCLCPP_DEBUG_STREAM(node_->get_logger(), "[WaitExecutor]: Initialized with duration: " << duration_ << " seconds");
   return true;
 }
 
 bool WaitExecutor::startImpl() {
-  start_time_   = ros::Time::now();
+  start_time_   = node_->now();
   elapsed_time_ = 0.0;
-  timer_.start();
+  timer_        = node_->create_wall_timer(timer_period_, [this]() { timerCallback(); });
 
-  ROS_INFO_STREAM("[WaitExecutor]: Started waiting for " << duration_ << " seconds");
+  RCLCPP_INFO_STREAM(node_->get_logger(), "[WaitExecutor]: Started waiting for " << duration_ << " seconds");
   return true;
 }
 
 bool WaitExecutor::checkCompletion(double& progress) {
   if (duration_ <= 0.0) {
-    ROS_ERROR("[WaitExecutor]: Duration is not set or invalid");
+    RCLCPP_ERROR(node_->get_logger(), "[WaitExecutor]: Duration is not set or invalid");
     progress = 0.0;
     return false;
   }
@@ -76,25 +79,25 @@ bool WaitExecutor::checkCompletion(double& progress) {
 }
 
 bool WaitExecutor::stop() {
-  if (timer_.hasStarted()) {
-    timer_.stop();
-    ROS_INFO("[WaitExecutor]: Stopped wait execution");
+  if (timer_) {
+    timer_->cancel();
+    RCLCPP_INFO(node_->get_logger(), "[WaitExecutor]: Stopped wait execution");
   } else {
-    ROS_WARN("[WaitExecutor]: Wait was not started, nothing to stop");
+    RCLCPP_WARN(node_->get_logger(), "[WaitExecutor]: Wait was not started, nothing to stop");
   }
 
   return true;
 }
 
-void WaitExecutor::timerCallback([[maybe_unused]] const ros::TimerEvent& event) {
-  elapsed_time_ = (ros::Time::now() - start_time_).toSec();
+void WaitExecutor::timerCallback() {
+  elapsed_time_ = (node_->now() - start_time_).seconds();
 
   if (elapsed_time_ >= duration_) {
-    timer_.stop();
-    ROS_INFO("[WaitExecutor]: Wait completed");
+    timer_->cancel();
+    RCLCPP_INFO(node_->get_logger(), "[WaitExecutor]: Wait completed");
   }
 
-  ROS_DEBUG_STREAM("[WaitExecutor]: Elapsed time: " << elapsed_time_ << "/" << duration_);
+  RCLCPP_DEBUG_STREAM(node_->get_logger(), "[WaitExecutor]: Elapsed time: " << elapsed_time_ << "/" << duration_);
 }
 
 } // namespace basic_executors

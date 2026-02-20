@@ -1,16 +1,20 @@
 #include "iroc_mission_handler/basic_subtask_executor_plugins/gazebo_gimbal.h"
 
+#include <pluginlib/class_list_macros.hpp>
+PLUGINLIB_EXPORT_CLASS(iroc_mission_handler::executors::basic_executors::GazeboGimbalExecutor, iroc_mission_handler::SubtaskExecutor)
+
 namespace iroc_mission_handler {
 namespace executors {
 namespace basic_executors {
 
-bool GazeboGimbalExecutor::initializeImpl(ros::NodeHandle& nh, const std::string& parameters) {
-  mrs_lib::ParamLoader param_loader(nh, "SubtaskManager");
+bool GazeboGimbalExecutor::initializeImpl(rclcpp::Node::SharedPtr node, const std::string& parameters) {
+  node_ = node;
+  mrs_lib::ParamLoader param_loader(node_, "GazeboGimbalExecutor");
 
   // Load custom configuration if provided
   std::string custom_config_path;
-  param_loader.loadParam("custom_config", custom_config_path);
-  if (custom_config_path != "") {
+  param_loader.loadParam("custom_config", custom_config_path, std::string(""));
+  if (!custom_config_path.empty()) {
     param_loader.addYamlFile(custom_config_path);
   }
 
@@ -24,7 +28,7 @@ bool GazeboGimbalExecutor::initializeImpl(ros::NodeHandle& nh, const std::string
   // Parse gimbal control parameters from the parameters string
   std::vector<double> angles;
   if (!parseParams(parameters, angles) || angles.size() != 3) {
-    ROS_ERROR_STREAM("[GazeboGimbalExecutor]: Invalid parameters format: " << parameters);
+    RCLCPP_ERROR_STREAM(node_->get_logger(), "[GazeboGimbalExecutor]: Invalid parameters format: " << parameters);
     return false;
   }
 
@@ -34,56 +38,57 @@ bool GazeboGimbalExecutor::initializeImpl(ros::NodeHandle& nh, const std::string
   target_yaw_   = angles[2];
 
   // Initialize subscriber and service client
-  mrs_lib::SubscribeHandlerOptions sh_opts;
-  sh_opts.nh                 = nh;
-  sh_opts.node_name          = "MissionHandler";
-  sh_opts.no_message_timeout = ros::Duration(5.0);
+  mrs_lib::SubscriberHandlerOptions sh_opts(node_);
+  sh_opts.node_name          = "GazeboGimbalExecutor";
+  sh_opts.no_message_timeout = rclcpp::Duration::from_seconds(5.0);
   sh_opts.threadsafe         = true;
   sh_opts.autostart          = false;
-  sh_opts.queue_size         = 10;
-  sh_opts.transport_hints    = ros::TransportHints().tcpNoDelay();
+  sh_opts.qos                = rclcpp::SystemDefaultsQoS();
 
-  sh_current_orientation_ = mrs_lib::SubscribeHandler<std_msgs::Float32MultiArray>(sh_opts, "in/servo_camera/orientation", // Remapped
-                                                                                   &GazeboGimbalExecutor::orientationCallback, this);
+  sh_current_orientation_ = mrs_lib::SubscriberHandler<std_msgs::msg::Float32MultiArray>(
+      sh_opts, "in/servo_camera/orientation",
+      [this](std_msgs::msg::Float32MultiArray::ConstSharedPtr msg) { orientationCallback(msg); });
 
-  sc_set_gimbal_orientation_ = nh.serviceClient<mrs_msgs::Vec4>("svc/servo_camera/set_orientation");
+  sc_set_gimbal_orientation_ = mrs_lib::ServiceClientHandler<mrs_msgs::srv::Vec4>(node_, "svc/servo_camera/set_orientation");
 
-  ROS_DEBUG_STREAM("[GazeboGimbalExecutor]: Initialized with target angles - Roll: " << target_roll_ << ", Pitch: " << target_pitch_
-                                                                                     << ", Yaw: " << target_yaw_);
+  RCLCPP_DEBUG_STREAM(node_->get_logger(),
+                      "[GazeboGimbalExecutor]: Initialized with target angles - Roll: " << target_roll_ << ", Pitch: " << target_pitch_ << ", Yaw: " << target_yaw_);
   return true;
 }
 
 bool GazeboGimbalExecutor::startImpl() {
   // Wait for service to be available
-  if (!sc_set_gimbal_orientation_.waitForExistence(ros::Duration(5.0))) {
-    ROS_ERROR("[GazeboGimbalExecutor]: Gimbal orientation service not available");
+  if (!sc_set_gimbal_orientation_.waitForService(std::chrono::seconds(5))) {
+    RCLCPP_ERROR(node_->get_logger(), "[GazeboGimbalExecutor]: Gimbal orientation service not available");
     return false;
   }
 
   // Create and send gimbal command
-  mrs_msgs::Vec4 srv;
-  srv.request.goal[0] = target_roll_;
-  srv.request.goal[1] = target_pitch_;
-  srv.request.goal[2] = target_yaw_;
+  auto req    = std::make_shared<mrs_msgs::srv::Vec4::Request>();
+  req->goal[0] = target_roll_;
+  req->goal[1] = target_pitch_;
+  req->goal[2] = target_yaw_;
+  req->goal[3] = 0.0;
 
-  if (!sc_set_gimbal_orientation_.call(srv)) {
-    ROS_ERROR("[GazeboGimbalExecutor]: Failed to call gimbal orientation service");
+  const auto resp = sc_set_gimbal_orientation_.callSync(req);
+  if (!resp.has_value()) {
+    RCLCPP_ERROR(node_->get_logger(), "[GazeboGimbalExecutor]: Failed to call gimbal orientation service");
     return false;
   }
 
-  if (!srv.response.success) {
-    ROS_ERROR_STREAM("[GazeboGimbalExecutor]: Gimbal orientation service failed: " << srv.response.message);
+  if (!resp.value()->success) {
+    RCLCPP_ERROR_STREAM(node_->get_logger(), "[GazeboGimbalExecutor]: Gimbal orientation service failed: " << resp.value()->message);
     return false;
   }
 
   // Start orientation monitoring
   std::scoped_lock lock(mutex_);
-  start_time_ = ros::Time::now();
+  start_time_ = node_->now();
   sh_current_orientation_.start();
   progress_ = 0.0;
 
-  ROS_INFO_STREAM("[GazeboGimbalExecutor]: Started gimbal command - Roll: " << target_roll_ << ", Pitch: " << target_pitch_ << ", Yaw: " << target_yaw_
-                                                                            << ". Start time: " << start_time_.toSec());
+  RCLCPP_INFO_STREAM(node_->get_logger(), "[GazeboGimbalExecutor]: Started gimbal command - Roll: " << target_roll_ << ", Pitch: " << target_pitch_ << ", Yaw: " << target_yaw_
+                                                                                                    << ". Start time: " << start_time_.seconds());
   return true;
 }
 
@@ -91,7 +96,7 @@ bool GazeboGimbalExecutor::checkCompletion(double& progress) {
   std::scoped_lock lock(mutex_);
   progress = progress_;
 
-  if ((ros::Time::now() - start_time_).toSec() > _max_movement_time_) {
+  if ((node_->now() - start_time_).seconds() > _max_movement_time_) {
     return true; // Consider it completed if max movement time exceeded
   }
 
@@ -100,25 +105,25 @@ bool GazeboGimbalExecutor::checkCompletion(double& progress) {
 
 bool GazeboGimbalExecutor::stop() {
   sh_current_orientation_.stop();
-  ROS_INFO("[GazeboGimbalExecutor]: Stopped gimbal executor");
+  RCLCPP_INFO(node_->get_logger(), "[GazeboGimbalExecutor]: Stopped gimbal executor");
   return true;
 }
 
-void GazeboGimbalExecutor::orientationCallback(const std_msgs::Float32MultiArray::ConstPtr msg) {
+void GazeboGimbalExecutor::orientationCallback(std_msgs::msg::Float32MultiArray::ConstSharedPtr msg) {
   std::scoped_lock lock(mutex_);
 
   if (progress_ >= 1.0) {
-    ROS_DEBUG("[GazeboGimbalExecutor]: Already completed, stopping orientation monitoring");
+    RCLCPP_DEBUG(node_->get_logger(), "[GazeboGimbalExecutor]: Already completed, stopping orientation monitoring");
     sh_current_orientation_.stop();
     return;
-  } else if ((ros::Time::now() - start_time_).toSec() > _max_movement_time_) {
-    ROS_WARN("[GazeboGimbalExecutor]: Maximum movement time exceeded, stopping orientation monitoring");
+  } else if ((node_->now() - start_time_).seconds() > _max_movement_time_) {
+    RCLCPP_WARN(node_->get_logger(), "[GazeboGimbalExecutor]: Maximum movement time exceeded, stopping orientation monitoring");
     sh_current_orientation_.stop();
     return;
   }
 
   if (msg->data.size() < 3) {
-    ROS_WARN("[GazeboGimbalExecutor]: Received incomplete orientation data");
+    RCLCPP_WARN(node_->get_logger(), "[GazeboGimbalExecutor]: Received incomplete orientation data");
     return;
   }
 
@@ -155,11 +160,11 @@ void GazeboGimbalExecutor::orientationCallback(const std_msgs::Float32MultiArray
       std::abs(current_pitch - target_pitch_) < _orientation_tolerance_ && // Pitch
       std::abs(current_yaw - target_yaw_) < _orientation_tolerance_) {     // Yaw
     progress_ = 1.0;
-    ROS_INFO("[GazeboGimbalExecutor]: Target orientation reached");
+    RCLCPP_INFO(node_->get_logger(), "[GazeboGimbalExecutor]: Target orientation reached");
   }
 
-  ROS_DEBUG_STREAM("[GazeboGimbalExecutor]: Current: [" << current_roll << ", " << current_pitch << ", " << current_yaw << "] Target: [" << target_roll_ << ", "
-                                                        << target_pitch_ << ", " << target_yaw_ << "] Progress: " << progress_);
+  RCLCPP_DEBUG_STREAM(node_->get_logger(), "[GazeboGimbalExecutor]: Current: [" << current_roll << ", " << current_pitch << ", " << current_yaw << "] Target: [" << target_roll_
+                                                                                << ", " << target_pitch_ << ", " << target_yaw_ << "] Progress: " << progress_);
 }
 
 } // namespace basic_executors
