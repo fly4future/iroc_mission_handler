@@ -455,7 +455,7 @@ void MissionHandler::timerMain() {
 
       if (!resp.success) {
         RCLCPP_WARN(node_->get_logger(), " Takeoff call was not successful with message: %s", resp.message.c_str());
-        updateMissionState(mission_state_t::IDLE);
+        updateMissionState(mission_state_t::MISSION_LOADED);
       }
       break;
     }
@@ -668,7 +668,7 @@ bool MissionHandler::missionActivationServiceCallback([[maybe_unused]] const std
 
   switch (mission_state_.value()) {
   case mission_state_t::MISSION_LOADED: {
-    RCLCPP_INFO(node_->get_logger(), "Already flying, starting mission with first trajectory.");
+    RCLCPP_INFO(node_->get_logger(), "Mission loaded, starting mission with first trajectory.");
     is_current_trajectory_finished_ = false;
     updateMissionState(mission_state_t::EXECUTING);
     break;
