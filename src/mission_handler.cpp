@@ -134,6 +134,9 @@ private:
   std::atomic_bool is_initialized_ = false;
   double _min_distance_threshold_; // Minimum distance to consider a segment as valid (not just a heading change)
   double _trajectory_sampling_period_;
+  double _takeoff_timeout_s_;       // Max seconds to wait for the UAV to reach hover after a takeoff call
+
+  rclcpp::Time takeoff_started_at_; // Timestamp of the most recent takeoff service call
 
   // | -------------------- subtask management ------------------- |
   // TODO: implement subtask manager and use it to manage the execution of subtasks
@@ -281,6 +284,7 @@ void MissionHandler::initialize() {
 
   _min_distance_threshold_     = param_loader.loadParam2<double>("mrs_uav_trajectory_generation/min_waypoint_distance");
   _trajectory_sampling_period_ = param_loader.loadParam2<double>("mrs_uav_trajectory_generation/sampling_dt");
+  _takeoff_timeout_s_          = param_loader.loadParam2<double>("mission_handler/takeoff_timeout");
 
   if (!param_loader.loadedSuccessfully()) {
     RCLCPP_ERROR(node_->get_logger(), "Could not load all parameters!");
@@ -454,9 +458,19 @@ void MissionHandler::timerMain() {
       const auto resp = callService<std_srvs::srv::Trigger>(sc_takeoff_, request);
 
       if (!resp.success) {
-        RCLCPP_WARN(node_->get_logger(), " Takeoff call was not successful with message: %s", resp.message.c_str());
-        updateMissionState(mission_state_t::MISSION_LOADED);
+        auto result                  = std::make_shared<Mission::Result>();
+        result->robot_result.name    = robot_name_;
+        result->robot_result.success = false;
+        result->robot_result.message = "Takeoff service call failed: " + resp.message;
+        RCLCPP_WARN_STREAM(node_->get_logger(), result->robot_result.message);
+        current_goal_handle_->abort(result);
+        updateMissionState(mission_state_t::IDLE);
+        resetMission();
+        return;
       }
+
+      takeoff_started_at_ = clock_->now();
+      updateMissionState(mission_state_t::TAKEOFF);
       break;
     }
 
@@ -551,6 +565,29 @@ void MissionHandler::timerMain() {
       current_trajectory_idx_++;
       is_current_trajectory_finished_ = false;
       updateMissionState(mission_state_t::EXECUTING);
+    }
+
+    break;
+  }
+
+  case mission_state_t::TAKEOFF: {
+    if (mrs_robot_diagnostics::is_flying(uav_state_.value())) {
+      RCLCPP_INFO(node_->get_logger(), "UAV reached hover altitude. Starting mission execution.");
+      updateMissionState(mission_state_t::EXECUTING);
+      break;
+    }
+
+    const double elapsed_s = (clock_->now() - takeoff_started_at_).seconds();
+    if (elapsed_s > _takeoff_timeout_s_) {
+      auto result                  = std::make_shared<Mission::Result>();
+      result->robot_result.name    = robot_name_;
+      result->robot_result.success = false;
+      result->robot_result.message = "Takeoff timed out after " + std::to_string(static_cast<int>(_takeoff_timeout_s_)) + "s.";
+      RCLCPP_WARN_STREAM(node_->get_logger(), result->robot_result.message);
+      current_goal_handle_->abort(result);
+      updateMissionState(mission_state_t::IDLE);
+      resetMission();
+      return;
     }
 
     break;
@@ -1007,6 +1044,7 @@ rclcpp_action::CancelResponse MissionHandler::handle_cancel(const std::shared_pt
       }
 
       auto result                  = std::make_shared<Mission::Result>();
+      result->robot_result.name    = robot_name_;
       result->robot_result.success = false;
       result->robot_result.message = "Mission cancelled by client request.";
       current_goal_handle_->abort(result);
@@ -1017,6 +1055,7 @@ rclcpp_action::CancelResponse MissionHandler::handle_cancel(const std::shared_pt
     }
     default:
       auto result                  = std::make_shared<Mission::Result>();
+      result->robot_result.name    = robot_name_;
       result->robot_result.success = false;
       result->robot_result.message = "Mission cancelled by client request.";
       current_goal_handle_->abort(result);

@@ -1,6 +1,7 @@
 mission_handler:
   main_timer_rate: 100.0 # [Hz]
   feedback_timer_rate: 1.0 # [Hz]
+  takeoff_timeout: 30.0 # [s] max time to wait for UAV to reach hover after a takeoff call
   subtask_manager:
     available_executors:
       - wait
