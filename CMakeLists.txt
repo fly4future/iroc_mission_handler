@@ -43,6 +43,7 @@ set(DEPENDENCIES
   mrs_msgs
   mrs_lib
   mrs_robot_diagnostics
+  iroc_common
   rosidl_default_generators
 )
 
@@ -119,6 +120,7 @@ add_library(IROCMissionHandler SHARED
 target_link_libraries(IROCMissionHandler
   PRIVATE
     iroc_mission_handler::iroc_mission_handler
+    iroc_common::iroc_common
     rclcpp::rclcpp
     rclcpp_action::rclcpp_action
     rclcpp_components::component
