@@ -974,11 +974,19 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::msg::ControlMana
  *
  * @param goal The incoming goal from the action client
  */
-rclcpp_action::GoalResponse MissionHandler::handle_goal(const rclcpp_action::GoalUUID &uuid, std::shared_ptr<const Mission::Goal> goal) {
+rclcpp_action::GoalResponse MissionHandler::handle_goal(const rclcpp_action::GoalUUID &uuid, [[maybe_unused]] std::shared_ptr<const Mission::Goal> goal) {
   RCLCPP_INFO(node_->get_logger(), "Received goal request with ID %s", rclcpp_action::to_string(uuid).c_str());
 
   if (!is_initialized_) {
-    RCLCPP_WARN(node_->get_logger(), "Not initialized yet, rejecting goal.");
+    RCLCPP_WARN(node_->get_logger(), "Rejecting goal: not initialized yet.");
+    return rclcpp_action::GoalResponse::REJECT;
+  }
+
+  // Accept if IDLE (normal slow-path) or MISSION_LOADED with a staged mission (fast-path).
+  // Any other active state means a mission is already running on this robot.
+  const auto state = mission_state_.value();
+  if (state != mission_state_t::IDLE && !is_mission_staged_) {
+    RCLCPP_WARN(node_->get_logger(), "Rejecting goal: robot not idle (state: %s).", to_string(state));
     return rclcpp_action::GoalResponse::REJECT;
   }
 
