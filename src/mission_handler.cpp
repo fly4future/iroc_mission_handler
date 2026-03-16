@@ -204,8 +204,8 @@ private:
 
   // | --------------------- mission feedback and trajectory t-------------------- |
   std::vector<trajectory_t> trajectories_;
-  int current_trajectory_idx_          = 0; // Index of the current trajectory being executed
-  int current_trajectory_waypoint_idx_ = 0; // Index of the current waypoint in the current trajectory
+  size_t current_trajectory_idx_          = 0; // Index of the current trajectory being executed
+  size_t current_trajectory_waypoint_idx_ = 0; // Index of the current waypoint in the current trajectory
 
   std::atomic_bool is_current_trajectory_finished_ = false;
   std::atomic_bool is_trajectory_sent_             = false;
@@ -891,7 +891,7 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::msg::ControlMana
     is_trajectory_sent_ = false;
   }
   // Get current state
-  int current_point_idx            = diagnostics->tracker_status.trajectory_idx;
+  size_t current_point_idx         = static_cast<size_t>(diagnostics->tracker_status.trajectory_idx);
   trajectory_t &current_trajectory = trajectories_.at(current_trajectory_idx_);
 
   int previous_waypoint_point_idx = current_trajectory_waypoint_idx_ > 0 ? current_trajectory.idxs[current_trajectory_waypoint_idx_ - 1] : 0;
@@ -899,7 +899,7 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::msg::ControlMana
 
   // | ----------------------- Check if current waypoint is reached ----------------------- |
   if (current_point_idx >= current_trajectory.idxs[current_trajectory_waypoint_idx_]) {
-    RCLCPP_INFO(node_->get_logger(), "Reached waypoint %d in trajectory %d", current_trajectory_waypoint_idx_, current_trajectory_idx_);
+    RCLCPP_INFO(node_->get_logger(), "Reached waypoint %zu in trajectory %zu", current_trajectory_waypoint_idx_, current_trajectory_idx_);
 
     // Reached the current waypoint, update the mission state and indices
     mission_waypoint_idx_++;
@@ -907,7 +907,7 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::msg::ControlMana
 
     if (current_trajectory_waypoint_idx_ >= current_trajectory.idxs.size()) {
       // If we reached the last waypoint in the trajectory, mark it as finished and reset the trajectory waypoint index
-      RCLCPP_INFO(node_->get_logger(), "Trajectory %d finished", current_trajectory_idx_);
+      RCLCPP_INFO(node_->get_logger(), "Trajectory %zu finished", current_trajectory_idx_);
       is_current_trajectory_finished_  = true;
       current_trajectory_waypoint_idx_ = 0;
     }
@@ -1036,7 +1036,7 @@ void MissionHandler::handle_accepted(const std::shared_ptr<GoalHandleMission> go
   updateMissionState(mission_state_t::MISSION_LOADED);
 }
 
-rclcpp_action::CancelResponse MissionHandler::handle_cancel(const std::shared_ptr<GoalHandleMission> goal_handle) {
+rclcpp_action::CancelResponse MissionHandler::handle_cancel([[maybe_unused]] const std::shared_ptr<GoalHandleMission> goal_handle) {
   RCLCPP_INFO(node_->get_logger(), "Received request to cancel goal");
 
   if (current_goal_handle_->is_active()) {
@@ -1224,7 +1224,6 @@ MissionHandler::result_t MissionHandler::createMission(const std::shared_ptr<con
 
   if (goal->robot_goal.height_id == Mission::Goal::HEIGHT_ID_AGL && goal->robot_goal.frame_id != Mission::Goal::FRAME_ID_FCU) {
     // Replacing the height points after the transformation, as when receiving LATLON points the transformation also considers the height as AMSL.
-    auto size = response->array.array.size();
     for (size_t i = 0; i < response->array.array.size(); i++) {
       response->array.array.at(i).position.z = height_points.at(i);
     }
@@ -1594,7 +1593,6 @@ MissionHandler::generateTrajectoriesFromSegments(const std::vector<path_segment_
  */
 std::tuple<std::vector<mrs_msgs::msg::Reference>, std::vector<long int>> MissionHandler::generateHeadingTrajectory(const mrs_msgs::msg::Path &path,
                                                                                                                    double T = 0.2) {
-  using radians  = mrs_lib::geometry::radians;
   using sradians = mrs_lib::geometry::sradians;
 
   std::vector<mrs_msgs::msg::Reference> trajectory;
@@ -1657,7 +1655,7 @@ std::tuple<std::vector<mrs_msgs::msg::Reference>, std::vector<long int>> Mission
 bool MissionHandler::replanMission() {
   std::scoped_lock lock(action_server_mutex_);
 
-  RCLCPP_WARN(node_->get_logger(), "Replanning trajectory %d, current goal index: %d, waypoints %zu, points %zu", current_trajectory_idx_,
+  RCLCPP_WARN(node_->get_logger(), "Replanning trajectory %zu, current goal index: %zu, waypoints %zu, points %zu", current_trajectory_idx_,
               current_trajectory_waypoint_idx_, trajectories_[current_trajectory_idx_].idxs.size(),
               trajectories_[current_trajectory_idx_].reference.points.size());
 
