@@ -3,11 +3,14 @@
 #include <pluginlib/class_list_macros.hpp>
 PLUGINLIB_EXPORT_CLASS(iroc_mission_handler::executors::basic_executors::WaitExecutor, iroc_mission_handler::SubtaskExecutor)
 
-namespace iroc_mission_handler {
-namespace executors {
-namespace basic_executors {
+namespace iroc_mission_handler
+{
+namespace executors
+{
+namespace basic_executors
+{
 
-bool WaitExecutor::initializeImpl(rclcpp::Node::SharedPtr node, const std::string& parameters) {
+bool WaitExecutor::initializeImpl(rclcpp::Node::SharedPtr node, const std::string &parameters) {
   node_ = node;
   mrs_lib::ParamLoader param_loader(node_, "WaitExecutor");
 
@@ -50,7 +53,8 @@ bool WaitExecutor::initializeImpl(rclcpp::Node::SharedPtr node, const std::strin
   // return false, so "NaN < min || NaN > max" evaluates to false and NaN
   // would silently pass without the explicit check.
   if (std::isnan(duration_) || duration_ < min_duration || duration_ > max_duration) {
-    RCLCPP_ERROR_STREAM(node_->get_logger(), "[WaitExecutor]: Duration must be between " << min_duration << " and " << max_duration << " seconds, got: " << duration_);
+    RCLCPP_ERROR_STREAM(node_->get_logger(),
+                        "[WaitExecutor]: Duration must be between " << min_duration << " and " << max_duration << " seconds, got: " << duration_);
     return false;
   }
 
@@ -70,7 +74,7 @@ bool WaitExecutor::startImpl() {
   return true;
 }
 
-bool WaitExecutor::checkCompletion(double& progress) {
+bool WaitExecutor::checkCompletion(double &progress) {
   if (duration_ <= 0.0) {
     RCLCPP_ERROR(node_->get_logger(), "[WaitExecutor]: Duration is not set or invalid");
     progress = 0.0;

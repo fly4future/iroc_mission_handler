@@ -9,7 +9,8 @@
 
 #include <mutex>
 
-namespace iroc_mission_handler {
+namespace iroc_mission_handler
+{
 
 /**
  * \brief Manager class for handling multiple subtask executors using plugins
@@ -18,7 +19,7 @@ namespace iroc_mission_handler {
  * It provides functionality to create, start, monitor, and stop subtasks dynamically.
  */
 class SubtaskManager {
- public:
+public:
   /**
    * \brief Constructor
    *
@@ -47,7 +48,7 @@ class SubtaskManager {
    *
    * \return True if all non-critical subtasks were created successfully
    */
-  bool createSubtasks(const std::vector<iroc_mission_handler::msg::Subtask>& subtasks);
+  bool createSubtasks(const std::vector<iroc_mission_handler::msg::Subtask> &subtasks);
 
   /**
    * \brief Check if a subtask has completed
@@ -56,7 +57,7 @@ class SubtaskManager {
    *
    * \return True if the subtask is completed
    */
-  bool isCurrentSubtaskCompleted(double& progress);
+  bool isCurrentSubtaskCompleted(double &progress);
 
   /**
    * \brief Start all active subtasks
@@ -79,18 +80,18 @@ class SubtaskManager {
    *
    * \return Tuple of (success, error_message)
    */
-  std::tuple<bool, std::string> validateSubtasks(const std::vector<iroc_mission_handler::msg::Subtask>& subtasks);
+  std::tuple<bool, std::string> validateSubtasks(const std::vector<iroc_mission_handler::msg::Subtask> &subtasks);
 
- private:
+private:
   rclcpp::Node::SharedPtr node_;
 
-  bool is_initialized_ = false;
+  bool is_initialized_       = false;
   bool has_started_subtasks_ = false;
-  int current_subtask_id_ = -1;
+  int  current_subtask_id_   = -1;
 
   // Plugin loader for subtask executors
   std::unique_ptr<pluginlib::ClassLoader<SubtaskExecutor>> plugin_loader_;
-  std::map<std::string, std::string> plugin_addresses_;
+  std::map<std::string, std::string>                       plugin_addresses_;
 
   // Map of active subtask executors
   std::unordered_map<int, std::shared_ptr<SubtaskExecutor>> active_subtasks_;

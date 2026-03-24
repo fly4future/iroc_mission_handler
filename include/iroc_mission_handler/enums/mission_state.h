@@ -5,19 +5,9 @@
 #undef X_ENUM_BASE_TYPE
 #undef X_ENUM_SEQ
 
-#define X_ENUM_NAME       mission_state_t
-#define X_ENUM_BASE_TYPE  uint8_t
-#define X_ENUM_SEQ                                \
-                          (IDLE)                  \
-                          (TAKEOFF)               \
-                          (MISSION_LOADED)        \
-                          (EXECUTING)             \
-                          (EXECUTING_SUBTASK)     \
-                          (FINISHED)              \
-                          (PAUSED)                \
-                          (PAUSED_DUE_TO_RC_MODE) \
-                          (RTH)                   \
-                          (LAND)                  \
+#define X_ENUM_NAME mission_state_t
+#define X_ENUM_BASE_TYPE uint8_t
+#define X_ENUM_SEQ (IDLE)(TAKEOFF)(MISSION_LOADED)(EXECUTING)(EXECUTING_SUBTASK)(FINISHED)(PAUSED)(PAUSED_DUE_TO_RC_MODE)(RTH)(LAND)
 
 namespace iroc_mission_handler
 {
@@ -26,4 +16,4 @@ namespace iroc_mission_handler
 
 DEFINE_ENUM_WITH_CONVERSIONS(X_ENUM_NAME, X_ENUM_BASE_TYPE, X_ENUM_SEQ)
 
-}
+} // namespace iroc_mission_handler

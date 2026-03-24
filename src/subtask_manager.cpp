@@ -3,7 +3,8 @@
 namespace iroc_mission_handler
 {
 
-SubtaskManager::SubtaskManager(rclcpp::Node::SharedPtr node) : node_(node) {
+SubtaskManager::SubtaskManager(rclcpp::Node::SharedPtr node)
+    : node_(node) {
   // | ----------------------- Load parameters ---------------------- |
   mrs_lib::ParamLoader param_loader(node_, "SubtaskManager");
 
@@ -111,8 +112,7 @@ bool SubtaskManager::createSubtasks(const std::vector<iroc_mission_handler::msg:
     }
     catch (const pluginlib::PluginlibException &e) {
       if (subtask.stop_on_failure) {
-        RCLCPP_WARN(node_->get_logger(),
-                    "[SubtaskManager]: Plugin creation failed for subtask type '%s': %s. Check parameters and plugin configuration.",
+        RCLCPP_WARN(node_->get_logger(), "[SubtaskManager]: Plugin creation failed for subtask type '%s': %s. Check parameters and plugin configuration.",
                     subtask.type.c_str(), e.what());
         return false;
       } else {
@@ -157,14 +157,11 @@ bool SubtaskManager::startAllSubtasks() {
     if (!executor->hasStarted()) {
       if (!executor->start()) {
         if (executor->shouldStopMissionOnFailure()) {
-          RCLCPP_WARN(node_->get_logger(),
-                      "[SubtaskManager]: Failed to start subtask executor for ID: %d. Check parameters and plugin configuration.",
-                      id);
+          RCLCPP_WARN(node_->get_logger(), "[SubtaskManager]: Failed to start subtask executor for ID: %d. Check parameters and plugin configuration.", id);
           return false;
         } else {
           RCLCPP_WARN(node_->get_logger(),
-                      "[SubtaskManager]: Failed to start subtask executor for ID: %d. Check parameters and plugin configuration. Skipping.",
-                      id);
+                      "[SubtaskManager]: Failed to start subtask executor for ID: %d. Check parameters and plugin configuration. Skipping.", id);
           continue; // Skip this subtask if it is not critical
         }
       }
@@ -204,7 +201,7 @@ std::tuple<bool, std::string> SubtaskManager::validateSubtasks(const std::vector
   }
 
   std::stringstream error_messages;
-  bool has_errors = false;
+  bool              has_errors = false;
 
   // Validate each subtask in the waypoint
   for (const auto &subtask : subtasks) {

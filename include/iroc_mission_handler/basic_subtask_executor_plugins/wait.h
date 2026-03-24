@@ -2,9 +2,12 @@
 
 #include "iroc_mission_handler/subtask_executor_interface.h"
 
-namespace iroc_mission_handler {
-namespace executors {
-namespace basic_executors {
+namespace iroc_mission_handler
+{
+namespace executors
+{
+namespace basic_executors
+{
 
 /**
  * \brief Wait subtask executor - simply waits for a specified duration
@@ -16,19 +19,19 @@ namespace basic_executors {
  * Example: "5.0" (wait for 5 seconds)
  */
 class WaitExecutor : public SubtaskExecutor {
- public:
+public:
   WaitExecutor()          = default;
   virtual ~WaitExecutor() = default;
 
   bool stop() override;
 
- protected:
-  bool initializeImpl(rclcpp::Node::SharedPtr node, const std::string& parameters) override;
+protected:
+  bool initializeImpl(rclcpp::Node::SharedPtr node, const std::string &parameters) override;
   bool startImpl() override;
-  bool checkCompletion(double& progress) override;
+  bool checkCompletion(double &progress) override;
 
- private:
-  rclcpp::Node::SharedPtr     node_;
+private:
+  rclcpp::Node::SharedPtr      node_;
   rclcpp::TimerBase::SharedPtr timer_;
   std::chrono::nanoseconds     timer_period_;
 

@@ -8,9 +8,12 @@
 
 #include "iroc_mission_handler/subtask_executor_interface.h"
 
-namespace iroc_mission_handler {
-namespace executors {
-namespace basic_executors {
+namespace iroc_mission_handler
+{
+namespace executors
+{
+namespace basic_executors
+{
 
 /**
  * \brief Gimbal subtask executor - controls a gimbal device
@@ -22,18 +25,18 @@ namespace basic_executors {
  * Example: "[0.0,1.57,0.707]" (roll=0, pitch=90°, yaw=45°)
  */
 class GazeboGimbalExecutor : public SubtaskExecutor {
- public:
+public:
   GazeboGimbalExecutor()          = default;
   virtual ~GazeboGimbalExecutor() = default;
 
   bool stop() override;
 
- protected:
-  bool initializeImpl(rclcpp::Node::SharedPtr node, const std::string& parameters) override;
+protected:
+  bool initializeImpl(rclcpp::Node::SharedPtr node, const std::string &parameters) override;
   bool startImpl() override;
-  bool checkCompletion(double& progress) override;
+  bool checkCompletion(double &progress) override;
 
- private:
+private:
   rclcpp::Node::SharedPtr node_;
 
   mrs_lib::SubscriberHandler<std_msgs::msg::Float32MultiArray> sh_current_orientation_;

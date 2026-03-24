@@ -5,13 +5,9 @@
 #undef X_ENUM_BASE_TYPE
 #undef X_ENUM_SEQ
 
-#define X_ENUM_NAME       subtask_state_t
-#define X_ENUM_BASE_TYPE  uint8_t
-#define X_ENUM_SEQ                                \
-                          (IDLE)                  \
-                          (RUNNING)               \
-                          (COMPLETED)             \
-                          (FAILED)                \
+#define X_ENUM_NAME subtask_state_t
+#define X_ENUM_BASE_TYPE uint8_t
+#define X_ENUM_SEQ (IDLE)(RUNNING)(COMPLETED)(FAILED)
 
 namespace iroc_mission_handler
 {

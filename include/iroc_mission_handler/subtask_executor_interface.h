@@ -70,8 +70,7 @@ public:
     if (!initialized_) {
       // node_ and subtask_ are only assigned inside initialize(), so they are
       // null here. Use a named logger to avoid a null-pointer dereference.
-      RCLCPP_WARN(rclcpp::get_logger("SubtaskExecutor"),
-                  "[SubtaskExecutor]: Executor not initialized — call initialize() before start()");
+      RCLCPP_WARN(rclcpp::get_logger("SubtaskExecutor"), "[SubtaskExecutor]: Executor not initialized — call initialize() before start()");
       return false;
     }
 
@@ -268,7 +267,7 @@ protected:
     cleaned_str.erase(std::remove(cleaned_str.begin(), cleaned_str.end(), ' '), cleaned_str.end());
 
     std::stringstream ss(cleaned_str);
-    std::string item;
+    std::string       item;
     while (std::getline(ss, item, ',')) {
       T value;
       if (!parseParams(item, value)) {
@@ -281,11 +280,11 @@ protected:
   }
 
 private:
-  rclcpp::Node::SharedPtr node_;
+  rclcpp::Node::SharedPtr  node_;
   rclcpp::Clock::SharedPtr clock_;
 
-  bool initialized_      = false;
-  subtask_state_t state_ = subtask_state_t::IDLE;
+  bool                                                initialized_ = false;
+  subtask_state_t                                     state_       = subtask_state_t::IDLE;
   std::shared_ptr<iroc_mission_handler::msg::Subtask> subtask_; // Pointer to the subtask this executor is handling
 
   /**

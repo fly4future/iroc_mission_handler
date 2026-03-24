@@ -3,11 +3,14 @@
 #include <pluginlib/class_list_macros.hpp>
 PLUGINLIB_EXPORT_CLASS(iroc_mission_handler::executors::basic_executors::GazeboGimbalExecutor, iroc_mission_handler::SubtaskExecutor)
 
-namespace iroc_mission_handler {
-namespace executors {
-namespace basic_executors {
+namespace iroc_mission_handler
+{
+namespace executors
+{
+namespace basic_executors
+{
 
-bool GazeboGimbalExecutor::initializeImpl(rclcpp::Node::SharedPtr node, const std::string& parameters) {
+bool GazeboGimbalExecutor::initializeImpl(rclcpp::Node::SharedPtr node, const std::string &parameters) {
   node_ = node;
   mrs_lib::ParamLoader param_loader(node_, "GazeboGimbalExecutor");
 
@@ -46,13 +49,12 @@ bool GazeboGimbalExecutor::initializeImpl(rclcpp::Node::SharedPtr node, const st
   sh_opts.qos                = rclcpp::SystemDefaultsQoS();
 
   sh_current_orientation_ = mrs_lib::SubscriberHandler<std_msgs::msg::Float32MultiArray>(
-      sh_opts, "in/servo_camera/orientation",
-      [this](std_msgs::msg::Float32MultiArray::ConstSharedPtr msg) { orientationCallback(msg); });
+      sh_opts, "in/servo_camera/orientation", [this](std_msgs::msg::Float32MultiArray::ConstSharedPtr msg) { orientationCallback(msg); });
 
   sc_set_gimbal_orientation_ = mrs_lib::ServiceClientHandler<mrs_msgs::srv::Vec4>(node_, "svc/servo_camera/set_orientation");
 
-  RCLCPP_DEBUG_STREAM(node_->get_logger(),
-                      "[GazeboGimbalExecutor]: Initialized with target angles - Roll: " << target_roll_ << ", Pitch: " << target_pitch_ << ", Yaw: " << target_yaw_);
+  RCLCPP_DEBUG_STREAM(node_->get_logger(), "[GazeboGimbalExecutor]: Initialized with target angles - Roll: " << target_roll_ << ", Pitch: " << target_pitch_
+                                                                                                             << ", Yaw: " << target_yaw_);
   return true;
 }
 
@@ -64,7 +66,7 @@ bool GazeboGimbalExecutor::startImpl() {
   }
 
   // Create and send gimbal command
-  auto req    = std::make_shared<mrs_msgs::srv::Vec4::Request>();
+  auto req     = std::make_shared<mrs_msgs::srv::Vec4::Request>();
   req->goal[0] = target_roll_;
   req->goal[1] = target_pitch_;
   req->goal[2] = target_yaw_;
@@ -87,12 +89,13 @@ bool GazeboGimbalExecutor::startImpl() {
   sh_current_orientation_.start();
   progress_ = 0.0;
 
-  RCLCPP_INFO_STREAM(node_->get_logger(), "[GazeboGimbalExecutor]: Started gimbal command - Roll: " << target_roll_ << ", Pitch: " << target_pitch_ << ", Yaw: " << target_yaw_
+  RCLCPP_INFO_STREAM(node_->get_logger(), "[GazeboGimbalExecutor]: Started gimbal command - Roll: " << target_roll_ << ", Pitch: " << target_pitch_
+                                                                                                    << ", Yaw: " << target_yaw_
                                                                                                     << ". Start time: " << start_time_.seconds());
   return true;
 }
 
-bool GazeboGimbalExecutor::checkCompletion(double& progress) {
+bool GazeboGimbalExecutor::checkCompletion(double &progress) {
   std::scoped_lock lock(mutex_);
   progress = progress_;
 
@@ -163,8 +166,9 @@ void GazeboGimbalExecutor::orientationCallback(std_msgs::msg::Float32MultiArray:
     RCLCPP_INFO(node_->get_logger(), "[GazeboGimbalExecutor]: Target orientation reached");
   }
 
-  RCLCPP_DEBUG_STREAM(node_->get_logger(), "[GazeboGimbalExecutor]: Current: [" << current_roll << ", " << current_pitch << ", " << current_yaw << "] Target: [" << target_roll_
-                                                                                << ", " << target_pitch_ << ", " << target_yaw_ << "] Progress: " << progress_);
+  RCLCPP_DEBUG_STREAM(node_->get_logger(), "[GazeboGimbalExecutor]: Current: [" << current_roll << ", " << current_pitch << ", " << current_yaw << "] Target: ["
+                                                                                << target_roll_ << ", " << target_pitch_ << ", " << target_yaw_
+                                                                                << "] Progress: " << progress_);
 }
 
 } // namespace basic_executors
