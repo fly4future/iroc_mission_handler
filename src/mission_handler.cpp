@@ -898,7 +898,7 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::msg::ControlMana
   int next_waypoint_point_idx     = current_trajectory.idxs[current_trajectory_waypoint_idx_];
 
   // | ----------------------- Check if current waypoint is reached ----------------------- |
-  if (current_point_idx >= current_trajectory.idxs[current_trajectory_waypoint_idx_]) {
+  if (current_point_idx >= static_cast<size_t>(current_trajectory.idxs[current_trajectory_waypoint_idx_])) {
     RCLCPP_INFO(node_->get_logger(), "Reached waypoint %zu in trajectory %zu", current_trajectory_waypoint_idx_, current_trajectory_idx_);
 
     // Reached the current waypoint, update the mission state and indices

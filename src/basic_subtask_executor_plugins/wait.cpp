@@ -45,8 +45,11 @@ bool WaitExecutor::initializeImpl(rclcpp::Node::SharedPtr node, const std::strin
     return false;
   }
 
-  // Check if duration is valid
-  if (duration_ < min_duration || duration_ > max_duration) {
+  // Check if duration is valid.
+  // std::isnan() guard is required because IEEE 754 NaN comparisons always
+  // return false, so "NaN < min || NaN > max" evaluates to false and NaN
+  // would silently pass without the explicit check.
+  if (std::isnan(duration_) || duration_ < min_duration || duration_ > max_duration) {
     RCLCPP_ERROR_STREAM(node_->get_logger(), "[WaitExecutor]: Duration must be between " << min_duration << " and " << max_duration << " seconds, got: " << duration_);
     return false;
   }
@@ -79,11 +82,15 @@ bool WaitExecutor::checkCompletion(double& progress) {
 }
 
 bool WaitExecutor::stop() {
+  // node_ is only set in initializeImpl(), so guard against it being null
+  // (e.g., stop() called before initialize() during mission rollback).
+  auto logger = node_ ? node_->get_logger() : rclcpp::get_logger("WaitExecutor");
+
   if (timer_) {
     timer_->cancel();
-    RCLCPP_INFO(node_->get_logger(), "[WaitExecutor]: Stopped wait execution");
+    RCLCPP_INFO(logger, "[WaitExecutor]: Stopped wait execution");
   } else {
-    RCLCPP_WARN(node_->get_logger(), "[WaitExecutor]: Wait was not started, nothing to stop");
+    RCLCPP_WARN(logger, "[WaitExecutor]: Wait was not started, nothing to stop");
   }
 
   return true;

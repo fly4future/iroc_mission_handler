@@ -68,8 +68,10 @@ public:
    */
   bool start() {
     if (!initialized_) {
-      RCLCPP_WARN(node_->get_logger(), "[SubtaskExecutor]: Executor not initialized for subtask type: %s, parameters: %s", subtask_->type.c_str(),
-                  subtask_->parameters.c_str());
+      // node_ and subtask_ are only assigned inside initialize(), so they are
+      // null here. Use a named logger to avoid a null-pointer dereference.
+      RCLCPP_WARN(rclcpp::get_logger("SubtaskExecutor"),
+                  "[SubtaskExecutor]: Executor not initialized — call initialize() before start()");
       return false;
     }
 
