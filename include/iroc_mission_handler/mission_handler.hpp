@@ -1,5 +1,4 @@
 #pragma once
-
 /**
  * \file mission_handler.hpp
  * \brief Per-robot mission executor with state machine and subtask plugin support.
@@ -41,6 +40,7 @@
 #include <mrs_msgs/msg/reference.hpp>
 #include <mrs_msgs/msg/trajectory_reference.hpp>
 #include <mrs_msgs/msg/control_manager_diagnostics.hpp>
+#include <mrs_msgs/msg/state.hpp>
 
 /* MRS diagnostics */
 #include <mrs_robot_diagnostics/enums/uav_state.h>
@@ -48,6 +48,8 @@
 
 /* IROC */
 #include <iroc_mission_handler/action/mission.hpp>
+#include <iroc_mission_handler/msg/subtask.hpp>
+#include <iroc_mission_handler/msg/waypoint.hpp>
 #include <iroc_mission_handler/srv/upload_mission_srv.hpp>
 #include <iroc_mission_handler/srv/unload_mission_srv.hpp>
 #include "iroc_mission_handler/enums/mission_state.h"

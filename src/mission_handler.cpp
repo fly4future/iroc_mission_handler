@@ -5,10 +5,6 @@
 #include <mrs_lib/geometry/misc.h>
 #include <mrs_lib/geometry/cyclic.h>
 
-#include <mrs_robot_diagnostics/enums/tracker_state.h>
-#include <mrs_msgs/msg/uav_state.hpp>
-#include <std_srvs/srv/set_bool.hpp>
-
 #include <iroc_common/call_service.h>
 
 #include <tuple>
