@@ -43,8 +43,8 @@
 #include <mrs_msgs/msg/state.hpp>
 
 /* MRS diagnostics */
-#include <mrs_robot_diagnostics/enums/uav_state.h>
-#include <mrs_robot_diagnostics/enums/enum_helpers.h>
+#include <mrs_robot_diagnostics/enums/uav_state.hpp>
+#include <mrs_robot_diagnostics/enums/helpers/enum_helpers.hpp>
 
 /* IROC */
 #include <iroc_mission_handler/action/mission.hpp>
