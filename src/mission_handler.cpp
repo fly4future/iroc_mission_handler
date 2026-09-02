@@ -1008,6 +1008,15 @@ MissionHandler::result_t MissionHandler::createMission(const std::shared_ptr<con
   msg_path.use_heading                = true;
   msg_path.dont_prepend_current_state = false; // do not use the current position for planning of the path
   msg_path.header.frame_id            = response->array.header.frame_id;
+  // Propagate the (optional) per-mission constraint override from the goal - left at their
+  // default (override_constraints=false) when the planner didn't request an override.
+  msg_path.override_constraints                = goal->robot_goal.override_constraints;
+  msg_path.override_max_velocity_horizontal     = goal->robot_goal.override_max_velocity_horizontal;
+  msg_path.override_max_acceleration_horizontal = goal->robot_goal.override_max_acceleration_horizontal;
+  msg_path.override_max_jerk_horizontal         = goal->robot_goal.override_max_jerk_horizontal;
+  msg_path.override_max_velocity_vertical       = goal->robot_goal.override_max_velocity_vertical;
+  msg_path.override_max_acceleration_vertical   = goal->robot_goal.override_max_acceleration_vertical;
+  msg_path.override_max_jerk_vertical           = goal->robot_goal.override_max_jerk_vertical;
 
   // Segmenting the path into segments based on subtasks and heading trajectories
   std::vector<path_segment_t> path_segments = segmentPath(msg_path, goal->robot_goal.points);
@@ -1149,6 +1158,14 @@ std::vector<MissionHandler::path_segment_t> MissionHandler::segmentPath(const mr
   current_segment.path.header      = msg.header;
   current_segment.path.fly_now     = msg.fly_now;
   current_segment.path.use_heading = msg.use_heading;
+  // Propagate the constraint override from the input path to every segment sent to GetPathSrv.
+  current_segment.path.override_constraints                = msg.override_constraints;
+  current_segment.path.override_max_velocity_horizontal     = msg.override_max_velocity_horizontal;
+  current_segment.path.override_max_acceleration_horizontal = msg.override_max_acceleration_horizontal;
+  current_segment.path.override_max_jerk_horizontal         = msg.override_max_jerk_horizontal;
+  current_segment.path.override_max_velocity_vertical       = msg.override_max_velocity_vertical;
+  current_segment.path.override_max_acceleration_vertical   = msg.override_max_acceleration_vertical;
+  current_segment.path.override_max_jerk_vertical           = msg.override_max_jerk_vertical;
 
   // Add the first point to start a segment
   current_segment.path.points.push_back(msg.points[0]);
@@ -1448,6 +1465,15 @@ bool MissionHandler::replanMission() {
   remaining_path.use_heading                = true;
   remaining_path.dont_prepend_current_state = false; // Use the current position for planning of the path
   remaining_path.header.frame_id            = trajectories_[current_trajectory_idx_].reference.header.frame_id;
+  // Re-apply the same constraint override as the original mission goal when replanning.
+  const auto &original_robot_goal                     = current_goal_handle_->get_goal()->robot_goal;
+  remaining_path.override_constraints                = original_robot_goal.override_constraints;
+  remaining_path.override_max_velocity_horizontal     = original_robot_goal.override_max_velocity_horizontal;
+  remaining_path.override_max_acceleration_horizontal = original_robot_goal.override_max_acceleration_horizontal;
+  remaining_path.override_max_jerk_horizontal         = original_robot_goal.override_max_jerk_horizontal;
+  remaining_path.override_max_velocity_vertical       = original_robot_goal.override_max_velocity_vertical;
+  remaining_path.override_max_acceleration_vertical   = original_robot_goal.override_max_acceleration_vertical;
+  remaining_path.override_max_jerk_vertical           = original_robot_goal.override_max_jerk_vertical;
 
   std::vector<path_segment_t> path_segments = segmentPath(remaining_path, remaining_waypoints);
 
