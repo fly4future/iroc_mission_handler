@@ -90,7 +90,6 @@ void MissionHandler::initialize() {
   sc_transform_reference_array_ =
       mrs_lib::ServiceClientHandler<mrs_msgs::srv::TransformReferenceArraySrv>(node_, "~/svc_transform_reference_array_in", cbkgrp_sc_);
 
-
   // | --------------------- service servers -------------------- |
   ss_activation_ = mrs_lib::ServiceServerHandler<std_srvs::srv::Trigger>(
       node_, "~/svs_mission_activation_out",
@@ -524,6 +523,7 @@ bool MissionHandler::missionPausingServiceCallback([[maybe_unused]] const std::s
     response->success = false;
     response->message = "No active mission.";
     RCLCPP_WARN(node_->get_logger(), "No active mission.");
+    return true;
   }
 
   mission_progress_before_pause_ = mission_metrics_.progress;
@@ -1571,6 +1571,7 @@ void MissionHandler::resetMission() {
   mission_metrics_.remaining_distance = 0.0;
   mission_metrics_.eta                = 0.0;
   mission_metrics_.progress           = 0.0;
+  mission_progress_before_pause_      = 0.0;
 
   is_current_trajectory_finished_ = false;
   trajectories_.clear();

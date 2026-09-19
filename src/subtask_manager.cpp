@@ -193,6 +193,20 @@ bool SubtaskManager::startNextSubtask() {
   return true;
 }
 
+void SubtaskManager::stopAllSubtasks() {
+  std::scoped_lock lock(mutex_);
+
+  for (auto &[id, executor] : active_subtasks_) {
+    if (executor->hasStarted()) {
+      RCLCPP_INFO(node_->get_logger(), "[SubtaskManager]: Stopping subtask %d of type: %s", id, executor->getType().c_str());
+      executor->stop();
+    }
+  }
+
+  active_subtasks_.clear();
+  current_subtask_id_ = -1;
+}
+
 std::tuple<bool, std::string> SubtaskManager::validateSubtasks(const std::vector<iroc_mission_handler::msg::Subtask> &subtasks) {
   std::scoped_lock lock(mutex_);
 

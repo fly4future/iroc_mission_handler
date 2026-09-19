@@ -74,6 +74,11 @@ public:
   bool startNextSubtask();
 
   /**
+   * \brief Stop all started subtasks and discard them (used when the mission is finished, aborted or cancelled)
+   */
+  void stopAllSubtasks();
+
+  /**
    * \brief Validate waypoint subtasks before mission execution
    *
    * \param subtasks Vector of subtasks to validate

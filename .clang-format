@@ -2,9 +2,9 @@
 Language: Cpp
 Standard: c++20
 
-AccessModifierOffset: -2
+AccessModifierOffset: -1
 ColumnLimit: 160
-MaxEmptyLinesToKeep: 2
+MaxEmptyLinesToKeep: 1
 
 AlignAfterOpenBracket: Align
 AlignConsecutiveAssignments: true
