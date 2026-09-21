@@ -7,6 +7,7 @@
 
 #include <iroc_common/call_service.h>
 
+#include <algorithm>
 #include <tuple>
 
 namespace iroc_mission_handler
@@ -175,17 +176,22 @@ void MissionHandler::timerMain() {
     return;
   }
 
+  // Get the current UAV and mission states
+  const auto uav_state     = uav_state_.value();
+  const auto mission_state = mission_state_.value();
+
   // Detect landing state and update mission state accordingly
-  const bool not_idle_or_land = mission_state_.value() != mission_state_t::IDLE && mission_state_.value() != mission_state_t::LAND;
-  if (uav_state_.value() == state_t::LAND && not_idle_or_land) {
-    RCLCPP_INFO(node_->get_logger(), "Landing detected. Switching to LAND state.");
-    updateMissionState(mission_state_t::LAND);
-    return;
+  if (mission_state != mission_state_t::FINISHED) {
+    const bool landing_detected = uav_state == state_t::LAND && mission_state != mission_state_t::TAKEOFF;
+    if (landing_detected) {
+      terminateMission(false, "Mission stopped due to landing.");
+      return;
+    }
   }
 
   // Check for RC mode during active missions
-  if (uav_state_.value() == state_t::RC_MODE) {
-    if (mission_state_.value() != mission_state_t::PAUSED_DUE_TO_RC_MODE) {
+  if (uav_state == state_t::RC_MODE) {
+    if (mission_state != mission_state_t::PAUSED_DUE_TO_RC_MODE) {
       RCLCPP_INFO(node_->get_logger(), "Mission is paused due to active MRS Remote mode. Disable the mode to continue with the mission execution.");
       updateMissionState(mission_state_t::PAUSED_DUE_TO_RC_MODE);
     }
@@ -193,45 +199,32 @@ void MissionHandler::timerMain() {
   }
 
   // Check for manual control during active missions
-  if (uav_state_.value() == state_t::MANUAL) {
-    auto result                  = std::make_shared<Mission::Result>();
-    result->robot_result.name    = robot_name_;
-    result->robot_result.success = false;
-    result->robot_result.message = "Mission cancelled because drone is under manual control.";
-
-    current_goal_handle_->abort(result);
-    RCLCPP_INFO_STREAM(node_->get_logger(), "Mission cancelled because drone is under manual control.");
-
-    updateMissionState(mission_state_t::IDLE);
-    resetMission();
+  if (uav_state == state_t::MANUAL) {
+    terminateMission(false, "Mission cancelled because drone is under manual control.");
     return;
   }
 
-  switch (mission_state_.value()) {
+  switch (mission_state) {
     case mission_state_t::EXECUTING: {
       if (current_trajectory_idx_ >= trajectories_.size()) {
-        if (uav_state_.value() == state_t::HOVER) { // Wait for the UAV currently executing trajectory to finish
+        if (uav_state == state_t::HOVER) { // Wait for the UAV currently executing trajectory to finish
+          // All waypoints were reached, keep the metrics at 100 % while the terminal action is executed
+          waypoint_metrics_ = {0.0, 0.0, 100.0};
+          mission_metrics_  = {0.0, 0.0, 100.0};
           updateMissionState(mission_state_t::FINISHED);
           RCLCPP_INFO_STREAM(node_->get_logger(), "Mission finished. No more trajectories to execute.");
         }
         break;
       }
 
-      if (!mrs_robot_diagnostics::is_flying(uav_state_.value())) {
+      if (!mrs_robot_diagnostics::is_flying(uav_state)) {
         RCLCPP_INFO(node_->get_logger(), "UAV is not flying. Calling takeoff.");
 
         auto       request = std::make_shared<std_srvs::srv::Trigger::Request>();
         const auto resp    = callService<std_srvs::srv::Trigger>(sc_takeoff_, request);
 
         if (!resp.success) {
-          auto result                  = std::make_shared<Mission::Result>();
-          result->robot_result.name    = robot_name_;
-          result->robot_result.success = false;
-          result->robot_result.message = "Takeoff service call failed: " + resp.message;
-          RCLCPP_WARN_STREAM(node_->get_logger(), result->robot_result.message);
-          current_goal_handle_->abort(result);
-          updateMissionState(mission_state_t::IDLE);
-          resetMission();
+          terminateMission(false, "Takeoff service call failed: " + resp.message);
           return;
         }
 
@@ -260,35 +253,28 @@ void MissionHandler::timerMain() {
         // Move to next trajectory
         current_trajectory_idx_++;
         is_current_trajectory_finished_ = false;
+        is_trajectory_sent_             = false;
         break;
       }
 
-      // Send and start the trajectory
-      if (uav_state_.value() == state_t::HOVER && !is_trajectory_sent_) {
+      // Send and start the trajectory (once per trajectory segment)
+      if (uav_state == state_t::HOVER && !is_trajectory_sent_) {
         RCLCPP_INFO_STREAM(node_->get_logger(), "Starting trajectory " << current_trajectory_idx_ + 1 << "/" << trajectories_.size());
         auto trajectory_result = sendTrajectoryToController(trajectories_[current_trajectory_idx_]);
         if (!trajectory_result.success) {
           RCLCPP_WARN(node_->get_logger(), "Failed to send trajectory: %s", trajectory_result.message.c_str());
-
-          auto mission_result                  = std::make_shared<Mission::Result>();
-          mission_result->robot_result.name    = robot_name_;
-          mission_result->robot_result.success = false;
-          mission_result->robot_result.message = trajectory_result.message;
-          current_goal_handle_->abort(mission_result);
-
-          current_trajectory_idx_ = 0;
-          updateMissionState(mission_state_t::IDLE);
-          resetMission();
+          terminateMission(false, trajectory_result.message);
           return;
         }
+        is_trajectory_sent_ = true;
 
         auto       request = std::make_shared<std_srvs::srv::Trigger::Request>();
         const auto resp    = callService<std_srvs::srv::Trigger>(sc_mission_start_, request);
         if (!resp.success) {
           RCLCPP_WARN(node_->get_logger(), " Mission start call was not successful with message: %s", resp.message.c_str());
+          is_trajectory_sent_ = false; // the trajectory will be sent again once the mission is activated again
           updateMissionState(mission_state_t::MISSION_LOADED);
         }
-        is_trajectory_sent_ = true;
         break;
       }
 
@@ -312,14 +298,7 @@ void MissionHandler::timerMain() {
       // Check if any critical subtasks have failed
       if (subtask_manager_->areCriticalSubtasksFailed()) {
         RCLCPP_WARN(node_->get_logger(), " Critical subtask failed. Aborting mission.");
-        auto mission_result                  = std::make_shared<Mission::Result>();
-        mission_result->robot_result.name    = robot_name_;
-        mission_result->robot_result.success = false;
-        mission_result->robot_result.message = "Critical subtask failed.";
-        current_goal_handle_->abort(mission_result);
-
-        updateMissionState(mission_state_t::IDLE);
-        resetMission();
+        terminateMission(false, "Critical subtask failed.");
         return;
       }
 
@@ -330,6 +309,7 @@ void MissionHandler::timerMain() {
         // Move to next trajectory
         current_trajectory_idx_++;
         is_current_trajectory_finished_ = false;
+        is_trajectory_sent_             = false;
         updateMissionState(mission_state_t::EXECUTING);
       }
 
@@ -337,7 +317,7 @@ void MissionHandler::timerMain() {
     }
 
     case mission_state_t::TAKEOFF: {
-      if (mrs_robot_diagnostics::is_flying(uav_state_.value())) {
+      if (mrs_robot_diagnostics::is_flying(uav_state)) {
         RCLCPP_INFO(node_->get_logger(), "UAV reached hover altitude. Starting mission execution.");
         updateMissionState(mission_state_t::EXECUTING);
         break;
@@ -345,14 +325,7 @@ void MissionHandler::timerMain() {
 
       const double elapsed_s = (clock_->now() - takeoff_started_at_).seconds();
       if (elapsed_s > _takeoff_timeout_s_) {
-        auto result                  = std::make_shared<Mission::Result>();
-        result->robot_result.name    = robot_name_;
-        result->robot_result.success = false;
-        result->robot_result.message = "Takeoff timed out after " + std::to_string(static_cast<int>(_takeoff_timeout_s_)) + "s.";
-        RCLCPP_WARN_STREAM(node_->get_logger(), result->robot_result.message);
-        current_goal_handle_->abort(result);
-        updateMissionState(mission_state_t::IDLE);
-        resetMission();
+        terminateMission(false, "Takeoff timed out after " + std::to_string(static_cast<int>(_takeoff_timeout_s_)) + "s.");
         return;
       }
 
@@ -360,75 +333,54 @@ void MissionHandler::timerMain() {
     }
 
     case mission_state_t::FINISHED: {
-      switch (current_goal_handle_->get_goal()->robot_goal.terminal_action) {
-        case Mission::Goal::TERMINAL_ACTION_LAND: {
-          RCLCPP_INFO(node_->get_logger(), "Executing terminal action. Calling land");
-          auto       request = std::make_shared<std_srvs::srv::Trigger::Request>();
-          const auto resp    = callService<std_srvs::srv::Trigger>(sc_land_, request);
-          if (!resp.success) {
-            RCLCPP_WARN(node_->get_logger(), " Land call was not successful with message: %s", resp.message.c_str());
-            return;
-          }
+      const auto terminal_action = current_goal_handle_->get_goal()->robot_goal.terminal_action;
 
-          updateMissionState(mission_state_t::LAND);
+      switch (terminal_action) {
+        case Mission::Goal::TERMINAL_ACTION_NONE:
+          RCLCPP_INFO(node_->get_logger(), "Mission finished. No terminal action requested.");
+          terminateMission(true, "Mission finished.");
           break;
-        }
-
+        case Mission::Goal::TERMINAL_ACTION_LAND:
         case Mission::Goal::TERMINAL_ACTION_RTH: {
-          RCLCPP_INFO(node_->get_logger(), "Executing terminal action. Calling land home");
-          auto       request = std::make_shared<std_srvs::srv::Trigger::Request>();
-          const auto resp    = callService<std_srvs::srv::Trigger>(sc_land_home_, request);
-          if (!resp.success) {
-            RCLCPP_WARN(node_->get_logger(), " Land home call was not successful with message: %s", resp.message.c_str());
-            return;
+          if (!mrs_robot_diagnostics::is_flying(uav_state)) {
+            RCLCPP_INFO(node_->get_logger(), "Terminal action finished, the UAV is on the ground.");
+            terminateMission(true, "Mission finished.");
+            break;
           }
 
-          updateMissionState(mission_state_t::RTH);
+          // Prevent multiple calls to the terminal action service if the UAV is still flying
+          if (terminal_action_accepted_)
+            break;
+
+          const auto now = clock_->now();
+          if (terminal_action_last_call_ && (now - *terminal_action_last_call_).seconds() < 1.0)
+            break;
+
+          terminal_action_last_call_ = now;
+
+          // Call service
+          auto request = std::make_shared<std_srvs::srv::Trigger::Request>();
+          if (terminal_action == Mission::Goal::TERMINAL_ACTION_LAND) {
+            const auto resp = callService<std_srvs::srv::Trigger>(sc_land_, request);
+            if (!resp.success) {
+              RCLCPP_WARN(node_->get_logger(), " Terminal action (land) call was not successful with message: %s. Retrying.", resp.message.c_str());
+              break;
+            }
+          } else {
+            const auto resp = callService<std_srvs::srv::Trigger>(sc_land_home_, request);
+            if (!resp.success) {
+              RCLCPP_WARN(node_->get_logger(), " Terminal action (land home) call was not successful with message: %s. Retrying.", resp.message.c_str());
+              break;
+            }
+          }
+
+          terminal_action_accepted_ = true;
           break;
         }
-
-        default: {
-          auto mission_result                  = std::make_shared<Mission::Result>();
-          mission_result->robot_result.name    = robot_name_;
-          mission_result->robot_result.success = true;
-          mission_result->robot_result.message = "Mission finished.";
-          current_goal_handle_->succeed(mission_result);
-
-          updateMissionState(mission_state_t::IDLE);
+        default:
+          RCLCPP_WARN(node_->get_logger(), "Mission finished. Unknown terminal action requested.");
+          terminateMission(true, "Mission finished.");
           break;
-        }
-      }
-
-      // Reset mission state and trajectory tracking
-      resetMission();
-      break;
-    }
-
-    case mission_state_t::LAND: {
-      if (uav_state_.value() == state_t::ARMED || uav_state_.value() == state_t::DISARMED || uav_state_.value() == state_t::OFFBOARD) {
-        RCLCPP_INFO(node_->get_logger(), "Landing finished.");
-
-        // iroc_mission_handler::MissionResult action_server_result;
-        auto mission_result = std::make_shared<Mission::Result>();
-
-        if (previous_mission_state_ == mission_state_t::FINISHED) {
-          mission_result->robot_result.name    = robot_name_;
-          mission_result->robot_result.success = true;
-          mission_result->robot_result.message = "Mission finished";
-
-          RCLCPP_INFO(node_->get_logger(), "Mission finished.");
-          current_goal_handle_->succeed(mission_result);
-        } else {
-          mission_result->robot_result.name    = robot_name_;
-          mission_result->robot_result.success = false;
-          mission_result->robot_result.message = "Mission stopped due to landing.";
-
-          RCLCPP_WARN(node_->get_logger(), "Mission stopped due to landing.");
-          current_goal_handle_->abort(mission_result);
-        }
-
-        updateMissionState(mission_state_t::IDLE);
-        resetMission();
       }
 
       break;
@@ -436,7 +388,7 @@ void MissionHandler::timerMain() {
 
     case mission_state_t::PAUSED_DUE_TO_RC_MODE: {
       // mission continue if we are again not in RC_mode
-      if (uav_state_.value() != state_t::RC_MODE) {
+      if (uav_state != state_t::RC_MODE) {
         RCLCPP_INFO(node_->get_logger(), "RC mode disabled. Switching to previous mission mode");
         updateMissionState(previous_mission_state_);
       }
@@ -657,6 +609,7 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::msg::ControlMana
   if (is_trajectory_sent_) {
     is_trajectory_sent_ = false;
   }
+
   // Get current state
   size_t        current_point_idx  = static_cast<size_t>(diagnostics->tracker_status.trajectory_idx);
   trajectory_t &current_trajectory = trajectories_.at(current_trajectory_idx_);
@@ -717,7 +670,10 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::msg::ControlMana
     }
     remaining_points++; // Count the last point of the trajectory as well
   }
-  double current_progress = static_cast<double>(total_num_points - remaining_points) / total_num_points * 100.0;
+  // remaining_points can exceed total_num_points right after a trajectory is sent
+  const double current_progress =
+      total_num_points > 0 ? std::clamp((static_cast<double>(total_num_points) - static_cast<double>(remaining_points)) / total_num_points * 100.0, 0.0, 100.0)
+                           : 0.0;
 
   mission_metrics_.progress           = std::min(mission_progress_before_pause_ + current_progress * (1.0 - (mission_progress_before_pause_ / 100.0)), 100.0);
   mission_metrics_.remaining_distance = remaining_distance;
@@ -804,45 +760,39 @@ void MissionHandler::handle_accepted(const std::shared_ptr<GoalHandleMission> go
 }
 
 rclcpp_action::CancelResponse MissionHandler::handle_cancel([[maybe_unused]] const std::shared_ptr<GoalHandleMission> goal_handle) {
+  std::scoped_lock lock(action_server_mutex_);
   RCLCPP_INFO(node_->get_logger(), "Received request to cancel goal");
 
-  if (current_goal_handle_->is_active()) {
-    switch (mission_state_.value()) {
-      case mission_state_t::EXECUTING: {
-        RCLCPP_INFO(node_->get_logger(), "Drone is in the movement -> Calling hover.");
-
-        auto       request = std::make_shared<std_srvs::srv::Trigger::Request>();
-        const auto resp    = callService<std_srvs::srv::Trigger>(sc_hover_, request);
-
-        if (!resp.success) {
-          RCLCPP_WARN(node_->get_logger(), "Failed to call hover service.");
-        }
-
-        auto result                  = std::make_shared<Mission::Result>();
-        result->robot_result.name    = robot_name_;
-        result->robot_result.success = false;
-        result->robot_result.message = "Mission cancelled by client request.";
-        current_goal_handle_->abort(result);
-        RCLCPP_INFO(node_->get_logger(), "Mission stopped by cancel request.");
-        updateMissionState(mission_state_t::IDLE);
-        return rclcpp_action::CancelResponse::ACCEPT;
-        break;
-      }
-      default:
-        auto result                  = std::make_shared<Mission::Result>();
-        result->robot_result.name    = robot_name_;
-        result->robot_result.success = false;
-        result->robot_result.message = "Mission cancelled by client request.";
-        current_goal_handle_->abort(result);
-        RCLCPP_INFO(node_->get_logger(), "Mission stopped by cancel request.");
-        updateMissionState(mission_state_t::IDLE);
-        return rclcpp_action::CancelResponse::ACCEPT;
-        break;
-    }
-  } else {
+  if (!current_goal_handle_ || !current_goal_handle_->is_active()) {
     RCLCPP_WARN(node_->get_logger(), "No active mission to cancel.");
     return rclcpp_action::CancelResponse::REJECT;
   }
+
+  switch (mission_state_.value()) {
+    case mission_state_t::EXECUTING: {
+      RCLCPP_INFO(node_->get_logger(), "Robot is in the movement -> Calling hover.");
+
+      auto       request = std::make_shared<std_srvs::srv::Trigger::Request>();
+      const auto resp    = callService<std_srvs::srv::Trigger>(sc_hover_, request);
+
+      if (!resp.success) {
+        RCLCPP_WARN(node_->get_logger(), "Failed to call hover service with message: %s", resp.message.c_str());
+      }
+
+      terminateMission(false, "Mission cancelled by client request.");
+      break;
+    }
+    case mission_state_t::FINISHED:
+      terminateMission(false,
+                       terminal_action_accepted_ ? "Mission cancelled by client request during the terminal action." : "Mission cancelled by client request.");
+      break;
+    default:
+      terminateMission(false, "Mission cancelled by client request.");
+      break;
+  }
+
+  RCLCPP_INFO(node_->get_logger(), "Mission stopped by cancel request.");
+  return rclcpp_action::CancelResponse::ACCEPT;
 }
 
 void MissionHandler::actionPublishFeedback() {
@@ -1477,6 +1427,7 @@ bool MissionHandler::replanMission() {
   current_trajectory_waypoint_idx_ = 0; // Reset the goal index to the first goal
   current_trajectory_idx_          = 0; // Reset the current trajectory index to the first trajectory
   is_current_trajectory_finished_  = false;
+  is_trajectory_sent_              = false; // The recomputed trajectory has to be sent to the controller again
 
   return true;
 }
@@ -1553,6 +1504,27 @@ void MissionHandler::updateMissionState(const mission_state_t &new_state) {
   actionPublishFeedback();
 }
 
+void MissionHandler::terminateMission(const bool success, const std::string &message) {
+  if (current_goal_handle_ && current_goal_handle_->is_active()) {
+    auto result                  = std::make_shared<Mission::Result>();
+    result->robot_result.name    = robot_name_;
+    result->robot_result.success = success;
+    result->robot_result.message = message;
+
+    if (success) {
+      RCLCPP_INFO_STREAM(node_->get_logger(), "Mission succeeded: " << message);
+      current_goal_handle_->succeed(result);
+    } else {
+      RCLCPP_WARN_STREAM(node_->get_logger(), "Mission aborted: " << message);
+      current_goal_handle_->abort(result);
+    }
+  }
+
+  subtask_manager_->stopAllSubtasks();
+  updateMissionState(mission_state_t::IDLE);
+  resetMission();
+}
+
 void MissionHandler::resetMission() {
   std::scoped_lock lock(action_server_mutex_);
 
@@ -1570,7 +1542,11 @@ void MissionHandler::resetMission() {
   mission_metrics_.progress           = 0.0;
   mission_progress_before_pause_      = 0.0;
 
+  terminal_action_accepted_ = false;
+  terminal_action_last_call_.reset();
+
   is_current_trajectory_finished_ = false;
+  is_trajectory_sent_             = false;
   trajectories_.clear();
   actionPublishFeedback();
   RCLCPP_INFO(node_->get_logger(), "Mission reset successfully.");
