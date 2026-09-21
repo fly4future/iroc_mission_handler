@@ -278,7 +278,8 @@ void MissionHandler::timerMain() {
           terminateMission(false, trajectory_result.message);
           return;
         }
-        is_trajectory_sent_ = true;
+        is_trajectory_sent_     = true;
+        last_tracked_point_idx_ = 0;
 
         auto       request = std::make_shared<std_srvs::srv::Trigger::Request>();
         const auto resp    = callService<std_srvs::srv::Trigger>(sc_mission_start_, request);
@@ -629,6 +630,14 @@ void MissionHandler::controlManagerDiagCallback(const mrs_msgs::msg::ControlMana
   // Get current state
   size_t        current_point_idx  = static_cast<size_t>(diagnostics->tracker_status.trajectory_idx);
   trajectory_t &current_trajectory = trajectories_.at(current_trajectory_idx_);
+
+  // Check if the current point index is valid and update the last tracked point index
+  if (static_cast<size_t>(diagnostics->tracker_status.trajectory_length) != current_trajectory.reference.points.size() ||
+      current_point_idx >= current_trajectory.reference.points.size())
+    return;
+  if (current_point_idx < last_tracked_point_idx_)
+    return;
+  last_tracked_point_idx_ = current_point_idx;
 
   int previous_waypoint_point_idx = current_trajectory_waypoint_idx_ > 0 ? current_trajectory.idxs[current_trajectory_waypoint_idx_ - 1] : 0;
   int next_waypoint_point_idx     = current_trajectory.idxs[current_trajectory_waypoint_idx_];
@@ -1571,8 +1580,9 @@ void MissionHandler::resetMission() {
   mission_metrics_.progress           = 0.0;
   mission_progress_before_pause_      = 0.0;
 
-  is_airborne_           = false;
-  all_waypoints_reached_ = false;
+  is_airborne_            = false;
+  last_tracked_point_idx_ = 0;
+  all_waypoints_reached_  = false;
   terminal_action_last_call_.reset();
 
   is_current_trajectory_finished_ = false;

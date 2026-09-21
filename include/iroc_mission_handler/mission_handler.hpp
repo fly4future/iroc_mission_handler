@@ -260,8 +260,9 @@ class MissionHandler : public mrs_lib::Node {
   std::atomic_bool is_current_trajectory_finished_ = false; ///< Set by ControlManagerDiag callback when tracker finishes.
   std::atomic_bool is_trajectory_sent_             = false; ///< True from sending the current trajectory segment until the segment is done.
 
-  std::atomic_bool is_airborne_ = false; ///< True once the UAV has been seen flying during the current mission.
-  std::string      active_tracker_;      ///< Name of the active MRS tracker (from ControlManagerDiagnostics).
+  std::atomic_bool is_airborne_            = false; ///< True once the UAV has been seen flying during the current mission.
+  size_t           last_tracked_point_idx_ = 0;     ///< Highest trajectory point index reported by the tracker for the current segment.
+  std::string      active_tracker_;                 ///< Name of the active MRS tracker (from ControlManagerDiagnostics).
 
   std::atomic_bool            all_waypoints_reached_ = false; ///< True once the mission reached FINISHED: a landing from then on completes it.
   std::optional<rclcpp::Time> terminal_action_last_call_;     ///< Last attempt of the terminal action service call (retries are throttled).
