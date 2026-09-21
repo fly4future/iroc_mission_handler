@@ -7,7 +7,7 @@
  * a single-robot mission: trajectory generation, path following, subtask execution,
  * pause/resume, and return-to-home or land on completion.
  *
- * State machine: IDLE -> TAKEOFF -> MISSION_LOADED -> EXECUTING -> EXECUTING_SUBTASK -> FINISHED -> IDLE
+ * State machine: IDLE -> TAKEOFF -> MISSION_LOADED -> EXECUTING -> EXECUTING_SUBTASK -> FINISHED -> [RTH ->] LAND -> IDLE
  *                                                      ^                                     |
  *                                                      |---------- PAUSED <------------------|
  *
@@ -219,7 +219,8 @@ class MissionHandler : public mrs_lib::Node {
   /**
    * \brief Main state machine loop.
    * Handles state transitions: IDLE, TAKEOFF (waits for hover), MISSION_LOADED,
-   * EXECUTING (monitors trajectory progress), EXECUTING_SUBTASK, FINISHED.
+   * EXECUTING (monitors trajectory progress), EXECUTING_SUBTASK, FINISHED (calls the terminal action), RTH (flying home),
+   * LAND (any landing, the mission is resolved once the UAV is on the ground).
    */
   void timerMain();
 
@@ -262,8 +263,8 @@ class MissionHandler : public mrs_lib::Node {
   std::atomic_bool is_airborne_ = false; ///< True once the UAV has been seen flying during the current mission.
   std::string      active_tracker_;      ///< Name of the active MRS tracker (from ControlManagerDiagnostics).
 
-  std::atomic_bool            terminal_action_accepted_ = false; ///< True once the land / land home service accepted the terminal action.
-  std::optional<rclcpp::Time> terminal_action_last_call_;        ///< Last attempt of the terminal action service call (retries are throttled).
+  std::atomic_bool            all_waypoints_reached_ = false; ///< True once the mission reached FINISHED: a landing from then on completes it.
+  std::optional<rclcpp::Time> terminal_action_last_call_;     ///< Last attempt of the terminal action service call (retries are throttled).
 
   int mission_waypoint_idx_ = 0; ///< Global index of the current waypoint being followed across all segments.
 

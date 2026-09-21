@@ -184,10 +184,12 @@ void MissionHandler::timerMain() {
   if (mrs_robot_diagnostics::is_flying(uav_state))
     is_airborne_ = true;
 
-  if (mission_state != mission_state_t::FINISHED) {
-    const bool landing_detected = uav_state == state_t::LAND || (is_airborne_ && isUavOnGround() && mission_state != mission_state_t::TAKEOFF);
+  // Detect landing state and update mission state accordingly
+  if (mission_state != mission_state_t::LAND && mission_state != mission_state_t::TAKEOFF) {
+    const bool landing_detected = uav_state == state_t::LAND || (is_airborne_ && isUavOnGround());
     if (landing_detected) {
-      terminateMission(false, "Mission stopped due to landing.");
+      RCLCPP_INFO(node_->get_logger(), "Landing detected. Switching to LAND state.");
+      updateMissionState(mission_state_t::LAND);
       return;
     }
   }
@@ -212,8 +214,9 @@ void MissionHandler::timerMain() {
       if (current_trajectory_idx_ >= trajectories_.size()) {
         if (uav_state == state_t::HOVER) { // Wait for the UAV currently executing trajectory to finish
           // All waypoints were reached, keep the metrics at 100 % while the terminal action is executed
-          waypoint_metrics_ = {0.0, 0.0, 100.0};
-          mission_metrics_  = {0.0, 0.0, 100.0};
+          waypoint_metrics_      = {0.0, 0.0, 100.0};
+          mission_metrics_       = {0.0, 0.0, 100.0};
+          all_waypoints_reached_ = true;
           updateMissionState(mission_state_t::FINISHED);
           RCLCPP_INFO_STREAM(node_->get_logger(), "Mission finished. No more trajectories to execute.");
         }
@@ -351,39 +354,23 @@ void MissionHandler::timerMain() {
           break;
         case Mission::Goal::TERMINAL_ACTION_LAND:
         case Mission::Goal::TERMINAL_ACTION_RTH: {
-          if (isUavOnGround()) {
-            RCLCPP_INFO(node_->get_logger(), "Terminal action finished, the UAV is on the ground.");
-            terminateMission(true, "Mission finished.");
-            break;
-          }
-
-          // Prevent multiple calls to the terminal action service if the UAV is still flying
-          if (terminal_action_accepted_)
-            break;
-
+          // A failing terminal action call is retried (at most once per second) until it is accepted or the UAV lands anyway
           const auto now = clock_->now();
           if (terminal_action_last_call_ && (now - *terminal_action_last_call_).seconds() < 1.0)
             break;
 
           terminal_action_last_call_ = now;
 
-          // Call service
-          auto request = std::make_shared<std_srvs::srv::Trigger::Request>();
-          if (terminal_action == Mission::Goal::TERMINAL_ACTION_LAND) {
-            const auto resp = callService<std_srvs::srv::Trigger>(sc_land_, request);
-            if (!resp.success) {
-              RCLCPP_WARN(node_->get_logger(), " Terminal action (land) call was not successful with message: %s. Retrying.", resp.message.c_str());
-              break;
-            }
-          } else {
-            const auto resp = callService<std_srvs::srv::Trigger>(sc_land_home_, request);
-            if (!resp.success) {
-              RCLCPP_WARN(node_->get_logger(), " Terminal action (land home) call was not successful with message: %s. Retrying.", resp.message.c_str());
-              break;
-            }
+          const bool is_land = terminal_action == Mission::Goal::TERMINAL_ACTION_LAND;
+          auto       request = std::make_shared<std_srvs::srv::Trigger::Request>();
+          const auto resp    = callService<std_srvs::srv::Trigger>(is_land ? sc_land_ : sc_land_home_, request);
+          if (!resp.success) {
+            RCLCPP_WARN(node_->get_logger(), " Terminal action (%s) call was not successful with message: %s. Retrying.", is_land ? "land" : "land home",
+                        resp.message.c_str());
+            break;
           }
 
-          terminal_action_accepted_ = true;
+          updateMissionState(is_land ? mission_state_t::LAND : mission_state_t::RTH);
           break;
         }
         default:
@@ -392,6 +379,24 @@ void MissionHandler::timerMain() {
           break;
       }
 
+      break;
+    }
+
+    case mission_state_t::RTH: {
+      // Flying home; the landing is detected from the UAV state and handled in the LAND state
+      break;
+    }
+
+    case mission_state_t::LAND: {
+      if (!isUavOnGround())
+        break; // still landing
+
+      if (all_waypoints_reached_) {
+        RCLCPP_INFO(node_->get_logger(), "Terminal action finished, the UAV is on the ground.");
+        terminateMission(true, "Mission finished.");
+      } else {
+        terminateMission(false, "Mission stopped due to landing.");
+      }
       break;
     }
 
@@ -793,9 +798,10 @@ rclcpp_action::CancelResponse MissionHandler::handle_cancel([[maybe_unused]] con
       terminateMission(false, "Mission cancelled by client request.");
       break;
     }
-    case mission_state_t::FINISHED:
-      terminateMission(false,
-                       terminal_action_accepted_ ? "Mission cancelled by client request during the terminal action." : "Mission cancelled by client request.");
+    case mission_state_t::RTH:
+    case mission_state_t::LAND:
+      terminateMission(false, all_waypoints_reached_ ? "Mission cancelled by client request during the terminal action."
+                                                     : "Mission cancelled by client request during landing.");
       break;
     default:
       terminateMission(false, "Mission cancelled by client request.");
@@ -1565,8 +1571,8 @@ void MissionHandler::resetMission() {
   mission_metrics_.progress           = 0.0;
   mission_progress_before_pause_      = 0.0;
 
-  is_airborne_              = false;
-  terminal_action_accepted_ = false;
+  is_airborne_           = false;
+  all_waypoints_reached_ = false;
   terminal_action_last_call_.reset();
 
   is_current_trajectory_finished_ = false;
