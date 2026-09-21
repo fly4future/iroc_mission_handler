@@ -259,6 +259,9 @@ class MissionHandler : public mrs_lib::Node {
   std::atomic_bool is_current_trajectory_finished_ = false; ///< Set by ControlManagerDiag callback when tracker finishes.
   std::atomic_bool is_trajectory_sent_             = false; ///< True from sending the current trajectory segment until the segment is done.
 
+  std::atomic_bool is_airborne_ = false; ///< True once the UAV has been seen flying during the current mission.
+  std::string      active_tracker_;      ///< Name of the active MRS tracker (from ControlManagerDiagnostics).
+
   std::atomic_bool            terminal_action_accepted_ = false; ///< True once the land / land home service accepted the terminal action.
   std::optional<rclcpp::Time> terminal_action_last_call_;        ///< Last attempt of the terminal action service call (retries are throttled).
 
@@ -334,6 +337,13 @@ class MissionHandler : public mrs_lib::Node {
 
   /** \brief Finishes the active goal (succeed or abort), stops running subtasks and resets the mission back to IDLE. */
   void terminateMission(bool success, const std::string &message);
+
+  /**
+   * \brief True when the UAV is on the ground: disarmed, or armed with the NullTracker active.
+   * The UAV state alone is not enough: the state monitor also reports ARMED/OFFBOARD for a short moment right after the
+   * LandoffTracker is activated in the air (the tracker reports an invalid state until it starts landing).
+   */
+  bool isUavOnGround();
 
   // | ----------------------- Service call helpers ----------------------- |
 

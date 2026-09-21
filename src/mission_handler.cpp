@@ -181,8 +181,11 @@ void MissionHandler::timerMain() {
   const auto mission_state = mission_state_.value();
 
   // Detect landing state and update mission state accordingly
+  if (mrs_robot_diagnostics::is_flying(uav_state))
+    is_airborne_ = true;
+
   if (mission_state != mission_state_t::FINISHED) {
-    const bool landing_detected = uav_state == state_t::LAND && mission_state != mission_state_t::TAKEOFF;
+    const bool landing_detected = uav_state == state_t::LAND || (is_airborne_ && isUavOnGround() && mission_state != mission_state_t::TAKEOFF);
     if (landing_detected) {
       terminateMission(false, "Mission stopped due to landing.");
       return;
@@ -218,6 +221,12 @@ void MissionHandler::timerMain() {
       }
 
       if (!mrs_robot_diagnostics::is_flying(uav_state)) {
+        if (is_airborne_) {
+          // The UAV was flying: this is a landing in progress or a transient tracker state. Never call takeoff in the middle of a mission.
+          RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "UAV state is '%s' while executing the mission, waiting.", to_string(uav_state));
+          break;
+        }
+
         RCLCPP_INFO(node_->get_logger(), "UAV is not flying. Calling takeoff.");
 
         auto       request = std::make_shared<std_srvs::srv::Trigger::Request>();
@@ -342,7 +351,7 @@ void MissionHandler::timerMain() {
           break;
         case Mission::Goal::TERMINAL_ACTION_LAND:
         case Mission::Goal::TERMINAL_ACTION_RTH: {
-          if (!mrs_robot_diagnostics::is_flying(uav_state)) {
+          if (isUavOnGround()) {
             RCLCPP_INFO(node_->get_logger(), "Terminal action finished, the UAV is on the ground.");
             terminateMission(true, "Mission finished.");
             break;
@@ -598,16 +607,18 @@ bool MissionHandler::unloadMissionServiceCallback([[maybe_unused]] const std::sh
 void MissionHandler::controlManagerDiagCallback(const mrs_msgs::msg::ControlManagerDiagnostics::ConstSharedPtr diagnostics) {
   std::scoped_lock lock(action_server_mutex_);
 
-  if (!is_initialized_ ||                                       // Node initialization check
-      !diagnostics || !diagnostics->tracker_status.have_goal || // Diagnostics check
-      current_trajectory_idx_ >= trajectories_.size() ||        // Current trajectory index check
-      mission_state_.value() != mission_state_t::EXECUTING) {   // Mission state check
+  if (!is_initialized_ || !diagnostics) {
     return;
   }
 
-  // Restarting flag given that we will process the current trajectory
-  if (is_trajectory_sent_) {
-    is_trajectory_sent_ = false;
+  // Keep track of the active tracker, it tells reliably whether the UAV is on the ground (NullTracker)
+  active_tracker_ = diagnostics->active_tracker;
+
+  if (!diagnostics->tracker_status.have_goal ||               // Diagnostics check
+      !is_trajectory_sent_ ||                                 // Only track the trajectory segment we sent to the controller
+      current_trajectory_idx_ >= trajectories_.size() ||      // Current trajectory index check
+      mission_state_.value() != mission_state_t::EXECUTING) { // Mission state check
+    return;
   }
 
   // Get current state
@@ -1525,6 +1536,18 @@ void MissionHandler::terminateMission(const bool success, const std::string &mes
   resetMission();
 }
 
+bool MissionHandler::isUavOnGround() {
+  const auto uav_state = uav_state_.value();
+
+  if (uav_state == state_t::DISARMED)
+    return true;
+  if (uav_state != state_t::ARMED && uav_state != state_t::OFFBOARD)
+    return false;
+
+  // When the UAV is in ARMED or OFFBOARD state, we need to check the active tracker to be NullTracker
+  return active_tracker_.empty() || active_tracker_ == "NullTracker";
+}
+
 void MissionHandler::resetMission() {
   std::scoped_lock lock(action_server_mutex_);
 
@@ -1542,6 +1565,7 @@ void MissionHandler::resetMission() {
   mission_metrics_.progress           = 0.0;
   mission_progress_before_pause_      = 0.0;
 
+  is_airborne_              = false;
   terminal_action_accepted_ = false;
   terminal_action_last_call_.reset();
 
