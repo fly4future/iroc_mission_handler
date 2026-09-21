@@ -845,7 +845,6 @@ rclcpp_action::CancelResponse MissionHandler::handle_cancel([[maybe_unused]] con
   }
 }
 
-
 void MissionHandler::actionPublishFeedback() {
   std::scoped_lock lock(action_server_mutex_);
 
@@ -1263,7 +1262,6 @@ MissionHandler::generateTrajectoriesFromSegments(const std::vector<path_segment_
       auto service_response = std::make_shared<mrs_msgs::srv::GetPathSrv::Response>();
       service_request->path = segment.path;
 
-
       auto service_result = callService<mrs_msgs::srv::GetPathSrv>(sc_get_path_, service_request, service_response);
 
       if (!service_result.success) {
@@ -1537,7 +1535,6 @@ void MissionHandler::createSubtasks(const std::vector<iroc_mission_handler::msg:
     return;
   }
 }
-
 
 double MissionHandler::distance(const mrs_msgs::msg::Reference &waypoint_1, const mrs_msgs::msg::Reference &waypoint_2) {
   using vec3_t = mrs_lib::geometry::vec_t<3>;

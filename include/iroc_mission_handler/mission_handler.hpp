@@ -77,18 +77,18 @@ using GoalHandleMission = rclcpp_action::ServerGoalHandle<Mission>;
  * subtask execution at waypoints, and reports progress via action feedback.
  */
 class MissionHandler : public mrs_lib::Node {
-public:
+ public:
   MissionHandler(rclcpp::NodeOptions options);
 
-private:
+ private:
   rclcpp::Node::SharedPtr  node_;
   rclcpp::Clock::SharedPtr clock_;
 
   rclcpp::CallbackGroup::SharedPtr cbkgrp_subs_;   ///< Callback group for subscribers.
-  rclcpp::CallbackGroup::SharedPtr cbkgrp_ss_;      ///< Callback group for service servers.
-  rclcpp::CallbackGroup::SharedPtr cbkgrp_sc_;      ///< Callback group for service clients.
-  rclcpp::CallbackGroup::SharedPtr cbkgrp_timers_;  ///< Callback group for timers.
-  rclcpp::CallbackGroup::SharedPtr cbkgrp_action_;  ///< Callback group for action server.
+  rclcpp::CallbackGroup::SharedPtr cbkgrp_ss_;     ///< Callback group for service servers.
+  rclcpp::CallbackGroup::SharedPtr cbkgrp_sc_;     ///< Callback group for service clients.
+  rclcpp::CallbackGroup::SharedPtr cbkgrp_timers_; ///< Callback group for timers.
+  rclcpp::CallbackGroup::SharedPtr cbkgrp_action_; ///< Callback group for action server.
 
   // | --------------------- Types and structs --------------------- |
 
@@ -144,15 +144,15 @@ private:
 
   // | --------------------- State tracking --------------------- |
 
-  typedef mrs_robot_diagnostics::state_t state_t;
-  enum_helpers::enum_updater<state_t> uav_state_;           ///< Tracks the current UAV state (from MRS diagnostics).
+  typedef mrs_robot_diagnostics::state_t      state_t;
+  enum_helpers::enum_updater<state_t>         uav_state_;     ///< Tracks the current UAV state (from MRS diagnostics).
   enum_helpers::enum_updater<mission_state_t> mission_state_; ///< Tracks the current mission state machine state.
   mission_state_t                             previous_mission_state_ = mission_state_t::IDLE;
 
-  std::string      robot_name_;                  ///< Name of the robot this handler manages.
+  std::string      robot_name_; ///< Name of the robot this handler manages.
   std::atomic_bool is_initialized_ = false;
   double           _min_distance_threshold_;     ///< Minimum distance to consider a segment as valid movement (not just heading change).
-  double           _trajectory_sampling_period_;  ///< Sampling period for trajectory generation.
+  double           _trajectory_sampling_period_; ///< Sampling period for trajectory generation.
   double           _takeoff_timeout_s_;          ///< Max seconds to wait for hover after takeoff call.
 
   rclcpp::Time takeoff_started_at_; ///< Timestamp of the most recent takeoff service call.
@@ -165,7 +165,7 @@ private:
 
   std::shared_ptr<mrs_lib::TimeoutManager> tim_mgr_;
 
-  mrs_lib::SubscriberHandler<mrs_msgs::msg::State>                     sh_state_;               ///< UAV state subscriber.
+  mrs_lib::SubscriberHandler<mrs_msgs::msg::State>                     sh_state_;                ///< UAV state subscriber.
   mrs_lib::SubscriberHandler<mrs_msgs::msg::ControlManagerDiagnostics> sh_control_manager_diag_; ///< Control manager diagnostics subscriber.
 
   /** \brief Callback for control manager diagnostics; updates trajectory tracking state. */
@@ -176,23 +176,23 @@ private:
   mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>                    sc_takeoff_;
   mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>                    sc_land_;
   mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>                    sc_land_home_;
-  mrs_lib::ServiceClientHandler<mrs_msgs::srv::PathSrv>                    sc_path_;                    ///< Send path to MRS path follower.
-  mrs_lib::ServiceClientHandler<mrs_msgs::srv::GetPathSrv>                 sc_get_path_;                ///< Get planned path from MRS planner.
+  mrs_lib::ServiceClientHandler<mrs_msgs::srv::PathSrv>                    sc_path_;     ///< Send path to MRS path follower.
+  mrs_lib::ServiceClientHandler<mrs_msgs::srv::GetPathSrv>                 sc_get_path_; ///< Get planned path from MRS planner.
   mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>                    sc_hover_;
-  mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>                    sc_mission_flying_to_start_; ///< Notify MRS: flying to mission start point.
-  mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>                    sc_mission_start_;           ///< Notify MRS: mission execution started.
-  mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>                    sc_mission_pause_;           ///< Notify MRS: mission paused.
-  mrs_lib::ServiceClientHandler<mrs_msgs::srv::ValidateReferenceArray>     sc_mission_validation_;      ///< Validate trajectory references are reachable.
-  mrs_lib::ServiceClientHandler<mrs_msgs::srv::TrajectoryReferenceSrv>     sc_trajectory_reference_;    ///< Send trajectory to MRS tracker.
-  mrs_lib::ServiceClientHandler<mrs_msgs::srv::TransformReferenceSrv>      sc_transform_reference_;     ///< Transform a single reference between frames.
+  mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>                    sc_mission_flying_to_start_;   ///< Notify MRS: flying to mission start point.
+  mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>                    sc_mission_start_;             ///< Notify MRS: mission execution started.
+  mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>                    sc_mission_pause_;             ///< Notify MRS: mission paused.
+  mrs_lib::ServiceClientHandler<mrs_msgs::srv::ValidateReferenceArray>     sc_mission_validation_;        ///< Validate trajectory references are reachable.
+  mrs_lib::ServiceClientHandler<mrs_msgs::srv::TrajectoryReferenceSrv>     sc_trajectory_reference_;      ///< Send trajectory to MRS tracker.
+  mrs_lib::ServiceClientHandler<mrs_msgs::srv::TransformReferenceSrv>      sc_transform_reference_;       ///< Transform a single reference between frames.
   mrs_lib::ServiceClientHandler<mrs_msgs::srv::TransformReferenceArraySrv> sc_transform_reference_array_; ///< Transform an array of references between frames.
 
   // | ----------------------- ROS service servers ---------------------- |
 
-  mrs_lib::ServiceServerHandler<std_srvs::srv::Trigger>                      ss_activation_;      ///< Service to activate/resume mission execution.
-  mrs_lib::ServiceServerHandler<std_srvs::srv::Trigger>                      ss_pausing_;         ///< Service to pause mission execution.
-  mrs_lib::ServiceServerHandler<iroc_mission_handler::srv::UploadMissionSrv> ss_upload_mission_;  ///< Service to upload (stage) a mission.
-  mrs_lib::ServiceServerHandler<iroc_mission_handler::srv::UnloadMissionSrv> ss_unload_mission_;  ///< Service to unload a staged mission.
+  mrs_lib::ServiceServerHandler<std_srvs::srv::Trigger>                      ss_activation_;     ///< Service to activate/resume mission execution.
+  mrs_lib::ServiceServerHandler<std_srvs::srv::Trigger>                      ss_pausing_;        ///< Service to pause mission execution.
+  mrs_lib::ServiceServerHandler<iroc_mission_handler::srv::UploadMissionSrv> ss_upload_mission_; ///< Service to upload (stage) a mission.
+  mrs_lib::ServiceServerHandler<iroc_mission_handler::srv::UnloadMissionSrv> ss_unload_mission_; ///< Service to unload a staged mission.
 
   std::atomic<bool> is_mission_staged_{false}; ///< True when a mission has been uploaded but not yet executing.
 
@@ -220,11 +220,11 @@ private:
    * Handles state transitions: IDLE, TAKEOFF (waits for hover), MISSION_LOADED,
    * EXECUTING (monitors trajectory progress), EXECUTING_SUBTASK, FINISHED, LAND/RTH.
    */
-  void                       timerMain();
+  void timerMain();
 
   std::shared_ptr<TimerType> timer_feedback_;
   /** \brief Publishes mission progress feedback to the action server. */
-  void                       timerFeedback();
+  void timerFeedback();
 
   /** \brief Loads configuration, creates subscribers, service clients/servers, timers, action server, and SubtaskManager. */
   void initialize(void);
@@ -241,19 +241,19 @@ private:
   void actionPublishFeedback();
 
   /** \brief Validates an incoming mission goal. Accepts if initialized and no mission is active. */
-  rclcpp_action::GoalResponse   handle_goal(const rclcpp_action::GoalUUID &uuid, std::shared_ptr<const Mission::Goal> goal);
+  rclcpp_action::GoalResponse handle_goal(const rclcpp_action::GoalUUID &uuid, std::shared_ptr<const Mission::Goal> goal);
 
   /** \brief Stores the goal handle and begins mission execution (triggers takeoff if needed). */
-  void                          handle_accepted(const std::shared_ptr<GoalHandleMission> goal_handle);
+  void handle_accepted(const std::shared_ptr<GoalHandleMission> goal_handle);
 
   /** \brief Handles cancel requests; transitions to hover and resets mission state. */
   rclcpp_action::CancelResponse handle_cancel(const std::shared_ptr<GoalHandleMission> goal_handle);
 
   // | ----------------------- Mission execution state ----------------------- |
 
-  std::vector<trajectory_t> trajectories_;                              ///< All trajectory segments for the current mission.
-  size_t                    current_trajectory_idx_          = 0;       ///< Index of the trajectory segment currently being executed.
-  size_t                    current_trajectory_waypoint_idx_ = 0;       ///< Index of the current waypoint within the active trajectory.
+  std::vector<trajectory_t> trajectories_;                        ///< All trajectory segments for the current mission.
+  size_t                    current_trajectory_idx_          = 0; ///< Index of the trajectory segment currently being executed.
+  size_t                    current_trajectory_waypoint_idx_ = 0; ///< Index of the current waypoint within the active trajectory.
 
   std::atomic_bool is_current_trajectory_finished_ = false; ///< Set by ControlManagerDiag callback when tracker finishes.
   std::atomic_bool is_trajectory_sent_             = false; ///< True after trajectory has been sent to the controller.
