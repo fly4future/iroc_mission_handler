@@ -33,7 +33,12 @@ stateDiagram-v2
   Idle --> ML: Action server goal received
   ML --> Executing: Start mission service
 
-  Finished --> Idle: Terminal action finished
+  Finished --> Idle: Terminal action NONE
+  Finished --> RTH: Land home accepted
+  Finished --> Land: Land accepted
+  RTH --> Land: Landing detected
+  Executing --> Land: Landing detected (external land / land home)
+  Land --> Idle: UAV on the ground
   Executing --> Finished: No remaining segments
 
   Executing --> Paused: Pause mission service
@@ -60,13 +65,15 @@ stateDiagram-v2
 
 ### State Descriptions
 
-| State              | Meaning                                                                                   |
-| ------------------ | ----------------------------------------------------------------------------------------- |
-| **Idle**           | No mission loaded. Waiting for an action goal.                                            |
-| **Mission Loaded** | Goal accepted and trajectories generated. Waiting for a start service call.               |
-| **Executing**      | UAV is actively tracking a trajectory segment.                                            |
-| **Paused**         | Execution suspended; UAV is hovering. Resumes on start service call.                      |
-| **Finished**       | All waypoints visited. Terminal action (land / RTH) in progress before returning to Idle. |
+| State              | Meaning                                                                                                                                                                                                                                                                                                                    |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Idle**           | No mission loaded. Waiting for an action goal.                                                                                                                                                                                                                                                                             |
+| **Mission Loaded** | Goal accepted and trajectories generated. Waiting for a start service call.                                                                                                                                                                                                                                                |
+| **Executing**      | UAV is actively tracking a trajectory segment.                                                                                                                                                                                                                                                                             |
+| **Paused**         | Execution suspended; UAV is hovering. Resumes on start service call.                                                                                                                                                                                                                                                       |
+| **Finished**       | All waypoints visited. With `TERMINAL_ACTION_NONE` the mission succeeds immediately; otherwise the land / land home service is called (retried once per second until it is accepted).                                                                                                                                      |
+| **RTH**            | Terminal action RTH accepted, the UAV is flying home. Switches to **Land** when the landing starts.                                                                                                                                                                                                                        |
+| **Land**           | The UAV is landing, either as the terminal action or because land / land home was called externally during the mission. The mission is resolved once the UAV is on the ground (NullTracker active or disarmed): it succeeds if all waypoints were reached, otherwise it is aborted with `Mission stopped due to landing.`. |
 
 ---
 
