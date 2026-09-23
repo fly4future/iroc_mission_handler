@@ -42,7 +42,6 @@ set(DEPENDENCIES
   action_msgs
   mrs_msgs
   mrs_lib
-  mrs_robot_diagnostics
   iroc_common
   rosidl_default_generators
 )
@@ -119,14 +118,13 @@ add_library(IROCMissionHandler SHARED
 )
 target_link_libraries(IROCMissionHandler
   PRIVATE
-    iroc_mission_handler::iroc_mission_handler
     iroc_common::iroc_common
+    iroc_mission_handler::iroc_mission_handler
     rclcpp::rclcpp
     rclcpp_action::rclcpp_action
     rclcpp_components::component
     pluginlib::pluginlib
     mrs_lib::mrs_lib
-    mrs_robot_diagnostics::mrs_robot_diagnostics
     ${mrs_msgs_TARGETS}
 )
 
@@ -146,11 +144,11 @@ add_library(IROCMissionHandler_BasicSubtaskExecutors SHARED
 )
 target_link_libraries(IROCMissionHandler_BasicSubtaskExecutors
   PRIVATE
+    iroc_common::iroc_common
     iroc_mission_handler::iroc_mission_handler
     rclcpp::rclcpp
     pluginlib::pluginlib
     mrs_lib::mrs_lib
-    mrs_robot_diagnostics::mrs_robot_diagnostics
     ${mrs_msgs_TARGETS}
     ${std_msgs_TARGETS}
     ${cpp_typesupport_target}

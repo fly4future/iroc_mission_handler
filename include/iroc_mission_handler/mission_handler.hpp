@@ -42,11 +42,8 @@
 #include <mrs_msgs/msg/control_manager_diagnostics.hpp>
 #include <mrs_msgs/msg/state.hpp>
 
-/* MRS diagnostics */
-#include <mrs_robot_diagnostics/enums/uav_state.hpp>
-#include <mrs_robot_diagnostics/enums/helpers/enum_helpers.hpp>
-
 /* IROC */
+#include <iroc_common/helpers/enum_helpers.hpp>
 #include <iroc_mission_handler/action/mission.hpp>
 #include <iroc_mission_handler/msg/subtask.hpp>
 #include <iroc_mission_handler/msg/waypoint.hpp>
@@ -145,8 +142,9 @@ class MissionHandler : public mrs_lib::Node {
 
   // | --------------------- State tracking --------------------- |
 
-  typedef mrs_robot_diagnostics::state_t      state_t;
-  enum_helpers::enum_updater<state_t>         uav_state_;     ///< Tracks the current UAV state (from MRS diagnostics).
+  using state_t = mrs_msgs::msg::State;
+
+  state_t::_state_type                        uav_state_;     ///< Tracks the current UAV state (from MRS diagnostics).
   enum_helpers::enum_updater<mission_state_t> mission_state_; ///< Tracks the current mission state machine state.
   mission_state_t                             previous_mission_state_ = mission_state_t::IDLE;
 

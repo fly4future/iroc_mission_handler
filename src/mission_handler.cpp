@@ -15,7 +15,7 @@ namespace iroc_mission_handler
 
 MissionHandler::MissionHandler(rclcpp::NodeOptions options)
     : mrs_lib::Node("MissionHandler", options.enable_logger_service(true))
-    , uav_state_(this_node_ptr()->get_logger(), "UAV STATE", state_t::UNKNOWN)
+    , uav_state_(state_t::STATE_UNKNOWN)
     , mission_state_(this_node_ptr()->get_logger(), "MISSION STATE", mission_state_t::IDLE) {
 
   node_  = this_node_ptr();
@@ -164,11 +164,6 @@ void MissionHandler::timerMain() {
     return;
   }
 
-  // | -------------------- UAV state parsing ------------------- |
-  if (sh_state_.hasMsg()) {
-    uav_state_.set(mrs_robot_diagnostics::from_ros<state_t>(sh_state_.getMsg()->state));
-  }
-
   // |-----------------------------------------------------------|
   // |                   State machine logic                     |
   // |-----------------------------------------------------------|
@@ -177,16 +172,16 @@ void MissionHandler::timerMain() {
   }
 
   // Get the current UAV and mission states
-  const auto uav_state     = uav_state_.value();
+  uav_state_               = sh_state_.hasMsg() ? sh_state_.getMsg()->state : state_t::STATE_UNKNOWN;
   const auto mission_state = mission_state_.value();
 
   // Detect landing state and update mission state accordingly
-  if (mrs_robot_diagnostics::is_flying(uav_state))
-    is_airborne_ = true;
+  // if (mrs_robot_diagnostics::is_flying(uav_state))
+  //   is_airborne_ = true;
 
   // Detect landing state and update mission state accordingly
   if (mission_state != mission_state_t::LAND && mission_state != mission_state_t::TAKEOFF) {
-    const bool landing_detected = uav_state == state_t::LAND || (is_airborne_ && isUavOnGround());
+    const bool landing_detected = uav_state_ == state_t::STATE_LAND || (is_airborne_ && isUavOnGround());
     if (landing_detected) {
       RCLCPP_INFO(node_->get_logger(), "Landing detected. Switching to LAND state.");
       updateMissionState(mission_state_t::LAND);
@@ -195,7 +190,7 @@ void MissionHandler::timerMain() {
   }
 
   // Check for RC mode during active missions
-  if (uav_state == state_t::RC_MODE) {
+  if (uav_state_ == state_t::STATE_RC_MODE) {
     if (mission_state != mission_state_t::PAUSED_DUE_TO_RC_MODE) {
       RCLCPP_INFO(node_->get_logger(), "Mission is paused due to active MRS Remote mode. Disable the mode to continue with the mission execution.");
       updateMissionState(mission_state_t::PAUSED_DUE_TO_RC_MODE);
@@ -204,7 +199,7 @@ void MissionHandler::timerMain() {
   }
 
   // Check for manual control during active missions
-  if (uav_state == state_t::MANUAL) {
+  if (uav_state_ == state_t::STATE_MANUAL) {
     terminateMission(false, "Mission cancelled because drone is under manual control.");
     return;
   }
@@ -212,7 +207,7 @@ void MissionHandler::timerMain() {
   switch (mission_state) {
     case mission_state_t::EXECUTING: {
       if (current_trajectory_idx_ >= trajectories_.size()) {
-        if (uav_state == state_t::HOVER) { // Wait for the UAV currently executing trajectory to finish
+        if (uav_state_ == state_t::STATE_HOVER) { // Wait for the UAV currently executing trajectory to finish
           // All waypoints were reached, keep the metrics at 100 % while the terminal action is executed
           waypoint_metrics_      = {0.0, 0.0, 100.0};
           mission_metrics_       = {0.0, 0.0, 100.0};
@@ -223,27 +218,27 @@ void MissionHandler::timerMain() {
         break;
       }
 
-      if (!mrs_robot_diagnostics::is_flying(uav_state)) {
-        if (is_airborne_) {
-          // The UAV was flying: this is a landing in progress or a transient tracker state. Never call takeoff in the middle of a mission.
-          RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "UAV state is '%s' while executing the mission, waiting.", to_string(uav_state));
-          break;
-        }
+      // if (!mrs_robot_diagnostics::is_flying(uav_state)) {
+      //   if (is_airborne_) {
+      //     // The UAV was flying: this is a landing in progress or a transient tracker state. Never call takeoff in the middle of a mission.
+      //     RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "UAV state is '%s' while executing the mission, waiting.", to_string(uav_state));
+      //     break;
+      //   }
 
-        RCLCPP_INFO(node_->get_logger(), "UAV is not flying. Calling takeoff.");
+      //   RCLCPP_INFO(node_->get_logger(), "UAV is not flying. Calling takeoff.");
 
-        auto       request = std::make_shared<std_srvs::srv::Trigger::Request>();
-        const auto resp    = callService<std_srvs::srv::Trigger>(sc_takeoff_, request);
+      //   auto       request = std::make_shared<std_srvs::srv::Trigger::Request>();
+      //   const auto resp    = callService<std_srvs::srv::Trigger>(sc_takeoff_, request);
 
-        if (!resp.success) {
-          terminateMission(false, "Takeoff service call failed: " + resp.message);
-          return;
-        }
+      //   if (!resp.success) {
+      //     terminateMission(false, "Takeoff service call failed: " + resp.message);
+      //     return;
+      //   }
 
-        takeoff_started_at_ = clock_->now();
-        updateMissionState(mission_state_t::TAKEOFF);
-        break;
-      }
+      //   takeoff_started_at_ = clock_->now();
+      //   updateMissionState(mission_state_t::TAKEOFF);
+      //   break;
+      // }
 
       // Check if the current trajectory is finished
       if (is_current_trajectory_finished_) {
@@ -270,7 +265,7 @@ void MissionHandler::timerMain() {
       }
 
       // Send and start the trajectory (once per trajectory segment)
-      if (uav_state == state_t::HOVER && !is_trajectory_sent_) {
+      if (uav_state_ == state_t::STATE_HOVER && !is_trajectory_sent_) {
         RCLCPP_INFO_STREAM(node_->get_logger(), "Starting trajectory " << current_trajectory_idx_ + 1 << "/" << trajectories_.size());
         auto trajectory_result = sendTrajectoryToController(trajectories_[current_trajectory_idx_]);
         if (!trajectory_result.success) {
@@ -330,11 +325,11 @@ void MissionHandler::timerMain() {
     }
 
     case mission_state_t::TAKEOFF: {
-      if (mrs_robot_diagnostics::is_flying(uav_state)) {
-        RCLCPP_INFO(node_->get_logger(), "UAV reached hover altitude. Starting mission execution.");
-        updateMissionState(mission_state_t::EXECUTING);
-        break;
-      }
+      // if (mrs_robot_diagnostics::is_flying(uav_state)) {
+      //   RCLCPP_INFO(node_->get_logger(), "UAV reached hover altitude. Starting mission execution.");
+      //   updateMissionState(mission_state_t::EXECUTING);
+      //   break;
+      // }
 
       const double elapsed_s = (clock_->now() - takeoff_started_at_).seconds();
       if (elapsed_s > _takeoff_timeout_s_) {
@@ -403,7 +398,7 @@ void MissionHandler::timerMain() {
 
     case mission_state_t::PAUSED_DUE_TO_RC_MODE: {
       // mission continue if we are again not in RC_mode
-      if (uav_state != state_t::RC_MODE) {
+      if (uav_state_ != state_t::STATE_RC_MODE) {
         RCLCPP_INFO(node_->get_logger(), "RC mode disabled. Switching to previous mission mode");
         updateMissionState(previous_mission_state_);
       }
@@ -919,13 +914,9 @@ MissionHandler::result_t MissionHandler::createMission(const std::shared_ptr<con
       break;
   }
 
-  if (sh_state_.hasMsg()) {
-    uav_state_.set(mrs_robot_diagnostics::from_ros<state_t>(sh_state_.getMsg()->state));
-  }
-
   // Reject mission if fcu_frame is set and uav not flying
   if (goal->robot_goal.frame_id == Mission::Goal::FRAME_ID_FCU) {
-    if (uav_state_.value() != state_t::HOVER) {
+    if (uav_state_ != state_t::STATE_HOVER) {
       ss << "FCU frame is set but uav is not in the air ";
       RCLCPP_WARN(node_->get_logger(), "%s", ss.str().c_str());
       return {false, ss.str()};
@@ -1552,11 +1543,9 @@ void MissionHandler::terminateMission(const bool success, const std::string &mes
 }
 
 bool MissionHandler::isUavOnGround() {
-  const auto uav_state = uav_state_.value();
-
-  if (uav_state == state_t::DISARMED)
+  if (uav_state_ == state_t::STATE_DISARMED)
     return true;
-  if (uav_state != state_t::ARMED && uav_state != state_t::OFFBOARD)
+  if (uav_state_ != state_t::STATE_ARMED && uav_state_ != state_t::STATE_OFFBOARD)
     return false;
 
   // When the UAV is in ARMED or OFFBOARD state, we need to check the active tracker to be NullTracker
