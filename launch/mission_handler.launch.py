@@ -54,7 +54,7 @@ def launch_setup(context, *args, **kwargs):
         context).lower() in ("true", "1", "yes")
 
     static_remappings = [
-        ("~/uav_state_in", "state_monitor/uav_state"),
+        ("~/uav_state_in", "diagnostics_manager/uav_state"),
         ("~/control_manager_diagnostics_in", "control_manager/diagnostics"),
 
         # Service clients
