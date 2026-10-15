@@ -176,8 +176,8 @@ void MissionHandler::timerMain() {
   const auto mission_state = mission_state_.value();
 
   // Detect landing state and update mission state accordingly
-  // if (mrs_robot_diagnostics::is_flying(uav_state))
-  //   is_airborne_ = true;
+  if (isFlying(uav_state_))
+    is_airborne_ = true;
 
   // Detect landing state and update mission state accordingly
   if (mission_state != mission_state_t::LAND && mission_state != mission_state_t::TAKEOFF) {
@@ -218,27 +218,28 @@ void MissionHandler::timerMain() {
         break;
       }
 
-      // if (!mrs_robot_diagnostics::is_flying(uav_state)) {
-      //   if (is_airborne_) {
-      //     // The UAV was flying: this is a landing in progress or a transient tracker state. Never call takeoff in the middle of a mission.
-      //     RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "UAV state is '%s' while executing the mission, waiting.", to_string(uav_state));
-      //     break;
-      //   }
+      if (!isFlying(uav_state_)) {
+        if (is_airborne_) {
+          // The UAV was flying: this is a landing in progress or a transient tracker state. Never call takeoff in the middle of a mission.
+          RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "UAV state is '%s' while executing the mission, waiting.",
+                               dm::to_string(dm::from_ros<dm::state_t>(uav_state_)));
+          break;
+        }
 
-      //   RCLCPP_INFO(node_->get_logger(), "UAV is not flying. Calling takeoff.");
+        RCLCPP_INFO(node_->get_logger(), "UAV is not flying. Calling takeoff.");
 
-      //   auto       request = std::make_shared<std_srvs::srv::Trigger::Request>();
-      //   const auto resp    = callService<std_srvs::srv::Trigger>(sc_takeoff_, request);
+        auto       request = std::make_shared<std_srvs::srv::Trigger::Request>();
+        const auto resp    = callService<std_srvs::srv::Trigger>(sc_takeoff_, request);
 
-      //   if (!resp.success) {
-      //     terminateMission(false, "Takeoff service call failed: " + resp.message);
-      //     return;
-      //   }
+        if (!resp.success) {
+          terminateMission(false, "Takeoff service call failed: " + resp.message);
+          return;
+        }
 
-      //   takeoff_started_at_ = clock_->now();
-      //   updateMissionState(mission_state_t::TAKEOFF);
-      //   break;
-      // }
+        takeoff_started_at_ = clock_->now();
+        updateMissionState(mission_state_t::TAKEOFF);
+        break;
+      }
 
       // Check if the current trajectory is finished
       if (is_current_trajectory_finished_) {
@@ -325,11 +326,11 @@ void MissionHandler::timerMain() {
     }
 
     case mission_state_t::TAKEOFF: {
-      // if (mrs_robot_diagnostics::is_flying(uav_state)) {
-      //   RCLCPP_INFO(node_->get_logger(), "UAV reached hover altitude. Starting mission execution.");
-      //   updateMissionState(mission_state_t::EXECUTING);
-      //   break;
-      // }
+      if (isFlying(uav_state_)) {
+        RCLCPP_INFO(node_->get_logger(), "UAV reached hover altitude. Starting mission execution.");
+        updateMissionState(mission_state_t::EXECUTING);
+        break;
+      }
 
       const double elapsed_s = (clock_->now() - takeoff_started_at_).seconds();
       if (elapsed_s > _takeoff_timeout_s_) {

@@ -42,6 +42,7 @@ set(DEPENDENCIES
   action_msgs
   mrs_msgs
   mrs_lib
+  mrs_uav_managers
   iroc_common
   rosidl_default_generators
 )
@@ -125,6 +126,7 @@ target_link_libraries(IROCMissionHandler
     rclcpp_components::component
     pluginlib::pluginlib
     mrs_lib::mrs_lib
+    mrs_uav_managers::mrs_uav_managers
     ${mrs_msgs_TARGETS}
 )
 

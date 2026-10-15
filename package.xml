@@ -24,6 +24,7 @@
   <depend>geometry_msgs</depend>
   <depend>mrs_lib</depend>
   <depend>mrs_msgs</depend>
+  <depend>mrs_uav_managers</depend>
   <depend>iroc_common</depend>
 
   <exec_depend>rosidl_default_runtime</exec_depend>

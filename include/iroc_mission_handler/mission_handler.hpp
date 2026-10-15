@@ -26,6 +26,7 @@
 #include <mrs_lib/service_client_handler.h>
 #include <mrs_lib/service_server_handler.h>
 #include <mrs_lib/subscriber_handler.h>
+#include <mrs_uav_managers/diagnostics_manager/enums/uav_state.hpp>
 
 /* ROS services */
 #include <std_srvs/srv/trigger.hpp>
@@ -66,6 +67,8 @@ namespace iroc_mission_handler
 // Type aliases for better readability
 using Mission           = iroc_mission_handler::action::Mission;
 using GoalHandleMission = rclcpp_action::ServerGoalHandle<Mission>;
+
+namespace dm = mrs_uav_managers::diagnostics_manager;
 
 /**
  * \brief Per-robot mission executor (ROS 2 composable component).
@@ -344,6 +347,15 @@ class MissionHandler : public mrs_lib::Node {
    * LandoffTracker is activated in the air (the tracker reports an invalid state until it starts landing).
    */
   bool isUavOnGround();
+
+  /**
+   * \brief True when the UAV is flying, delegated to the MRS DiagnosticsManager.
+   * Wraps mrs_uav_managers::diagnostics_manager::is_flying() (false for DISARMED/ARMED/OFFBOARD/NO_LINK,
+   * true otherwise, incl. MIDAIR/EHOVER/ELAND/FAILSAFE) with conversion from the raw mrs_msgs::msg::State value.
+   */
+  static inline bool isFlying(state_t::_state_type s) {
+    return dm::is_flying(dm::from_ros<dm::state_t>(s));
+  }
 
   // | ----------------------- Service call helpers ----------------------- |
 
