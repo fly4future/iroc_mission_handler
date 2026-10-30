@@ -97,26 +97,26 @@ void MissionHandler::initialize() {
       [this](std::shared_ptr<std_srvs::srv::Trigger::Request> request, std::shared_ptr<std_srvs::srv::Trigger::Response> response) {
         return missionActivationServiceCallback(request, response);
       },
-      rclcpp::SystemDefaultsQoS(), cbkgrp_ss_);
+      rclcpp::ServicesQoS(), cbkgrp_ss_);
 
   ss_pausing_ = mrs_lib::ServiceServerHandler<std_srvs::srv::Trigger>(
       node_, "~/svs_mission_pausing_out",
       [this](std::shared_ptr<std_srvs::srv::Trigger::Request> request, std::shared_ptr<std_srvs::srv::Trigger::Response> response) {
         return missionPausingServiceCallback(request, response);
       },
-      rclcpp::SystemDefaultsQoS(), cbkgrp_ss_);
+      rclcpp::ServicesQoS(), cbkgrp_ss_);
 
   ss_upload_mission_ = mrs_lib::ServiceServerHandler<iroc_mission_handler::srv::UploadMissionSrv>(
       node_, "~/svs_upload_mission_out",
       [this](std::shared_ptr<iroc_mission_handler::srv::UploadMissionSrv::Request>  request,
              std::shared_ptr<iroc_mission_handler::srv::UploadMissionSrv::Response> response) { return uploadMissionServiceCallback(request, response); },
-      rclcpp::SystemDefaultsQoS(), cbkgrp_ss_);
+      rclcpp::ServicesQoS(), cbkgrp_ss_);
 
   ss_unload_mission_ = mrs_lib::ServiceServerHandler<iroc_mission_handler::srv::UnloadMissionSrv>(
       node_, "~/svs_unload_mission_out",
       [this](std::shared_ptr<iroc_mission_handler::srv::UnloadMissionSrv::Request>  request,
              std::shared_ptr<iroc_mission_handler::srv::UnloadMissionSrv::Response> response) { return unloadMissionServiceCallback(request, response); },
-      rclcpp::SystemDefaultsQoS(), cbkgrp_ss_);
+      rclcpp::ServicesQoS(), cbkgrp_ss_);
 
   // | ------------------------- timers ------------------------- |
   mrs_lib::TimerHandlerOptions timer_opts_start;
